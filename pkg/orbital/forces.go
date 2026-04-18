@@ -13,16 +13,19 @@ import (
 // Constants removed (using IAU standards from physics.constants)
 
 /**
- * GravityAccelerationGCRF calculates the acceleration (km/s^2) due to Earth 
- * non-spherical mass distribution (J2, J3, J4 zonal harmonics).
+ * GravityAccelerationGCRF calculates the acceleration (km/s^2) due to Earth
+ * non-spherical mass distribution (J2, J3, J4 zonal harmonics + J2,2 tesseral).
+ *
+ * ADITI 4.0 Update: Added J2,2 tesseral harmonic for GEO station-keeping detection.
+ * J2,2 causes ~0.3°/year longitude drift at GEO - essential for detecting ΔV ~ 1-5 m/s/year.
  */
-func GravityAccelerationGCRF(x, y, z float64) (ax, ay, az float64) {
+func GravityAccelerationGCRF(x, y, z, jd float64) (ax, ay, az float64) {
 	r2 := x*x + y*y + z*z
 	r := math.Sqrt(r2)
 	z2 := z * z
 	invR := 1.0 / r
 	invR2 := invR * invR
-	
+
 	// Base Point Mass
 	invR3 := invR2 * invR
 	muR3 := -physics.EARTH_MU_IAU * invR3
@@ -48,15 +51,79 @@ func GravityAccelerationGCRF(x, y, z float64) (ax, ay, az float64) {
 	ay += j4Fac * y * (35*math.Pow(z, 4)/(r2*r2) - 30*z2/r2 + 3)
 	az += j4Fac * z * (35*math.Pow(z, 4)/(r2*r2) - 70*z2/(3*r2) + 5) // Simplified az J4
 
+	// J2,2 Tesseral Harmonic (longitude-dependent, critical for GEO)
+	// J2,2 = 1.815446e-6 (Earth's ellipticity in equatorial plane)
+	// Causes longitudinal drift at GEO - without this, GEO station-keeping burns cannot be detected
+	j22Coeff := 1.815446e-6 // J2,2 coefficient
+
+	// Greenwich Sidereal Time for rotating Earth-fixed frame
+	gst := GreenwichSiderealTime(jd)
+	cosGST := math.Cos(gst)
+	sinGST := math.Sin(gst)
+
+	// Rotate position to Earth-fixed frame to evaluate J2,2
+	// x_ecef = x*cos(GST) + y*sin(GST)
+	// y_ecef = -x*sin(GST) + y*cos(GST)
+	xECEF := x*cosGST + y*sinGST
+	yECEF := -x*sinGST + y*cosGST
+
+	// J2,2 acceleration in ECEF frame
+	// V22 = (RE/r)² * J2,2 * 3 * (x² - y²)/r²
+	reOverR := physics.EARTH_R_EQUATORIAL / r
+	reOverR2 := reOverR * reOverR
+	reOverR4 := reOverR2 * reOverR2
+
+	factor := 3.0 * physics.EARTH_MU_IAU * j22Coeff * reOverR4 / r2
+
+	// Acceleration components in ECEF
+	axECEF := factor * (1.0 - 5.0*z2*invR2) * xECEF
+	ayECEF := factor * (1.0 - 5.0*z2*invR2) * yECEF
+	azECEF := factor * (3.0 - 5.0*z2*invR2) * z // z-component same in both frames
+
+	// Rotate back to ECI (GCRF)
+	ax += axECEF*cosGST - ayECEF*sinGST
+	ay += axECEF*sinGST + ayECEF*cosGST
+	az += azECEF
+
 	return
+}
+
+/**
+ * GreenwichSiderealTime computes the Greenwich Mean Sidereal Time in radians.
+ * Used for J2,2 tesseral harmonic (longitude-dependent gravity).
+ *
+ * Reference: IERS 2010 Conventions, Chapter 5
+ */
+func GreenwichSiderealTime(jd float64) float64 {
+	// Julian centuries from J2000.0
+	T := (jd - 2451545.0) / 36525.0
+
+	// GMST at 0h UT1 (in seconds)
+	gmst0 := 6.0*3600.0 + 41.0*60.0 + 50.54841 +
+		8640184.812866*T +
+		0.093104*T*T -
+		6.2e-6*T*T*T
+
+	// Convert to radians
+	gmst := gmst0 * 2.0 * math.Pi / 86400.0
+
+	// Normalize to [0, 2π)
+	gmst = math.Mod(gmst, 2.0*math.Pi)
+	if gmst < 0 {
+		gmst += 2.0 * math.Pi
+	}
+
+	return gmst
 }
 
 /**
  * SolarRadiationPressure calculates the acceleration (km/s^2) due to solar flux.
  */
 func SolarRadiationPressure(x, y, z float64, jd float64, area, mass, Cr float64) (ax, ay, az float64) {
-	if mass <= 0 { return 0, 0, 0 }
-	
+	if mass <= 0 {
+		return 0, 0, 0
+	}
+
 	sx, sy, sz := SunPosition(jd)
 	dx, dy, dz := sx-x, sy-y, sz-z
 	d2 := dx*dx + dy*dy + dz*dz
@@ -90,7 +157,7 @@ func SunPosition(jd float64) (x, y, z float64) {
 	M := (357.527 + 35999.050*T) * math.Pi / 180.0
 	ecliptic := (L + 1.91466*math.Sin(M) + 0.0199*math.Sin(2*M)) * math.Pi / 180.0
 	obliquity := (23.439 - 0.013*T) * math.Pi / 180.0
-	
+
 	rSun := physics.AU_KM * (1.00014 - 0.01671*math.Cos(M) - 0.00014*math.Cos(2*M))
 	x = rSun * math.Cos(ecliptic)
 	y = rSun * math.Cos(obliquity) * math.Sin(ecliptic)
@@ -98,9 +165,9 @@ func SunPosition(jd float64) (x, y, z float64) {
 	return
 }
 
-func r(x, y, z float64) float64 { return math.Sqrt(x*x + y*y + z*z) }
+func r(x, y, z float64) float64  { return math.Sqrt(x*x + y*y + z*z) }
 func r2(x, y, z float64) float64 { return x*x + y*y + z*z }
-func pow2(x float64) float64 { return x * x }
+func pow2(x float64) float64     { return x * x }
 
 /**
  * ComputeJacobian calculates the 7x7 state transition matrix derivative (df/dx).

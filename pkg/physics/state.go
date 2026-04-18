@@ -15,10 +15,11 @@ type Vector3 [3]float64
  * Hardened for Clean Architecture: Separates data from behavior.
  */
 type State struct {
-	Pos     Vector3
-	Vel     Vector3
-	EpochJD float64 // Julian Date
-	E_hal   float64 // Hamiltonian Energy for auditing
+	Pos        Vector3
+	Vel        Vector3
+	EpochJD    float64       // Julian Date
+	E_hal      float64       // Hamiltonian Energy for auditing
+	Covariance [6][6]float64 // Position/velocity covariance (km², km²/s²) - added for ADITI 4.0 Pc computation
 }
 
 /**
@@ -178,4 +179,127 @@ func (s *State) GetKeplerianEnergy() float64 {
 	r := math.Sqrt(s.Pos[0]*s.Pos[0] + s.Pos[1]*s.Pos[1] + s.Pos[2]*s.Pos[2])
 	v2 := s.Vel[0]*s.Vel[0] + s.Vel[1]*s.Vel[1] + s.Vel[2]*s.Vel[2]
 	return 0.5*v2 - MU_KM/r
+}
+
+/**
+ * OrbitRegime represents the orbital regime for covariance tuning.
+ */
+type OrbitRegime int
+
+const (
+	RegimeLEO     OrbitRegime = iota // Low Earth Orbit (< 2000 km)
+	RegimeMEO                        // Medium Earth Orbit (2000-35786 km)
+	RegimeGEO                        // Geostationary Orbit (~35786 km)
+	RegimeHEO                        // High Eccentricity Orbit
+	RegimeUnknown                    // Unknown/unspecified regime
+)
+
+/**
+ * ConstructDefaultCovarianceFromTLE creates a default 6x6 covariance matrix from TLE data.
+ *
+ * Reference: Hejduk 2019, "Covariance Realism in Conjunction Assessment"
+ *
+ * TLE-derived covariance is CONSERVATIVE - actual errors may be smaller.
+ * This enables Pc computation from TLE data where no formal covariance exists.
+ *
+ * Typical TLE errors (1-sigma):
+ *   LEO:  1.0 km position, 0.001 km/s velocity
+ *   GEO:  5.0 km position, 0.0005 km/s velocity (worse due to SRP/tesseral effects)
+ *
+ * @param tle The TLE data
+ * @return 6x6 covariance matrix [km², km²/s²]
+ */
+func ConstructDefaultCovarianceFromTLE(tle TLE) [6][6]float64 {
+	// Determine orbit regime from TLE parameters
+	regime := classifyOrbitRegime(tle)
+
+	var posSigma, velSigma float64
+
+	switch regime {
+	case RegimeLEO:
+		// LEO: Better tracking accuracy, higher drag uncertainty
+		posSigma = 1.0   // km (1-sigma)
+		velSigma = 0.001 // km/s (1-sigma) ~1 m/s
+	case RegimeGEO:
+		// GEO: Worse tracking, better velocity (drag-free), SRP uncertainty
+		posSigma = 5.0    // km (1-sigma)
+		velSigma = 0.0005 // km/s (1-sigma) ~0.5 m/s
+	case RegimeMEO:
+		// MEO: Intermediate accuracy (GPS, Galileo, etc.)
+		posSigma = 2.0    // km (1-sigma)
+		velSigma = 0.0008 // km/s (1-sigma) ~0.8 m/s
+	case RegimeHEO:
+		// HEO: Highly eccentric, variable accuracy
+		posSigma = 3.0   // km (1-sigma)
+		velSigma = 0.001 // km/s (1-sigma) ~1 m/s
+	default:
+		// Conservative default
+		posSigma = 2.0
+		velSigma = 0.001
+	}
+
+	// Build diagonal covariance (uncorrelated position/velocity errors)
+	// State order: [x, y, z, vx, vy, vz]
+	var cov [6][6]float64
+
+	// Position variances (diagonal)
+	cov[0][0] = posSigma * posSigma
+	cov[1][1] = posSigma * posSigma * 0.25 // In-track typically better (0.5 km for LEO)
+	cov[2][2] = posSigma * posSigma * 0.25 // Cross-track typically better
+
+	// Velocity variances (diagonal)
+	cov[3][3] = velSigma * velSigma
+	cov[4][4] = velSigma * velSigma
+	cov[5][5] = velSigma * velSigma
+
+	// Add small cross-correlation for realistic covariance structure
+	// Position-velocity correlation is small but non-zero for TLE data
+	corrCoeff := 0.1
+	cov[0][3] = corrCoeff * posSigma * velSigma
+	cov[3][0] = cov[0][3]
+	cov[1][4] = corrCoeff * posSigma * velSigma * 0.5
+	cov[4][1] = cov[1][4]
+	cov[2][5] = corrCoeff * posSigma * velSigma * 0.5
+	cov[5][2] = cov[2][5]
+
+	return cov
+}
+
+/**
+ * classifyOrbitRegime determines the orbit regime from TLE parameters.
+ */
+func classifyOrbitRegime(tle TLE) OrbitRegime {
+	// Semi-major axis from mean motion (using standard formula)
+	// n = sqrt(μ/a³) => a = (μ/n²)^(1/3)
+	// Mean motion is in revs/day, convert to rad/s
+	nRadS := tle.MeanMotion * 2.0 * math.Pi / 86400.0
+	if nRadS <= 0 {
+		return RegimeUnknown
+	}
+
+	a := math.Pow(MU_KM/(nRadS*nRadS), 1.0/3.0)
+	rPerigee := a * (1.0 - tle.Eccentricity)
+	rApogee := a * (1.0 + tle.Eccentricity)
+	altPerigee := rPerigee - RE_KM
+	altApogee := rApogee - RE_KM
+
+	// Classify by altitude and eccentricity
+	if tle.Eccentricity > 0.5 {
+		return RegimeHEO
+	}
+
+	if altApogee < 2000.0 {
+		return RegimeLEO
+	}
+
+	if altPerigee > 30000.0 && altApogee < 42000.0 {
+		// Near-geosynchronous
+		return RegimeGEO
+	}
+
+	if altPerigee > 2000.0 && altApogee < 35000.0 {
+		return RegimeMEO
+	}
+
+	return RegimeUnknown
 }

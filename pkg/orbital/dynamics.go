@@ -28,8 +28,8 @@ func OrbitalAccelerationDynamic(
 	params physics.PhysicsParams,
 	sw physics.SpaceWeatherData,
 ) (ax, ay, az float64) {
-	// 1. Point Mass + J2-J4 Zonal Harmonics
-	ax, ay, az = GravityAccelerationGCRF(x, y, z)
+	// 1. Point Mass + J2-J4 Zonal + J2,2 Tesseral Harmonics
+	ax, ay, az = GravityAccelerationGCRF(x, y, z, jd)
 
 	// 2. Atmospheric Drag with Dynamic Space Weather
 	r := math.Sqrt(x*x + y*y + z*z)
@@ -127,7 +127,7 @@ func eciToGeodeticLatLon(x, y, z, jd float64) (latDeg, lonDeg float64) {
 
 	// Longitude from GST
 	lon := math.Atan2(y, x) - gst
-	
+
 	// Normalize longitude to -pi to pi
 	for lon > math.Pi {
 		lon -= 2 * math.Pi

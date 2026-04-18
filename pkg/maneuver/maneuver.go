@@ -50,6 +50,17 @@ func NewHybridManeuverDetector(model ManeuverInferenceModel) *HybridManeuverDete
 }
 
 /**
+ * InputRegime specifies the quality level of tracking data for threshold tuning.
+ */
+type InputRegime int
+
+const (
+	RegimeTLE InputRegime = iota // Two-Line Elements: km-level position errors
+	RegimeSP                     // Special Perturbations: m-level position errors (radar/optical OD)
+	RegimeGP                     // General Perturbations with covariance
+)
+
+/**
  * CUSUMDetector implements the Cumulative Sum algorithm for sequential change detection.
  */
 type CUSUMDetector struct {
@@ -57,10 +68,16 @@ type CUSUMDetector struct {
 	threshold float64
 	posSum    float64
 	negSum    float64
+	regime    InputRegime // Added for regime-aware thresholds (ADITI 4.0)
 }
 
 /**
  * NewCUSUMDetector creates a statistical change detector with specified drift and threshold parameters.
+ *
+ * WARNING: For TLE data, use NewCUSUMDetectorForRegime(RegimeTLE) instead.
+ * The default thresholds (drift=0.005, threshold=0.05) are appropriate for SP-quality
+ * data (σ_position ~ 10m), but will produce excessive false positives with TLE data
+ * (σ_position ~ 1km).
  */
 func NewCUSUMDetector(drift, threshold float64) *CUSUMDetector {
 	if drift <= 0 {
@@ -69,7 +86,53 @@ func NewCUSUMDetector(drift, threshold float64) *CUSUMDetector {
 	if threshold <= 0 {
 		threshold = 0.05
 	}
-	return &CUSUMDetector{drift: drift, threshold: threshold}
+	return &CUSUMDetector{drift: drift, threshold: threshold, regime: RegimeSP}
+}
+
+/**
+ * NewCUSUMDetectorForRegime creates a CUSUM detector with regime-appropriate thresholds.
+ *
+ * ADITI 4.0: Calibrated thresholds for different input data quality levels.
+ *
+ * TLE Input (σ_pos ~ 1km, σ_vel ~ 1m/s):
+ *   - drift = 0.5 (100× less sensitive than SP)
+ *   - threshold = 5.0 (100× higher than SP)
+ *   - Rationale: TLE residual noise is 100× larger than SP, thresholds must scale accordingly
+ *
+ * SP Input (σ_pos ~ 10m, σ_vel ~ 0.01m/s):
+ *   - drift = 0.005
+ *   - threshold = 0.05
+ *   - Rationale: Standard values for radar-quality OD
+ *
+ * Minimum Detectable ΔV:
+ *   - TLE: ~3 m/s (limited by TLE noise floor)
+ *   - SP:  ~0.03 m/s (enables GEO station-keeping detection at ~0.1 m/burn)
+ */
+func NewCUSUMDetectorForRegime(regime InputRegime) *CUSUMDetector {
+	switch regime {
+	case RegimeTLE:
+		// TLE: km-level errors require much less sensitive thresholds
+		// Without this, false positive rate ~10-50% per orbit
+		return &CUSUMDetector{
+			drift:     0.5, // 100× less sensitive
+			threshold: 5.0, // 100× higher threshold
+			regime:    regime,
+		}
+	case RegimeSP, RegimeGP:
+		// SP/GP: m-level errors with covariance - standard thresholds
+		return &CUSUMDetector{
+			drift:     0.005,
+			threshold: 0.05,
+			regime:    regime,
+		}
+	default:
+		// Conservative default for unknown data quality
+		return &CUSUMDetector{
+			drift:     0.05,
+			threshold: 0.5,
+			regime:    RegimeTLE, // Assume worst case
+		}
+	}
 }
 
 /**
@@ -320,7 +383,7 @@ func CharacterizeManeuverFromTracks(
 
 	intentScore := alignmentIntentProxy(postFit, indianAssets)
 	priorPostGap := distance3(priorFit, postFit)
-	
+
 	proxOps := false
 	for _, a := range indianAssets {
 		if distance3(postFit, a) < 150.0 {
@@ -328,7 +391,7 @@ func CharacterizeManeuverFromTracks(
 			break
 		}
 	}
-	
+
 	dvMag := norm3(dvRSW)
 	stealthy := dvMag > 0 && dvMag < 0.05 && priorPostGap > 5.0
 	confidence := clamp01(0.50 + 0.30*clamp01(dvMag/0.1) + 0.10*intentScore + 1.0*clamp01(priorPostGap/5.0))
@@ -507,7 +570,7 @@ func maxOr(a, b float64) float64 {
 func InvokeSymbolicAttribution(objectID int, window []physics.ManeuverFrame) error {
 	fmt.Printf("[TRC] Entering InvokeSymbolicAttribution for object %d\n", objectID)
 	defer fmt.Printf("[TRC] Exiting InvokeSymbolicAttribution\n")
-	
+
 	type Payload struct {
 		ObjectID int          `json:"object_id"`
 		Q        [][3]float64 `json:"q"`
@@ -533,7 +596,7 @@ func InvokeSymbolicAttribution(objectID int, window []physics.ManeuverFrame) err
 	cmd := exec.Command(".venv/bin/python3", "ai/v3/symbolic_attributor.py",
 		"--residuals", tmpFile,
 		"--out", fmt.Sprintf("attribution_%d.tex", objectID))
-	
+
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

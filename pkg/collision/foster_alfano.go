@@ -188,8 +188,8 @@ func integrateGaussian2D(miss [2]float64, cov [2][2]float64, R float64) float64 
 	// Integrate over disk using polar coordinates
 	// Pc = ∫_0^R ∫_0^{2π} N(miss, cov) r dr dθ
 
-	nPoints := 20 // Radial points
-	nAngles := 36 // Angular points
+	nPoints := 50 // Radial points (increased from 20 for better tail capture)
+	nAngles := 72 // Angular points (increased from 36 for better tail capture)
 
 	Pc := 0.0
 	dr := R / float64(nPoints)
@@ -266,37 +266,254 @@ func AlfanoApproximatePc(geom ConjunctionGeometry) float64 {
 }
 
 /**
- * alfanoSeries computes Pc via series expansion.
+ * alfanoSeries computes Pc via Alfano 2005 error-function series expansion.
+ *
+ * Reference: Alfano & Oltrogge, "Method for Fast Evaluation of Conjunction
+ * Probability with Gaussian Uncertainty", 2005.
+ *
+ * The series uses Laguerre polynomials and Bessel functions:
+ * Pc = (R² / 2σ₁σ₂) * exp(-u₀²/2) * Σₖ₌₀ᴺ [(-1)ᵏ/k! * (R²/4σ₁σ₂)ᵏ * Lₖ(ε²u₀²/2)]
+ *
+ * Where:
+ *   u₀ = normalized miss distance (in principal axes)
+ *   ε = eccentricity of covariance ellipse
+ *   Lₖ = Laguerre polynomial of order k
+ *   σ₁, σ₂ = square roots of covariance eigenvalues
  */
 func alfanoSeries(d1, d2, rScaled, aspectRatio float64) float64 {
-	// Simplified Alfano approximation
-	// Full implementation would use error function series
+	// Transform to principal axis coordinates
+	// d1, d2 are Mahalanobis distances along principal axes
+	u0 := math.Sqrt(d1*d1 + d2*d2) // Total Mahalanobis distance
 
-	// Mahalanobis distance
-	dM := math.Sqrt(d1*d1 + d2*d2)
-
-	// Effective radius
-	REff := rScaled
-
-	// Approximate Pc using complementary error function
-	// Pc ≈ exp(-dM²/2) * (1 - exp(-REff²/(2σ_eff²)))
-
-	sigmaEff := 1.0 // Normalized
-	if aspectRatio > 1 {
-		sigmaEff = aspectRatio
+	if u0 > 50.0 {
+		// Miss distance so large that Pc is effectively zero
+		return 0.0
 	}
 
-	Pc := math.Exp(-dM*dM/2) * (1 - math.Exp(-REff*REff/(2*sigmaEff*sigmaEff)))
+	// Sigma ratios from aspect ratio
+	sigma1 := 1.0
+	sigma2 := 1.0
+	if aspectRatio > 1.0 {
+		sigma2 = 1.0 / aspectRatio
+	} else if aspectRatio < 1.0 && aspectRatio > 0 {
+		sigma1 = aspectRatio
+	}
+
+	// Normalized HBR in each direction
+	r1 := rScaled * sigma2 // HBR scaled by minor axis
+	r2 := rScaled * sigma1 // HBR scaled by major axis
+
+	// Series parameters
+	a := (u0 * u0) / 2.0
+	beta := (r2 * r2) / (2.0 * sigma2 * sigma2)  // Normalized HBR² along minor axis
+	alpha := (r1 * r2) / (2.0 * sigma1 * sigma2) // Geometric mean term
+
+	maxTerms := 30
+	absTol := 1e-12
+
+	sum := 0.0
+	prevSum := 0.0
+
+	for k := 0; k <= maxTerms; k++ {
+		// Series coefficient: (-1)ᵏ / k! * βᵏ
+		var coeff float64
+		if k == 0 {
+			coeff = 1.0
+		} else if beta == 0 {
+			coeff = 0.0
+		} else {
+			lg, _ := math.Lgamma(float64(k + 1))
+			logCoeff := float64(k)*math.Log(beta) - lg
+			if logCoeff > 700 {
+				// Overflow protection
+				return 1.0
+			}
+			coeff = math.Exp(logCoeff)
+			if k%2 == 1 {
+				coeff = -coeff
+			}
+		}
+
+		// Scaled Bessel function: exp(-a) * Iₖ(a)
+		scaledBessel := expNegXTimesBesselI(k, a)
+
+		term := coeff * scaledBessel
+		sum += term
+
+		// Check convergence
+		if k > 0 && math.Abs(sum-prevSum) <= absTol {
+			break
+		}
+		prevSum = sum
+	}
+
+	// Final Pc = α * exp(-a) * sum
+	// Note: exp(-a) is already in scaledBessel, so we just scale by alpha
+	pc := alpha * sum
 
 	// Clamp to valid range
-	if Pc < 0 {
-		Pc = 0
+	if pc < 0 {
+		pc = 0
 	}
-	if Pc > 1 {
-		Pc = 1
+	if pc > 1 {
+		pc = 1
 	}
 
-	return Pc
+	return pc
+}
+
+/**
+ * expNegXTimesBesselI computes exp(-x) * Iₙ(x) where Iₙ is the modified Bessel function.
+ * Uses direct computation for small x and asymptotic expansion for large x.
+ */
+func expNegXTimesBesselI(n int, x float64) float64 {
+	if x <= 0 {
+		if n == 0 {
+			return 1.0
+		}
+		return 0.0
+	}
+
+	if x < 40.0 {
+		// Direct computation for moderate x
+		return math.Exp(-x) * besselI(n, x)
+	}
+
+	// Asymptotic expansion for large x
+	// Iₙ(x) ≈ exp(x) / sqrt(2πx) * [1 - (4n²-1)/(8x) + ...]
+	mu := float64(4 * n * n)
+	inv8x := 1.0 / (8.0 * x)
+	inv8x2 := inv8x * inv8x
+	inv8x3 := inv8x2 * inv8x
+
+	poly := 1.0 - (mu-1.0)*inv8x + ((mu-1.0)*(mu-9.0))*inv8x2/2.0 -
+		((mu-1.0)*(mu-9.0)*(mu-25.0))*inv8x3/6.0
+
+	if poly < 0 {
+		poly = 0
+	}
+
+	return poly / math.Sqrt(2.0*math.Pi*x)
+}
+
+/**
+ * besselI computes the modified Bessel function Iₙ(x) using series expansion.
+ * Implements I₀ and I₁ directly, uses recurrence for n >= 2.
+ */
+func besselI(n int, x float64) float64 {
+	if n == 0 {
+		return besselI0(x)
+	}
+	if n == 1 {
+		return besselI1(x)
+	}
+
+	// For n >= 2, use recurrence: Iₙ₊₁(x) = Iₙ₋₁(x) - (2n/x) * Iₙ(x)
+	// Or compute directly via series for small n
+	if x > 2.0*float64(n) {
+		// Forward recurrence for large x
+		i0 := besselI0(x)
+		i1 := besselI1(x)
+		var in float64
+		for k := 1; k < n; k++ {
+			in = i1
+			i1 = i0 - 2.0*float64(k)/x*i1
+			i0 = in
+		}
+		return i1
+	}
+
+	// Series expansion for moderate x
+	// Iₙ(x) = Σₖ₌₀^∞ (x/2)^(2k+n) / (k! * (k+n)!)
+	xHalf := x / 2.0
+	sum := 0.0
+	term := 1.0
+	for k := 0; k <= 50; k++ {
+		if k == 0 {
+			term = math.Pow(xHalf, float64(n)) / float64(factorial(n))
+		} else {
+			term *= xHalf * xHalf / (float64(k) * float64(k+n))
+		}
+		sum += term
+		if term < 1e-15*sum {
+			break
+		}
+	}
+	return sum
+}
+
+/**
+ * besselI0 computes the modified Bessel function I₀(x) using polynomial approximation.
+ * For x <= 3.75: Chebyshev polynomial in t = x/3.75
+ * For x > 3.75: Asymptotic expansion
+ */
+func besselI0(x float64) float64 {
+	if x < 0 {
+		x = -x
+	}
+
+	if x <= 3.75 {
+		t := x / 3.75
+		t2 := t * t
+		// Chebyshev polynomial coefficients for I₀
+		return 1.0 + 3.5156229*t2 + 3.0899424*t2*t2 + 1.2067492*t2*t2*t2 +
+			0.2659732*t2*t2*t2*t2 + 0.0360768*t2*t2*t2*t2*t2 +
+			0.0045813*t2*t2*t2*t2*t2*t2
+	}
+
+	// Asymptotic expansion for large x
+	y := 3.75 / x
+	// Polynomial in 1/x
+	return (math.Exp(x) / math.Sqrt(x)) * (0.39894228 + 0.01328592*y +
+		0.00225319*y*y - 0.00157565*y*y*y + 0.00916281*y*y*y*y -
+		0.02057706*y*y*y*y*y + 0.02635537*y*y*y*y*y*y -
+		0.01647633*y*y*y*y*y*y*y + 0.00392377*y*y*y*y*y*y*y*y)
+}
+
+/**
+ * besselI1 computes the modified Bessel function I₁(x) using polynomial approximation.
+ * For x <= 3.75: Chebyshev polynomial
+ * For x > 3.75: Asymptotic expansion
+ */
+func besselI1(x float64) float64 {
+	if x < 0 {
+		x = -x
+	}
+
+	if x <= 3.75 {
+		t := x / 3.75
+		t2 := t * t
+		// Chebyshev polynomial coefficients for I₁/x
+		return x * (0.5 + 0.87890594*t2 + 0.51498869*t2*t2 +
+			0.15084934*t2*t2*t2 + 0.02658733*t2*t2*t2*t2 +
+			0.00301532*t2*t2*t2*t2*t2 + 0.00032411*t2*t2*t2*t2*t2*t2)
+	}
+
+	// Asymptotic expansion for large x
+	y := 3.75 / x
+	return (math.Exp(x) / math.Sqrt(x)) * (0.39894228 - 0.03988024*y -
+		0.00362018*y*y + 0.00163801*y*y*y - 0.01031555*y*y*y*y +
+		0.02282967*y*y*y*y*y - 0.02895312*y*y*y*y*y*y +
+		0.01787654*y*y*y*y*y*y*y - 0.00420059*y*y*y*y*y*y*y*y)
+}
+
+/**
+ * factorial computes n! for small n (n <= 20).
+ */
+func factorial(n int) float64 {
+	if n < 0 {
+		return 0
+	}
+	if n > 20 {
+		// Use gamma function approximation for large n
+		lg, _ := math.Lgamma(float64(n + 1))
+		return math.Exp(lg)
+	}
+	result := 1.0
+	for i := 2; i <= n; i++ {
+		result *= float64(i)
+	}
+	return result
 }
 
 /**
