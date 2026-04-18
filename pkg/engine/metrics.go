@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"fmt"
 	"sync/atomic"
 	"time"
 )
@@ -57,7 +56,6 @@ func (m *EngineMetrics) MarkCompletion() {
  * MarkShedding records an observation dropped due to backpressure.
  */
 func (m *EngineMetrics) MarkShedding() {
-	fmt.Printf("DEBUG: Engine shedding event at %v\n", time.Now())
 	atomic.AddUint64(&m.ShedEvents, 1)
 }
 

@@ -1,10 +1,8 @@
 package catalog
 
 import (
-	"fmt"
 	"math"
 	"sort"
-	"time"
 
 	"ssis/pkg/octree"
 )
@@ -40,9 +38,6 @@ type BVHIndex struct {
  * @param objects: The list of space objects to index.
  */
 func BuildBVH(objects []ObjectRecord) *BVHIndex {
-	// Entry Point: BVH Build
-	fmt.Printf("DEBUG: Building BVH Index for %d objects at %v\n", len(objects), time.Now())
-	
 	if len(objects) == 0 {
 		return &BVHIndex{Root: nil}
 	}
@@ -149,6 +144,10 @@ func (n *BVHNode) query(min, max octree.Vector3, tMin, tMax float64, res *[]Obje
 		return
 	}
 	
-	n.Left.query(min, max, tMin, tMax, res)
-	n.Right.query(min, max, tMin, tMax, res)
+	if n.Left != nil {
+		n.Left.query(min, max, tMin, tMax, res)
+	}
+	if n.Right != nil {
+		n.Right.query(min, max, tMin, tMax, res)
+	}
 }

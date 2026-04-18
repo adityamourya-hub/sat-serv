@@ -1,7 +1,6 @@
 package spatial
 
 import (
-	"fmt"
 	"sort"
 	"ssis/pkg/octree"
 )
@@ -32,7 +31,6 @@ type AABB struct {
  * Exit Point: Logs the updated bounds.
  */
 func (a *AABB) Expand(p octree.Vector3, t float64) {
-	fmt.Printf("DEBUG: Entry AABB.Expand p=(%.2f, %.2f, %.2f) t=%.2f\n", p.X, p.Y, p.Z, t)
 	if p.X < a.Min.X {
 		a.Min.X = p.X
 	}
@@ -57,7 +55,6 @@ func (a *AABB) Expand(p octree.Vector3, t float64) {
 	if t > a.TMax {
 		a.TMax = t
 	}
-	fmt.Printf("DEBUG: Exit AABB.Expand successful\n")
 }
 
 /**
@@ -66,10 +63,8 @@ func (a *AABB) Expand(p octree.Vector3, t float64) {
  * Exit Point: Trace end.
  */
 func (a *AABB) Merge(b AABB) {
-	fmt.Printf("DEBUG: Entry AABB.Merge\n")
 	a.Expand(b.Min, b.TMin)
 	a.Expand(b.Max, b.TMax)
-	fmt.Printf("DEBUG: Exit AABB.Merge successful\n")
 }
 
 /**
@@ -77,13 +72,11 @@ func (a *AABB) Merge(b AABB) {
  * This is critical for the broad-phase filter in conjunction detection.
  */
 func (a AABB) Overlap(b AABB) bool {
-	fmt.Printf("DEBUG: Entry AABB.Overlap\n")
 	spatial := a.Min.X <= b.Max.X && a.Max.X >= b.Min.X &&
 		a.Min.Y <= b.Max.Y && a.Max.Y >= b.Min.Y &&
 		a.Min.Z <= b.Max.Z && a.Max.Z >= b.Min.Z
 	temporal := a.TMin <= b.TMax && a.TMax >= b.TMin
 	res := spatial && temporal
-	fmt.Printf("DEBUG: Exit AABB.Overlap result=%t\n", res)
 	return res
 }
 
@@ -93,13 +86,11 @@ func (a AABB) Overlap(b AABB) bool {
  * Exit Point: Trace end.
  */
 func (a AABB) Contains(p octree.Vector3, t float64) bool {
-	fmt.Printf("DEBUG: Entry AABB.Contains\n")
 	spatial := p.X >= a.Min.X && p.X <= a.Max.X &&
 		p.Y >= a.Min.Y && p.Y <= a.Max.Y &&
 		p.Z >= a.Min.Z && p.Z <= a.Max.Z
 	temporal := t >= a.TMin && t <= a.TMax
 	res := spatial && temporal
-	fmt.Printf("DEBUG: Exit AABB.Contains result=%t\n", res)
 	return res
 }
 
@@ -142,14 +133,12 @@ type BVH struct {
  * Exit Point: Logs the resulting 64-bit code.
  */
 func mortonCode(pos octree.Vector3, t float64, bounds AABB) uint64 {
-	fmt.Printf("DEBUG: Entry mortonCode pos=(%.2f, %.2f, %.2f) t=%.2f\n", pos.X, pos.Y, pos.Z, t)
 	nx := normalizeAndQuantize(pos.X, bounds.Min.X, bounds.Max.X)
 	ny := normalizeAndQuantize(pos.Y, bounds.Min.Y, bounds.Max.Y)
 	nz := normalizeAndQuantize(pos.Z, bounds.Min.Z, bounds.Max.Z)
 	nt := normalizeAndQuantize(t, bounds.TMin, bounds.TMax)
 
 	code := interleaveBits4D(nx, ny, nz, nt)
-	fmt.Printf("DEBUG: Exit mortonCode result=0x%X\n", code)
 	return code
 }
 
@@ -178,7 +167,6 @@ func normalizeAndQuantize(val, min, max float64) uint32 {
  * Exit Point: Trace end.
  */
 func interleaveBits4D(x, y, z, t uint32) uint64 {
-	fmt.Printf("DEBUG: Entry interleaveBits4D\n")
 	var code uint64
 	for i := 0; i < mortonBitsPerAxis; i++ {
 		code |= uint64((x>>i)&1) << (i * 4)
@@ -186,7 +174,6 @@ func interleaveBits4D(x, y, z, t uint32) uint64 {
 		code |= uint64((z>>i)&1) << (i*4 + 2)
 		code |= uint64((t>>i)&1) << (i*4 + 3)
 	}
-	fmt.Printf("DEBUG: Exit interleaveBits4D result=0x%X\n", code)
 	return code
 }
 
@@ -206,9 +193,7 @@ type mortonItem struct {
  * Exit Point: Logs result tree root.
  */
 func NewBVH(objects []BVHObject) *BVH {
-	fmt.Printf("DEBUG: Entry NewBVH count=%d\n", len(objects))
 	if len(objects) == 0 {
-		fmt.Printf("DEBUG: Exit NewBVH empty\n")
 		return &BVH{}
 	}
 
@@ -245,7 +230,6 @@ func NewBVH(objects []BVHObject) *BVH {
 	// Build BVH from sorted items
 	root := buildBVHRecursive(items, bounds)
 
-	fmt.Printf("DEBUG: Exit NewBVH successful construction\n")
 	return &BVH{
 		Root:    root,
 		Objects: objects,
@@ -260,7 +244,6 @@ func NewBVH(objects []BVHObject) *BVH {
  * Exit Point: Logs result node leaf/internal status.
  */
 func buildBVHRecursive(items []mortonItem, bounds AABB) *BVHNode {
-	fmt.Printf("DEBUG: Entry buildBVHRecursive count=%d\n", len(items))
 	if len(items) == 0 {
 		return nil
 	}
@@ -274,7 +257,6 @@ func buildBVHRecursive(items []mortonItem, bounds AABB) *BVHNode {
 			Object: items[0].object,
 			IsLeaf: true,
 		}
-		fmt.Printf("DEBUG: Exit buildBVHRecursive: Leaf created\n")
 		return res
 	}
 
@@ -301,7 +283,6 @@ func buildBVHRecursive(items []mortonItem, bounds AABB) *BVHNode {
 		Right:  right,
 		IsLeaf: false,
 	}
-	fmt.Printf("DEBUG: Exit buildBVHRecursive: Internal node created\n")
 	return res
 }
 
@@ -312,15 +293,12 @@ func buildBVHRecursive(items []mortonItem, bounds AABB) *BVHNode {
  * Exit Point: Logs result object count.
  */
 func (bvh *BVH) QueryRange(min, max octree.Vector3, tMin, tMax float64) []BVHObject {
-	fmt.Printf("DEBUG: Entry BVH.QueryRange t=[%.2f, %.2f]\n", tMin, tMax)
 	if bvh.Root == nil {
-		fmt.Printf("DEBUG: Exit BVH.QueryRange: Root is nil\n")
 		return nil
 	}
 	queryBox := AABB{Min: min, Max: max, TMin: tMin, TMax: tMax}
 	var results []BVHObject
 	bvh.Root.queryRange(queryBox, &results)
-	fmt.Printf("DEBUG: Exit BVH.QueryRange found %d objects\n", len(results))
 	return results
 }
 
@@ -351,9 +329,7 @@ func (n *BVHNode) queryRange(query AABB, results *[]BVHObject) {
  * Exit Point: Logs result pair count.
  */
 func (bvh *BVH) FindPotentialPairs() [][2]BVHObject {
-	fmt.Printf("DEBUG: Entry BVH.FindPotentialPairs\n")
 	if bvh.Root == nil {
-		fmt.Printf("DEBUG: Exit BVH.FindPotentialPairs: empty\n")
 		return nil
 	}
 
@@ -364,7 +340,6 @@ func (bvh *BVH) FindPotentialPairs() [][2]BVHObject {
 	for _, pair := range pairSet {
 		pairs = append(pairs, pair)
 	}
-	fmt.Printf("DEBUG: Exit BVH.FindPotentialPairs found %d potential conjunctions\n", len(pairs))
 	return pairs
 }
 
@@ -440,38 +415,44 @@ func makeAndStorePair(pairSet *map[uint64][2]BVHObject, a, b BVHObject) {
 }
 
 /**
- * Insert adds a new BVHObject to the structure. 
- * Due to the tight spatial coherence required for SSA, it performs a 
- * full tree rebuild for optimal structure.
- * Entry Point: Logs object ID.
- * Exit Point: Trace end.
+ * Insert adds a single BVHObject to the structure.
+ * Note: This triggers a full O(n log n) rebuild. For bulk insertions,
+ * prefer InsertBatch to avoid O(n² log n) cost.
  */
 func (bvh *BVH) Insert(obj BVHObject) {
-	fmt.Printf("DEBUG: Entry BVH.Insert ID=%d\n", obj.GetID())
 	bvh.Objects = append(bvh.Objects, obj)
 	newBVH := NewBVH(bvh.Objects)
 	*bvh = *newBVH
-	fmt.Printf("DEBUG: Exit BVH.Insert successful rebuild\n")
+}
+
+/**
+ * InsertBatch adds multiple BVHObjects and rebuilds the tree once.
+ * Complexity: O((n+m) log (n+m)) where n = existing objects, m = new objects.
+ * This avoids the O(m × n log n) cost of calling Insert in a loop.
+ */
+func (bvh *BVH) InsertBatch(objects []BVHObject) {
+	if len(objects) == 0 {
+		return
+	}
+	bvh.Objects = append(bvh.Objects, objects...)
+	newBVH := NewBVH(bvh.Objects)
+	*bvh = *newBVH
 }
 
 /**
  * Rebuild manually triggers a full ST-BVH reconstruction.
  */
 func (bvh *BVH) Rebuild() {
-	fmt.Printf("DEBUG: Entry BVH.Rebuild\n")
 	if len(bvh.Objects) > 0 {
 		newBVH := NewBVH(bvh.Objects)
 		*bvh = *newBVH
 	}
-	fmt.Printf("DEBUG: Exit BVH.Rebuild successful\n")
 }
 
 /**
  * Clear purges all objects and resets the hierarchy.
  */
 func (bvh *BVH) Clear() {
-	fmt.Printf("DEBUG: Entry BVH.Clear\n")
 	bvh.Root = nil
 	bvh.Objects = nil
-	fmt.Printf("DEBUG: Exit BVH.Clear successful\n")
 }

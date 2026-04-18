@@ -2,10 +2,18 @@ package orbital
 
 import (
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
 )
 
 func TestDiscoveryBridge(t *testing.T) {
+	// Pre-flight: check that python3 with jax is available
+	out, err := exec.Command("python3", "-c", "import jax").CombinedOutput()
+	if err != nil {
+		t.Skipf("Skipping: Python jax not available (%v: %s)", err, strings.TrimSpace(string(out)))
+	}
+
 	// 1. Create a dummy weights file for testing
 	weightsPath := "test_axiom_weights.json"
 	
@@ -17,7 +25,7 @@ func TestDiscoveryBridge(t *testing.T) {
 		"den": [[[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0]]]
 	}`
 	
-	err := os.WriteFile(weightsPath, []byte(mockWeights), 0644)
+	err = os.WriteFile(weightsPath, []byte(mockWeights), 0644)
 	if err != nil {
 		t.Fatalf("failed to write mock weights: %v", err)
 	}

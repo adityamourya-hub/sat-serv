@@ -186,7 +186,6 @@ func (r *Runtime) alertDispatcher() {
  */
 func (r *Runtime) ukfWorker(id int, queue chan *types.Observation) {
 	defer r.wg.Done()
-	fmt.Printf("DEBUG: UKF Worker %d online\n", id)
 	for {
 		select {
 		case <-r.stop:
@@ -198,18 +197,15 @@ func (r *Runtime) ukfWorker(id int, queue chan *types.Observation) {
 			start := time.Now()
 
 			r.onnxPool.Sensing.Infer(map[string]interface{}{"iq_samples": []float32{0}})
-			_, failover, err := r.propagator.Propagate(1.0)
-			if err == nil {
-				fmt.Printf("DEBUG: Target %s transitioned. Failover: %v\n", obs.TargetID, failover)
-			}
+			_, failover, _ := r.propagator.Propagate(1.0)
 			if failover {
 				r.metrics.MarkBackpressure()
 			}
-			r.metrics.QueueDepth = r.metrics.QueueDepth - 1
-			r.metrics.ActiveWorkers = r.metrics.ActiveWorkers + 1
+			atomic.AddInt64(&r.metrics.QueueDepth, -1)
+			atomic.AddInt64(&r.metrics.ActiveWorkers, 1)
 			r.metrics.RecordServiceTime(time.Since(start))
 			r.metrics.IncProcessed()
-			r.metrics.ActiveWorkers = r.metrics.ActiveWorkers - 1
+			atomic.AddInt64(&r.metrics.ActiveWorkers, -1)
 			PutObservation(obs)
 		}
 	}

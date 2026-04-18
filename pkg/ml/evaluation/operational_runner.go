@@ -112,13 +112,12 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 	orch := hybrid.NewOrchestrator(engine)
 	signer, signErr := engcrypto.NewSignerFromEnv("SSIS_SIGNING_KEY")
 	if signErr != nil {
-		common.EmitFallbackEvent("crypto", "operational_runner", "signer_init_failed", "unsigned_alerts", 0.0, strict, map[string]interface{}{"error": signErr.Error()})
+		common.EmitFallbackEvent("crypto", "operational_runner", "signer_init_failed", "use_deterministic_signer", 0.0, strict, map[string]interface{}{"error": signErr.Error()})
 		if strict {
 			return OperationalRunMetrics{}, fmt.Errorf("strict mode: signer init failed: %w", signErr)
 		}
-		fmt.Fprintf(os.Stderr, "warning: signer init failed: %v\n", signErr)
-		fmt.Fprintf(os.Stderr, "continuing with unsigned alerts for operational simulation\n")
-		signer = nil
+		fmt.Fprintf(os.Stderr, "warning: signer init failed: %v; using deterministic fallback signer\n", signErr)
+		signer = engcrypto.NewSigner("operational-sim-fallback")
 	}
 
 	cycleSteps := cfg.WatchHours * 12 // 5-minute ticks over full watch cycle

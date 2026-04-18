@@ -336,6 +336,6 @@ func ExtractCountryCode(tleLine1 string) string {
 			return "GBR"
 		}
 	}
-	// Default fallback to IND for the Sovereign Indian Catalog
-	return "IND"
+	// Default fallback for unknown designators
+	return "UNK"
 }

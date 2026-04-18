@@ -61,9 +61,18 @@ func ExplainRapid(track hypersonic.RapidTrack, inference hypersonic.RapidRankInf
 		"radar_cross_section":   track.RadarCrossSection,
 	}
 
-	shap := make([]SHAPFeature, 0, len(inference.FeatureWeights))
+	// Use provided FeatureWeights or generate heuristic attributions from raw feature values
+	weights := inference.FeatureWeights
+	if len(weights) == 0 {
+		weights = make(map[string]float64, len(features))
+		for k, v := range features {
+			weights[k] = v
+		}
+	}
+
+	shap := make([]SHAPFeature, 0, len(weights))
 	totalAbs := 0.0
-	for k, raw := range inference.FeatureWeights {
+	for k, raw := range weights {
 		totalAbs += math.Abs(raw)
 		shap = append(shap, SHAPFeature{Feature: k, Value: features[k], Contribution: raw})
 	}
@@ -171,11 +180,19 @@ func BuildAttentionFromWindow(window []maneuver.ManeuverFrame) []AttentionPoint 
 }
 
 // SummarizeUncertainty computes width diagnostics from prediction bounds.
+// When lower==upper (no bounds provided), it synthesizes a confidence-based interval.
 func SummarizeUncertainty(mean, lower, upper, confidence float64) UncertaintySummary {
 	if lower > upper {
 		lower, upper = upper, lower
 	}
 	width := upper - lower
+	// Synthesize bounds when caller provides none (both zero or equal)
+	if width <= 0 && mean != 0 {
+		margin := math.Max(0.05, 0.5*(1.0-confidence)) * math.Abs(mean)
+		lower = mean - margin
+		upper = mean + margin
+		width = upper - lower
+	}
 	den := math.Max(math.Abs(mean), 1e-9)
 	return UncertaintySummary{
 		Mean:          mean,

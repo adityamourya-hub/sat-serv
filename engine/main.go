@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"syscall"
@@ -63,7 +62,8 @@ func main() {
 	// 2. Initialize Crypto (load from environment)
 	signer, err := crypto.NewSignerFromEnv("SSIS_SIGNING_KEY")
 	if err != nil {
-		fmt.Printf("DEBUG: Using default signer for environment without keys.\n")
+		fmt.Fprintf(os.Stderr, "CRITICAL: No signing key found (SSIS_SIGNING_KEY env). Production deployments MUST set this. Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "CRITICAL: Falling back to deterministic key — signatures are NOT tamper-proof.\n")
 		signer = crypto.NewSigner("default-seed")
 	}
 
@@ -94,7 +94,7 @@ func main() {
 	engineRuntime.Start()
 
 	// 6. Load Initial Catalogue
-	data, err := ioutil.ReadFile("assets/indian_satellite_catalogue.json")
+	data, err := os.ReadFile("assets/indian_satellite_catalogue.json")
 	if err == nil {
 		var cat Catalogue
 		if err := json.Unmarshal(data, &cat); err == nil {

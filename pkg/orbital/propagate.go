@@ -1,6 +1,7 @@
 package orbital
 
 import (
+	"fmt"
 	"math"
 	"reflect"
 	"time"
@@ -25,8 +26,6 @@ const (
 // MaxPropagationDays defines the stability limit for analytical propagation (10 years).
 const MaxPropagationDays = 365 * 10
 
-var A int // Helper variable for Julian date conversion
-
 /**
  * JulianToCalendar converts a fractional Julian Date (JD) into its Gregorian calendar 
  * components (year, month, day, hour, minute, second).
@@ -38,6 +37,7 @@ func JulianToCalendar(jd float64) (year, month, day, hour, minute, second int) {
 	jd = jd + 0.5
 	Z := int(jd)
 	F := jd - float64(Z)
+	var A int
 	if Z < 2299161 {
 		A = Z
 	} else {
@@ -164,11 +164,11 @@ func DefaultPropagatorConfig() PropagatorConfig {
  */
 func NewPropagator(tle *TLE) (Propagator, error) {
 	if tle == nil {
-		return nil,  nil // Error handling handled at call site or returned below
+		return nil, fmt.Errorf("NewPropagator: nil TLE provided")
 	}
 	p := NewSGP4Propagator(tle)
 	if p == nil {
-		return nil,  nil
+		return nil, fmt.Errorf("NewPropagator: SGP4 initialization failed")
 	}
 	return p, nil
 }
@@ -180,7 +180,7 @@ func NewPropagator(tle *TLE) (Propagator, error) {
  */
 func NewPropagatorWithConfig(tle *TLE, config PropagatorConfig) (Propagator, error) {
 	if tle == nil {
-		return nil,  nil 
+		return nil, fmt.Errorf("NewPropagatorWithConfig: nil TLE provided")
 	}
 
 	switch config.Type {
@@ -213,10 +213,10 @@ func NewPropagatorWithConfig(tle *TLE, config PropagatorConfig) (Propagator, err
 		if config.FallbackToSGP4 {
 			return NewSGP4Propagator(tle), nil
 		}
-		return nil,  nil
+		return nil, fmt.Errorf("NewPropagatorWithConfig: AXIOM_ONNX not yet implemented")
 
 	default:
-		return nil,  nil
+		return nil, fmt.Errorf("NewPropagatorWithConfig: unknown propagator type %q", config.Type)
 	}
 }
 
@@ -228,7 +228,7 @@ func NewPropagatorWithConfig(tle *TLE, config PropagatorConfig) (Propagator, err
 func (p *SGP4Propagator) Propagate(minutesSinceEpoch float64) (State, error) {
 	// 1. Stability Check (Limit propagation to +/- 10 years to prevent SGP4 divergence)
 	if math.Abs(minutesSinceEpoch) > MaxPropagationDays*1440 {
-		return State{},  nil
+		return State{}, fmt.Errorf("SGP4Propagator.Propagate: exceeds %d-day stability limit", MaxPropagationDays)
 	}
 
 	// 2. High-precision Julian Day calculation
@@ -242,7 +242,7 @@ func (p *SGP4Propagator) Propagate(minutesSinceEpoch float64) (State, error) {
 
 	// Guard against NaN/Inf divergence
 	if math.IsNaN(pos.X) || math.IsInf(pos.X, 0) {
-		return State{},  nil
+		return State{}, fmt.Errorf("SGP4Propagator.Propagate: numerical divergence (NaN/Inf) at t=%.2f min", minutesSinceEpoch)
 	}
 
 	st := State{
@@ -301,13 +301,9 @@ func VectorToState(v []float64) State {
 /**
  * PropagateCartesianState performs numerical integration of orbital states 
  * using a 4th-Order Runge-Kutta (RK4) method with a fine-grained 10s step size.
+ * Zero-allocation inner loop: uses stack-allocated [6]float64 scratch arrays.
  */
 func PropagateCartesianState(x []float64, dt float64, jd float64) []float64 {
-	f := func(t float64, y []float64) []float64 {
-		ax, ay, az := OrbitalAcceleration(y[0], y[1], y[2], y[3], y[4], y[5], jd)
-		return []float64{y[3], y[4], y[5], ax, ay, az}
-	}
-
 	h := 10.0 // 10 sec step for inner RK4
 	if dt < 0 {
 		h = -10.0
@@ -315,31 +311,57 @@ func PropagateCartesianState(x []float64, dt float64, jd float64) []float64 {
 	if math.Abs(dt) < math.Abs(h) {
 		h = dt
 	}
-	curr := make([]float64, len(x))
-	copy(curr, x)
+	var curr [6]float64
+	copy(curr[:], x[:6])
 	elapsed := 0.0
+
+	// Pre-allocate scratch arrays on the stack (zero heap allocation per step)
+	var k1, k2, k3, k4, tmp [6]float64
+
 	for math.Abs(elapsed) < math.Abs(dt) {
 		step := h
 		if math.Abs(dt-elapsed) < math.Abs(h) {
 			step = dt - elapsed
 		}
-		// RK4 implementation
-		k1 := f(0, curr)
-		k2 := f(0, vecAddScaled(curr, k1, step*0.5))
-		k3 := f(0, vecAddScaled(curr, k2, step*0.5))
-		k4 := f(0, vecAddScaled(curr, k3, step))
 
+		// k1 = f(curr)
+		ax, ay, az := OrbitalAcceleration(curr[0], curr[1], curr[2], curr[3], curr[4], curr[5], jd)
+		k1 = [6]float64{curr[3], curr[4], curr[5], ax, ay, az}
+
+		// k2 = f(curr + 0.5*step*k1)
 		for i := 0; i < 6; i++ {
-			curr[i] += (step / 6.0) * (k1[i] + 2*k2[i] + 2*k3[i] + k4[i])
+			tmp[i] = curr[i] + k1[i]*step*0.5
+		}
+		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd)
+		k2 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
+
+		// k3 = f(curr + 0.5*step*k2)
+		for i := 0; i < 6; i++ {
+			tmp[i] = curr[i] + k2[i]*step*0.5
+		}
+		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd)
+		k3 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
+
+		// k4 = f(curr + step*k3)
+		for i := 0; i < 6; i++ {
+			tmp[i] = curr[i] + k3[i]*step
+		}
+		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd)
+		k4 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
+
+		// Update: curr += (step/6) * (k1 + 2*k2 + 2*k3 + k4)
+		s6 := step / 6.0
+		for i := 0; i < 6; i++ {
+			curr[i] += s6 * (k1[i] + 2*k2[i] + 2*k3[i] + k4[i])
 		}
 		elapsed += step
 	}
-	return curr
+	return curr[:]
 }
 
 /**
- * vecAddScaled is a private utility for vector-scalar scaled addition 
- * used within the RK4 integration loop.
+ * vecAddScaled is a private utility for vector-scalar scaled addition.
+ * Retained for external callers; internal RK4 loop uses stack arrays directly.
  */
 func vecAddScaled(v, dv []float64, s float64) []float64 {
 	res := make([]float64, len(v))

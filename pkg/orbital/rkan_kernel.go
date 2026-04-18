@@ -166,6 +166,7 @@ func (k *RKANKernel) getPhysicalFeatures(q, p [3]float64, jd float64) []float64 
 
 /**
  * Forward computes the scalar potential V(q, p) at a given epoch.
+ * Includes NaN/Inf guard to prevent silent numerical corruption.
  */
 func (k *RKANKernel) Forward(q, p [3]float64, jd float64) float64 {
 	features := k.getPhysicalFeatures(q, p, jd)
@@ -187,9 +188,16 @@ func (k *RKANKernel) Forward(q, p [3]float64, jd float64) float64 {
 			denVal += basis[d] * k.Den[outIdx][i][d]
 		}
 
-		totalV += numVal / (1.0 + math.Abs(denVal))
+		term := numVal / (1.0 + math.Abs(denVal))
+		if math.IsNaN(term) || math.IsInf(term, 0) {
+			return 0.0
+		}
+		totalV += term
 	}
 
+	if math.IsNaN(totalV) || math.IsInf(totalV, 0) {
+		return 0.0
+	}
 	return totalV
 }
 
@@ -208,7 +216,11 @@ func (k *RKANKernel) GetAcceleration(q, p [3]float64, jd float64) [3]float64 {
 
 		vPlus := k.Forward(qPlus, p, jd)
 		vMinus := k.Forward(qMinus, p, jd)
-		accel[i] = -(vPlus - vMinus) / (2.0 * h)
+		a := -(vPlus - vMinus) / (2.0 * h)
+		if math.IsNaN(a) || math.IsInf(a, 0) {
+			return [3]float64{0, 0, 0}
+		}
+		accel[i] = a
 	}
 
 	return accel
