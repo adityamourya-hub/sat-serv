@@ -1,0 +1,122 @@
+[
+  {
+    "name": "leo_nominal_1",
+    "miss_r_km": 0.12,
+    "miss_i_km": 0.08,
+    "sigma_r2_km2": 0.0004,
+    "sigma_i2_km2": 0.0003,
+    "sigma_ri_km2": 0,
+    "hardbody_radius_km": 0.005,
+    "relative_velocity_km_s": 10.2,
+    "reference_pc": 2.0016569313616732e-14,
+    "tolerance_abs": 1e-12
+  },
+  {
+    "name": "leo_nominal_2",
+    "miss_r_km": 0.25,
+    "miss_i_km": 0.14,
+    "sigma_r2_km2": 0.0009,
+    "sigma_i2_km2": 0.0005,
+    "sigma_ri_km2": 0,
+    "hardbody_radius_km": 0.005,
+    "relative_velocity_km_s": 9.4,
+    "reference_pc": 4.650003313421475e-25,
+    "tolerance_abs": 1e-12
+  },
+  {
+    "name": "leo_high_velocity",
+    "miss_r_km": 0.09,
+    "miss_i_km": 0.07,
+    "sigma_r2_km2": 0.00025,
+    "sigma_i2_km2": 0.00021,
+    "sigma_ri_km2": 0,
+    "hardbody_radius_km": 0.004,
+    "relative_velocity_km_s": 14,
+    "reference_pc": 0.0028495423783673926,
+    "tolerance_abs": 1e-12
+  },
+  {
+    "name": "meo_sparse_cov",
+    "miss_r_km": 0.5,
+    "miss_i_km": 0.3,
+    "sigma_r2_km2": 0.003,
+    "sigma_i2_km2": 0.002,
+    "sigma_ri_km2": 0,
+    "hardbody_radius_km": 0.01,
+    "relative_velocity_km_s": 6.5,
+    "reference_pc": 3.1429127935032384e-29,
+    "tolerance_abs": 1e-12
+  },
+  {
+    "name": "geo_wide_miss",
+    "miss_r_km": 1.2,
+    "miss_i_km": 0.9,
+    "sigma_r2_km2": 0.02,
+    "sigma_i2_km2": 0.015,
+    "sigma_ri_km2": 0,
+    "hardbody_radius_km": 0.02,
+    "relative_velocity_km_s": 3.2,
+    "reference_pc": 1.086898121322602e-28,
+    "tolerance_abs": 1e-12
+  },
+  {
+    "name": "correlated_covariance",
+    "miss_r_km": 0.18,
+    "miss_i_km": 0.11,
+    "sigma_r2_km2": 0.0006,
+    "sigma_i2_km2": 0.00055,
+    "sigma_ri_km2": 0.00022,
+    "hardbody_radius_km": 0.005,
+    "relative_velocity_km_s": 10.1,
+    "reference_pc": 7.04700944506409e-15,
+    "tolerance_abs": 1e-12
+  },
+  {
+    "name": "near_headon",
+    "miss_r_km": 0.06,
+    "miss_i_km": 0.04,
+    "sigma_r2_km2": 0.0002,
+    "sigma_i2_km2": 0.00018,
+    "sigma_ri_km2": 0.00003,
+    "hardbody_radius_km": 0.004,
+    "relative_velocity_km_s": 15.7,
+    "reference_pc": 0.005277757994942626,
+    "tolerance_abs": 1e-12
+  },
+  {
+    "name": "gto_crossing",
+    "miss_r_km": 0.42,
+    "miss_i_km": 0.22,
+    "sigma_r2_km2": 0.0018,
+    "sigma_i2_km2": 0.0011,
+    "sigma_ri_km2": 0.00012,
+    "hardbody_radius_km": 0.008,
+    "relative_velocity_km_s": 7.8,
+    "reference_pc": 5.4383075575087376e-30,
+    "tolerance_abs": 1e-12
+  },
+  {
+    "name": "leo_dense_cov",
+    "miss_r_km": 0.1,
+    "miss_i_km": 0.1,
+    "sigma_r2_km2": 0.0008,
+    "sigma_i2_km2": 0.0008,
+    "sigma_ri_km2": 0.0001,
+    "hardbody_radius_km": 0.006,
+    "relative_velocity_km_s": 11.3,
+    "reference_pc": 3.7360829364860153e-7,
+    "tolerance_abs": 1e-12
+  },
+  {
+    "name": "high_aspect_ratio",
+    "miss_r_km": 0.28,
+    "miss_i_km": 0.05,
+    "sigma_r2_km2": 0.004,
+    "sigma_i2_km2": 0.00008,
+    "sigma_ri_km2": 0,
+    "hardbody_radius_km": 0.005,
+    "relative_velocity_km_s": 8.9,
+    "reference_pc": 5.366716945102409e-13,
+    "tolerance_abs": 1e-12
+  }
+]

@@ -1,0 +1,186 @@
+// server.proto
+// Axiom-Zero SSIS Production Interface Definition — Phase 1.4
+// Implements multi-service architecture (Ingestion/Alert) and AI Explainability (SHAP).
+// <plan_complexity>Medium</plan_complexity><total_lines_estimate>200</total_lines_estimate>
+
+syntax = "proto3";
+package ssis.v1;
+option go_package = "ssis/pkg/server";
+
+import "google/protobuf/timestamp.proto";
+
+/**
+ * AlertType identifies the semantic nature of an engine-generated event.
+ */
+enum AlertType {
+    UNKNOWN_TYPE = 0;
+    CONJUNCTION = 1;
+    MANEUVER = 2;
+    SENSOR_TASKING_REQUEST = 3;
+    RE_ENTRY = 4;
+}
+
+/**
+ * AlertPriority defines the tactical urgency of an alert.
+ */
+enum AlertPriority {
+    UNSPECIFIED = 0;
+    LOW = 1;
+    MEDIUM = 2;
+    HIGH = 3;
+    CRITICAL = 4;
+}
+
+/**
+ * SHAPAttribution provides feature-level explainability for AI detections.
+ * It maps input features (innovation residuals, telemetry) to their 
+ * Shapley values to justify a specific tactical alert.
+ */
+message SHAPAttribution {
+    map<string, float> feature_scores = 1; // e.g. "vx_residual": 0.85
+    float base_value = 2;                  // The model baseline probability
+    string explanation_summary = 3;        // Human-readable tactical justification
+}
+
+/**
+ * Vector3 represents a 3D Cartesian coordinate or velocity.
+ */
+message Vector3 {
+    double x = 1;
+    double y = 2;
+    double z = 3;
+}
+
+/**
+ * ObjectRecord defines the state and metadata of a tracked space object.
+ */
+message ObjectRecord {
+    int32 id = 1;
+    string name = 2;
+    string country_code = 3;
+    Vector3 pos = 4;
+    Vector3 vel = 5;
+    string tle_line1 = 6;
+    string tle_line2 = 7;
+    double timestamp = 8;
+}
+
+/**
+ * ScanRequest defines the ROI for spatial proximity queries.
+ */
+message ScanRequest {
+    double lat = 1;
+    double lon = 2;
+    double radius = 3;
+    int64 epoch_unix = 4;
+}
+
+/**
+ * ScanResponse contains results and evidence signature.
+ */
+message ScanResponse {
+    repeated ObjectRecord objects = 1;
+    string signature = 2;
+}
+
+/**
+ * Observation represents a raw sensor packet (Radar/Optical).
+ */
+message Observation {
+    string sensor_id = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    oneof measurement {
+        RadarMeasurement radar = 3;
+        OpticalMeasurement optical = 4;
+    }
+}
+
+message RadarMeasurement {
+    string target_id = 1;
+    double range_km = 2;
+    double range_rate_kms = 3;
+    double azimuth_deg = 4;
+    double elevation_deg = 5;
+    double rcs_dbm = 6; // Radar Cross Section
+    double snr_db = 7;  // Signal-to-Noise Ratio
+}
+
+message OpticalMeasurement {
+    string target_id = 1;
+    double ra_deg = 2;  // Right Ascension
+    double dec_deg = 3; // Declination
+    double magnitude = 4;
+}
+
+message IngestAck {
+    string trace_id = 1;
+    bool success = 2;
+    string error = 3;
+}
+
+/**
+ * AlertSubscription defines filters for receiving real-time alerts.
+ */
+message AlertSubscription {
+    string subscriber_id = 1;
+    repeated string object_ids = 2;
+    double min_probability = 3;
+    AlertPriority min_priority = 4;
+}
+
+/**
+ * Alert defines a critical event with causal explainability.
+ */
+message Alert {
+    string alert_id = 1;
+    AlertType type = 2;
+    AlertPriority priority = 3;
+    string target_id = 4;
+    string secondary_id = 5;
+    double probability = 6;
+    string signature = 7;
+    string message = 8;
+    double kl_divergence = 9;
+    SHAPAttribution explanation = 10;
+}
+
+message PcRequest {
+    double miss_distance = 1;
+    double primary_sigma_r = 2;
+    double primary_sigma_i = 3;
+    double secondary_sigma_r = 4;
+    double secondary_sigma_i = 5;
+    double hbr = 6;
+}
+
+message PcResult {
+    double probability = 1;
+    string stage = 2;
+    string signature = 3;
+}
+
+/**
+ * IngestionService handles high-throughput sensor data ingestion.
+ */
+service IngestionService {
+    rpc StreamObservations(stream Observation) returns (IngestAck);
+    rpc IngestObservation(Observation) returns (IngestAck);
+}
+
+/**
+ * AlertService manages subscription and dispatch of tactical alerts.
+ */
+service AlertService {
+    rpc SubscribeAlerts(AlertSubscription) returns (stream Alert);
+}
+
+/**
+ * SSISService (DEPRECATED): Maintained for Phase 0 compatibility.
+ */
+service SSISService {
+    option deprecated = true;
+    rpc ScanGroundRegion(ScanRequest) returns (ScanResponse);
+    rpc CalculatePc(PcRequest) returns (PcResult);
+    rpc StreamObservations(stream Observation) returns (IngestAck);
+    rpc SubscribeAlerts(AlertSubscription) returns (stream Alert);
+}

@@ -1,0 +1,428 @@
+syntax = "proto3";
+package ssis.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "ssis/pkg/proto/ssis/v1";
+
+// SpaceEngine provides real-time space situational awareness services
+service SpaceEngine {
+  // IngestObservation receives sensor data from radar, optical, SAR, or NavIC sources
+  // Supports both unary (low-rate) and streaming (high-rate) ingestion
+  rpc IngestObservation(stream Observation) returns (stream IngestAck);
+  
+  // SubscribeAlerts provides real-time conjunction and anomaly alerts
+  // Server streaming for continuous alert delivery
+  rpc SubscribeAlerts(AlertSubscription) returns (stream Alert);
+  
+  // QueryCatalog queries the satellite catalog with spatial and temporal filters
+  rpc QueryCatalog(CatalogQuery) returns (CatalogResponse);
+  
+  // GetObjectState retrieves current state vector for a specific object
+  rpc GetObjectState(ObjectRequest) returns (ObjectState);
+  
+  // OperatorSession provides bidirectional communication for operator commands
+  rpc OperatorSession(stream OperatorCommand) returns (stream SystemState);
+}
+
+// Observation represents a single sensor measurement
+message Observation {
+  string observation_id = 1;
+  string sensor_id = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  ObservationType type = 4;
+  
+  oneof measurement {
+    RadarMeasurement radar = 10;
+    OpticalMeasurement optical = 11;
+    SarMeasurement sar = 12;
+    NavICMeasurement navic = 13;
+  }
+  
+  // Signature for integrity verification (HMAC-SHA256)
+  bytes signature = 100;
+}
+
+enum ObservationType {
+  OBSERVATION_TYPE_UNSPECIFIED = 0;
+  OBSERVATION_TYPE_RADAR = 1;
+  OBSERVATION_TYPE_OPTICAL = 2;
+  OBSERVATION_TYPE_SAR = 3;
+  OBSERVATION_TYPE_NAVIC = 4;
+}
+
+// RadarMeasurement from ATeena or similar phased-array radar
+message RadarMeasurement {
+  string target_id = 1;  // Empty for new detections
+  double range_km = 2;
+  double range_rate_kms = 3;
+  double azimuth_deg = 4;
+  double elevation_deg = 5;
+  double rcs_dbm = 6;    // Radar cross-section
+  double snr_db = 7;
+  
+  // Measurement covariance (diagonal elements only for efficiency)
+  // Order: [range, range_rate, azimuth, elevation]
+  repeated double covariance_diag = 8;
+  
+  // Radar-specific metadata
+  double beam_width_deg = 20;
+  double pulse_width_us = 21;
+  double prf_hz = 22;
+}
+
+// OpticalMeasurement from telescope or space-based sensor
+message OpticalMeasurement {
+  string target_id = 1;
+  double ra_deg = 2;     // Right ascension
+  double dec_deg = 3;    // Declination
+  double magnitude = 4;  // Visual magnitude
+  
+  // Measurement covariance
+  repeated double covariance_diag = 5;  // [ra, dec]
+  
+  // Optical-specific metadata
+  string filter_band = 10;  // e.g., "V", "R", "I"
+  double exposure_sec = 11;
+  double seeing_arcsec = 12;
+}
+
+// SarMeasurement from RISAT or similar SAR/ISAR system
+message SarMeasurement {
+  string target_id = 1;
+  double range_km = 2;
+  double range_rate_kms = 3;
+  
+  // ISAR-derived parameters (when available)
+  double cross_range_m = 10;
+  double rotation_rate_degs = 11;
+  
+  // Image quality metrics
+  double resolution_m = 20;
+  double image_snr_db = 21;
+}
+
+// NavICMeasurement from IRNSS/GNSS receiver
+message NavICMeasurement {
+  // Dual-frequency pseudorange measurements for TEC calculation
+  double pseudorange_l5_m = 1;
+  double pseudorange_s_m = 2;
+  double carrier_phase_l5_cycles = 3;
+  double carrier_phase_s_cycles = 4;
+  
+  // Signal quality
+  double cn0_l5_dbhz = 10;
+  double cn0_s_dbhz = 11;
+  
+  // Satellite geometry
+  double elevation_deg = 20;
+  double azimuth_deg = 21;
+  string navic_satellite_id = 22;  // e.g., "NAVIC-1A"
+}
+
+// IngestAck acknowledges observation ingestion with processing status
+message IngestAck {
+  string observation_id = 1;
+  google.protobuf.Timestamp received_timestamp = 2;
+  IngestStatus status = 3;
+  string message = 4;
+  
+  // Latency metrics for monitoring
+  int32 queue_latency_ms = 10;
+  int32 processing_latency_ms = 11;
+}
+
+enum IngestStatus {
+  INGEST_STATUS_UNSPECIFIED = 0;
+  INGEST_STATUS_ACCEPTED = 1;
+  INGEST_STATUS_QUEUED = 2;
+  INGEST_STATUS_PROCESSING = 3;
+  INGEST_STATUS_REJECTED_INVALID = 10;
+  INGEST_STATUS_REJECTED_UNAUTHORIZED = 11;
+  INGEST_STATUS_REJECTED_OVERFLOW = 12;
+}
+
+// Alert represents a conjunction, maneuver, or anomaly event
+message Alert {
+  string alert_id = 1;
+  AlertType type = 2;
+  AlertPriority priority = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  google.protobuf.Timestamp tca = 5;  // Time of closest approach (for conjunctions)
+  
+  // Affected objects
+  string primary_object_id = 10;
+  string secondary_object_id = 11;  // For conjunctions
+  
+  // Alert-specific data
+  oneof details {
+    ConjunctionDetails conjunction = 20;
+    ManeuverDetails maneuver = 21;
+    AnomalyDetails anomaly = 22;
+  }
+  
+  // Explainable AI attribution
+  SHAPAttribution explanation = 100;
+}
+
+enum AlertType {
+  ALERT_TYPE_UNSPECIFIED = 0;
+  ALERT_TYPE_CONJUNCTION = 1;
+  ALERT_TYPE_MANEUVER = 2;
+  ALERT_TYPE_COLLISION_RISK = 3;
+  ALERT_TYPE_REENTRY = 4;
+  ALERT_TYPE_ANOMALY = 5;
+}
+
+enum AlertPriority {
+  ALERT_PRIORITY_UNSPECIFIED = 0;
+  ALERT_PRIORITY_CRITICAL = 1;  // Immediate action required
+  ALERT_PRIORITY_HIGH = 2;      // Within 24 hours
+  ALERT_PRIORITY_MEDIUM = 3;    // Within 1 week
+  ALERT_PRIORITY_LOW = 4;     // Informational
+}
+
+message ConjunctionDetails {
+  double miss_distance_km = 1;
+  double relative_velocity_kms = 2;
+  double collision_probability = 3;
+  double radial_uncertainty_km = 4;
+  double in_track_uncertainty_km = 5;
+  double cross_track_uncertainty_km = 6;
+}
+
+message ManeuverDetails {
+  double delta_v_ms = 1;        // Estimated maneuver magnitude
+  double confidence = 2;         // Detection confidence [0, 1]
+  ManeuverType maneuver_type = 3;
+}
+
+enum ManeuverType {
+  MANEUVER_TYPE_UNSPECIFIED = 0;
+  MANEUVER_TYPE_IMPULSIVE = 1;     // Station-keeping, collision avoidance
+  MANEUVER_TYPE_CONTINUOUS = 2;    // Electric propulsion
+  MANEUVER_TYPE_DRAG_COMPENSATION = 3;
+  MANEUVER_TYPE_UNKNOWN = 4;
+}
+
+message AnomalyDetails {
+  AnomalyType anomaly_type = 1;
+  double confidence = 2;
+  string description = 3;
+}
+
+enum AnomalyType {
+  ANOMALY_TYPE_UNSPECIFIED = 0;
+  ANOMALY_TYPE_TUMBLING = 1;
+  ANOMALY_TYPE_BRIGHTNESS_CHANGE = 2;
+  ANOMALY_TYPE_FRAGMENTATION = 3;
+  ANOMALY_TYPE_IONOSPHERIC_DISTURBANCE = 4;
+  ANOMALY_TYPE_SPOOFING_DETECTED = 5;
+}
+
+// SHAPAttribution provides explainable AI features
+message SHAPAttribution {
+  string summary = 1;
+  repeated FeatureAttribution features = 2;
+}
+
+message FeatureAttribution {
+  string feature_name = 1;
+  double shap_value = 2;      // Positive = increases risk/probability
+  double feature_value = 3;   // Actual feature value
+}
+
+// AlertSubscription configures alert filtering for a client
+message AlertSubscription {
+  string client_id = 1;
+  repeated AlertType types = 2;
+  AlertPriority min_priority = 3;
+  
+  // Spatial filter (optional)
+  Geofence region_of_interest = 10;
+  
+  // Object filter (optional)
+  repeated string object_ids = 20;
+  
+  // Maximum alert rate for throttling
+  int32 max_alerts_per_minute = 30;
+}
+
+message Geofence {
+  double min_latitude_deg = 1;
+  double max_latitude_deg = 2;
+  double min_longitude_deg = 3;
+  double max_longitude_deg = 4;
+  double min_altitude_km = 5;
+  double max_altitude_km = 6;
+}
+
+// CatalogQuery filters for catalog searches
+message CatalogQuery {
+  // Time range
+  google.protobuf.Timestamp timestamp = 1;  // State at this epoch
+  
+  // Spatial filter
+  double center_latitude_deg = 10;
+  double center_longitude_deg = 11;
+  double radius_km = 12;
+  double min_altitude_km = 13;
+  double max_altitude_km = 14;
+  
+  // Object filters
+  repeated OrbitRegime orbit_regimes = 20;
+  repeated string object_types = 21;  // "PAYLOAD", "DEBRIS", "ROCKET_BODY"
+  
+  // Pagination
+  int32 page_size = 30;
+  string page_token = 31;
+}
+
+enum OrbitRegime {
+  ORBIT_REGIME_UNSPECIFIED = 0;
+  ORBIT_REGIME_LEO = 1;      // < 2000 km
+  ORBIT_REGIME_MEO = 2;      // 2000-35786 km
+  ORBIT_REGIME_GEO = 3;      // ~35786 km
+  ORBIT_REGIME_HEO = 4;      // > 35786 km
+  ORBIT_REGIME_SUBORBITAL = 5;
+}
+
+message CatalogResponse {
+  repeated ObjectState objects = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+// ObjectRequest retrieves state for a specific object
+message ObjectRequest {
+  string object_id = 1;  // NORAD ID or internal UUID
+  google.protobuf.Timestamp timestamp = 2;  // Optional: historical state
+}
+
+// ObjectState represents a satellite's orbital state
+message ObjectState {
+  string object_id = 1;
+  string object_name = 2;
+  google.protobuf.Timestamp epoch = 3;
+  
+  // Cartesian state vector (ECI J2000)
+  double position_x_km = 10;
+  double position_y_km = 11;
+  double position_z_km = 12;
+  double velocity_x_kms = 13;
+  double velocity_y_kms = 14;
+  double velocity_z_kms = 15;
+  
+  // Covariance matrix (6x6, flattened row-major)
+  // Optional: may be omitted for efficiency if not needed
+  repeated double covariance = 20;  // 36 elements or empty
+  
+  // Orbital elements (derived from state)
+  double semi_major_axis_km = 30;
+  double eccentricity = 31;
+  double inclination_deg = 32;
+  double raan_deg = 33;      // Right ascension of ascending node
+  double arg_of_perigee_deg = 34;
+  double mean_anomaly_deg = 35;
+  
+  // Object metadata
+  ObjectType object_type = 40;
+  double rcs_m2 = 41;        // Radar cross-section
+  string country_code = 42;
+  string launch_date = 43;
+  
+  // Data provenance
+  repeated string sensor_ids = 50;  // Which sensors contributed
+  google.protobuf.Timestamp last_observation = 51;
+  int32 observation_count = 52;
+}
+
+enum ObjectType {
+  OBJECT_TYPE_UNSPECIFIED = 0;
+  OBJECT_TYPE_PAYLOAD = 1;
+  OBJECT_TYPE_ROCKET_BODY = 2;
+  OBJECT_TYPE_DEBRIS = 3;
+  OBJECT_TYPE_UNKNOWN = 4;
+}
+
+// OperatorCommand for bidirectional control interface
+message OperatorCommand {
+  string command_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  
+  oneof command {
+    QueryCommand query = 10;
+    ControlCommand control = 11;
+    ConfigCommand config = 12;
+  }
+}
+
+message QueryCommand {
+  string query_string = 1;  // Natural language or structured
+}
+
+message ControlCommand {
+  ControlAction action = 1;
+  string target_object_id = 2;
+  map<string, string> parameters = 3;
+}
+
+enum ControlAction {
+  CONTROL_ACTION_UNSPECIFIED = 0;
+  CONTROL_ACTION_FORCE_UPDATE = 1;
+  CONTROL_ACTION_SET_PRIORITY = 2;
+  CONTROL_ACTION_GENERATE_REPORT = 3;
+  CONTROL_ACTION_SIMULATE_MANEUVER = 4;
+}
+
+message ConfigCommand {
+  string parameter_name = 1;
+  string parameter_value = 2;
+}
+
+// SystemState for operator dashboard
+message SystemState {
+  google.protobuf.Timestamp timestamp = 1;
+  
+  // System health
+  SystemHealth health = 10;
+  repeated ServiceStatus services = 11;
+  
+  // Catalog statistics
+  int32 catalog_size = 20;
+  int32 leo_count = 21;
+  int32 meo_count = 22;
+  int32 geo_count = 23;
+  
+  // Processing metrics
+  double observations_per_sec = 30;
+  double alerts_per_hour = 31;
+  double avg_latency_ms = 32;
+  double p99_latency_ms = 33;
+  
+  // Active alerts summary
+  int32 critical_alerts = 40;
+  int32 high_alerts = 41;
+  
+  // Recent events log
+  repeated string recent_events = 50;
+}
+
+message SystemHealth {
+  HealthStatus overall = 1;
+  string message = 2;
+}
+
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTH_STATUS_HEALTHY = 1;
+  HEALTH_STATUS_DEGRADED = 2;
+  HEALTH_STATUS_UNHEALTHY = 3;
+}
+
+message ServiceStatus {
+  string service_name = 1;
+  HealthStatus status = 2;
+  string version = 3;
+  int32 uptime_seconds = 4;
+}

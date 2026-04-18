@@ -1,0 +1,27 @@
+# SSIS Operational Parameter Store
+# <plan_complexity>Low</plan_complexity><total_lines_estimate>40</total_lines_estimate>
+
+# Engine Performance (M/D/c Tuning)
+engine:
+  batch_size: 32
+  worker_count: 75
+  provider: "CPU"         # [CPU, CUDA, ONEDNN]
+  max_queue_depth: 5000  # Erlang-C Cliff Limit
+
+# Physics & Failover
+physics:
+  d_kl_threshold: 4.5    # Nats (Entropy)
+  propagation_step: 60.0 # Seconds
+  sigma_position: 1.0    # km (Used for D_KL calculation)
+
+# Sensing (ATeena-IQNet)
+sensing:
+  p_det_threshold: 0.90
+  num_pulses: 128
+  fs: 100000000.0        # 100 MHz
+
+# Security
+security:
+  mtls_enabled: true
+  jwt_expiration: "24h"
+  audit_level: "VERBOSE"

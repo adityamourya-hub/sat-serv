@@ -1,0 +1,37 @@
+# Build outputs
+ssa_ops_runner
+bin/
+dist/
+build/
+legacy_engine
+coverage.out
+
+# Generated artifacts
+artifacts/**
+!artifacts/.gitkeep
+
+# Generated model/data outputs
+ai/models/**
+ai/training/**
+ai/simulator/data/**
+pkg/ml/models/**
+models/llm/**
+*.jsonl
+*.onnx
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.venv/
+
+# OS/Editor
+.DS_Store
+.vscode/
+.idea/
+
+# Security
+certs/*.key
+*.pem
+*.key

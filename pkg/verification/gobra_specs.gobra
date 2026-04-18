@@ -1,0 +1,59 @@
+package verification
+
+import safemath "ssis/pkg/math"
+
+// SafeCholesky finite-precision specification for DO-333 FM.5 objectives.
+// The proof uses Gobra IEEE-754 mode and bounded regularization retries.
+
+//@ requires len(cov) > 0
+//@ requires epsilon >= 0
+//@ ensures err == nil ==> meta.Finite
+//@ ensures err == nil ==> meta.MinDiagonalAfter > 0
+//@ ensures err == nil ==> len(l) == len(cov)
+func SpecSafeCholesky(cov [][]float64, epsilon float64) (l [][]float64, meta safemath.CholeskyMetadata, err error) {
+	l, meta, err = safemath.SafeCholesky(cov, epsilon)
+	return
+}
+
+//@ requires len(diff) > 0
+//@ requires len(cov) == len(diff)
+//@ requires epsilon >= 0
+//@ ensures err == nil ==> d >= 0
+//@ ensures err == nil ==> meta.Finite
+func SpecMahalanobisNoNaN(diff []float64, cov [][]float64, epsilon float64) (d float64, meta safemath.CholeskyMetadata, err error) {
+	d, meta, err = safemath.MahalanobisDistance(diff, cov, epsilon)
+	return
+}
+
+//@ requires len(diff) > 0
+//@ requires len(cov) == len(diff)
+//@ requires epsilon >= 0
+//@ ensures err == nil ==> q >= 0
+//@ ensures err == nil ==> meta.Finite
+func SpecMahalanobisSquaredNoNaN(diff []float64, cov [][]float64, epsilon float64) (q float64, meta safemath.CholeskyMetadata, err error) {
+	q, meta, err = safemath.MahalanobisSquared(diff, cov, epsilon)
+	return
+}
+
+//@ requires len(cov) > 0
+//@ requires epsilon >= 0
+//@ ensures err == nil ==> regMeta.RegularizationEpsilon >= epsilon
+//@ ensures err == nil ==> regMeta.MinDiagonalAfter > 0
+func SpecRegularizationPositiveDefinite(cov [][]float64, epsilon float64) (cReg [][]float64, regMeta safemath.CholeskyMetadata, err error) {
+	cReg, regMeta, err = safemath.RegularizeCovariance(cov, epsilon)
+	return
+}
+
+//@ requires len(cov) > 0
+//@ requires epsilon >= 0
+//@ ensures err == nil ==> fosterPc >= 0 && fosterPc <= 1
+//@ ensures err == nil ==> mcMahalanobis >= 0
+func SpecPcPipelineNoNaN(cov [][]float64, diff []float64, epsilon float64, fosterPc float64) (mcMahalanobis float64, err error) {
+	var meta safemath.CholeskyMetadata
+	mcMahalanobis, meta, err = safemath.MahalanobisDistance(diff, cov, epsilon)
+	if err == nil {
+		//@ assert meta.Finite
+		//@ assert fosterPc >= 0 && fosterPc <= 1
+	}
+	return
+}

@@ -1,0 +1,14 @@
+flowchart TD
+    A[Catalog Inputs<br/>TLE Feeds + Radar Tracks + Mission Overrides] --> B[Ingest and Integrity Gate<br/>Schema checks, checksum, fail-soft quarantine]
+    B --> C[Orbital Core<br/>Propagation, UKF/SNC updates, covariance realism]
+    C --> D[Catalog and Association Core<br/>HashGrid/Octree, MHT-lite, rapid recatalog]
+    D --> E[Conjunction and Threat Stack<br/>Collision screening + RAPID threat ranking]
+    E --> F[Hybrid AI Layer<br/>ONNX inference with deterministic physics fallback]
+    F --> G[Decision Products<br/>Signed alert payloads + explainability + audit trail]
+    G --> H[Operator Artifacts<br/>validation_report_signed.json, metrics, replay logs]
+
+    I[Scale Validation Harness<br/>ATLAS/Delta/ODTK parity scenarios] --> E
+    I --> H
+
+    J[Python Air-gapped Training Pipeline<br/>synthetic data, model training, ONNX export] --> K[ai/models and pkg/ml/models]
+    K --> F

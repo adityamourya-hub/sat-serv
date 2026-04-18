@@ -1,0 +1,45 @@
+project_name: ssis
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: ssa_ops_runner
+    main: ./cmd/ssa_ops_runner
+    binary: ssa_ops_runner
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -buildid=
+
+archives:
+  - id: ssis_archive
+    ids:
+      - ssa_ops_runner
+    formats:
+      - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - docs/architecture.md
+      - docs/OPERATOR_MANUAL.md
+      - docs/HARDENING_COMPLIANCE_MATRIX.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "0.0.0-dev"
+
+release:
+  disable: true

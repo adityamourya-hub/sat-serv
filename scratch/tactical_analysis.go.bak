@@ -1,0 +1,239 @@
+package main
+
+import (
+	"fmt"
+	"math"
+	"ssis/pkg/orbital"
+)
+
+// Constants from ssis/pkg/orbital (WGS-84)
+const (
+	RE       = 6378.135      // Earth Radius (km)
+	EARTH_MU = 398600.4418 // km^3/sec^2
+	DE2RA    = math.Pi / 180.0
+	J2       = 1.08262668355e-3
+)
+
+/**
+ * Tactical Analysis Script: Satellite-X Maneuver & Conjunction Validation.
+ * This script identifies orbital energy changes, maneuver attribution (Pulse vs Drag),
+ * performs a high-precision Conjunction Analysis (TCA via Newton-Raphson),
+ * and verifies surveillance blind spots in the Indian Ocean (Diego Garcia access).
+ * Uses RK4 integration with J2 perturbations to ensure "years ahead" technical fidelity.
+ */
+func main() {
+	fmt.Printf("[TRC] Entering Tactical Analysis Script\n")
+
+	// 1. Specific Orbital Energy Calculation
+	a1 := 6800.0
+	h_p := 380.0
+	h_a := 450.0
+	r_p := RE + h_p
+	r_a := RE + h_a
+	a2 := (r_p + r_a) / 2.0
+	e2 := (r_a - r_p) / (r_a + r_p)
+
+	epsilon1 := -EARTH_MU / (2.0 * a1)
+	epsilon2 := -EARTH_MU / (2.0 * a2)
+	deltaE := epsilon2 - epsilon1
+
+	fmt.Printf("--- PART 1: ENERGY & MANEUVER ---\n")
+	fmt.Printf("Initial a: %.3f km, Energy: %.6f km2/s2\n", a1, epsilon1)
+	fmt.Printf("Final a:   %.3f km, Energy: %.6f km2/s2, Eccentricity: %.6f\n", a2, epsilon2, e2)
+	fmt.Printf("Delta Energy (Δϵ): %.6f km2/s2\n", deltaE)
+
+	// Maneuver Attribution Logic
+	// Drag lowers both rp and ra, primarily ra. A transition from circular 6800 to 380x450
+	// involves an apogee (450km > 421.9km original alt).
+	isPulse := h_a > (a1 - RE) 
+	fmt.Printf("Maneuver Attribution: ")
+	if isPulse {
+		fmt.Printf("IMPULSIVE PULSE (Intentional)\n")
+		fmt.Printf("Rationale: New apogee altitude (%.1fkm) exceeds original altitude (%.1fkm). Drag cannot raise apogee.\n", h_a, a1-RE)
+	} else {
+		fmt.Printf("DRAG DECAY (Unintentional)\n")
+	}
+
+	// 2. Conjunction Analysis (Sat-X vs Sat-Y)
+	fmt.Printf("\n--- PART 2: CONJUNCTION ANALYSIS (12-HOUR) ---\n")
+	
+	// Define initial states (Assume same node and perigee for worst-case analysis at t=0)
+	// Sat-X at Perigee
+	v_p2 := math.Sqrt(EARTH_MU * (2.0/r_p - 1.0/a2))
+	stateX := orbital.State{X: r_p, Y: 0, Z: 0, VX: 0, VY: v_p2, VZ: 0}
+	
+	// Sat-Y: circular at a=6850, inclination diff 0.05 deg
+	ay := 6850.0
+	vy := math.Sqrt(EARTH_MU / ay)
+	incY := 0.05 * DE2RA
+	stateY := orbital.State{
+		X: ay, Y: 0, Z: 0, 
+		VX: 0, VY: vy * math.Cos(incY), VZ: vy * math.Sin(incY),
+	}
+
+	// Newton-Raphson TCA Solver
+	// Seek within 12 hours (43200 seconds)
+	dt := 10.0 // Integration step (s)
+	tTotal := 12.0 * 3600.0
+	
+	minDist := 1e9
+	tca := 0.0
+	
+	// Step 1: Coarse scan for minimum
+	currX := stateX
+	currY := stateY
+	for t := 0.0; t < tTotal; t += dt {
+		dist := math.Sqrt(math.Pow(currX.X-currY.X, 2) + math.Pow(currX.Y-currY.Y, 2) + math.Pow(currX.Z-currY.Z, 2))
+		if dist < minDist {
+			minDist = dist
+			tca = t
+		}
+		// Propagate one step
+		currX = PropagateOneStep(currX, dt, 0)
+		currY = PropagateOneStep(currY, dt, 0)
+	}
+	
+	// Step 2: Newton-Raphson refinement around tca
+	fmt.Printf("Coarse TCA: %.1f s, Min Dist: %.4f km\n", tca, minDist)
+	refinedTCA, refinedDist := RefineTCA(stateX, stateY, tca)
+	fmt.Printf("Refined TCA: %.3f s, Refined Min Dist: %.6f km\n", refinedTCA, refinedDist)
+
+	// 3. Blind Spot Detection (Indian Ocean - Diego Garcia)
+	fmt.Printf("\n--- PART 3: BLIND SPOT DETECTION ---\n")
+	tgLat := -7.3113 * DE2RA
+	tgLon := 72.4111 * DE2RA
+	
+	maxElev := -90.0
+	currX = stateX
+	for t := 0.0; t < tTotal; t += dt {
+		// Convert target to ECI at time t (Simplified rotation)
+		theta := tgLon + (2.0*math.Pi/86400.0)*t
+		tgX := RE * math.Cos(tgLat) * math.Cos(theta)
+		tgY := RE * math.Cos(tgLat) * math.Sin(theta)
+		tgZ := RE * math.Sin(tgLat)
+		
+		// Relative vector
+		rx := currX.X - tgX
+		ry := currX.Y - tgY
+		rz := currX.Z - tgZ
+		range_dist := math.Sqrt(rx*rx + ry*ry + rz*rz)
+		
+		// Elevation angle
+		dot := (rx*tgX + ry*tgY + rz*tgZ) / (range_dist * RE)
+		elev := math.Asin(dot) / DE2RA
+		if elev > maxElev {
+			maxElev = elev
+		}
+		currX = PropagateOneStep(currX, dt, 0)
+	}
+	
+	fmt.Printf("Max Elevation at Diego Garcia: %.2f deg\n", maxElev)
+	if maxElev < 10.0 {
+		fmt.Printf("RESULT: SURVEILLANCE BLIND SPOT DETECTED (Max Elev < 10°)\n")
+	} else {
+		fmt.Printf("RESULT: ACCESS CLEAR (Max Elev > 10°)\n")
+	}
+
+	fmt.Printf("[TRC] Exiting Tactical Analysis Script\n")
+}
+
+// PropagateOneStep uses RK4 with J2 perturbation.
+func PropagateOneStep(s orbital.State, dt float64, jd float64) orbital.State {
+	f := func(y []float64) []float64 {
+		r2 := y[0]*y[0] + y[1]*y[1] + y[2]*y[2]
+		r := math.Sqrt(r2)
+		r3 := r2 * r
+		
+		// Point mass
+		ax := -EARTH_MU * y[0] / r3
+		ay := -EARTH_MU * y[1] / r3
+		az := -EARTH_MU * y[2] / r3
+		
+		// J2 Perturbation
+		z2 := y[2] * y[2]
+		invR2 := 1.0 / r2
+		j2Factor := 1.5 * J2 * EARTH_MU * RE * RE / math.Pow(r, 5)
+		ax += j2Factor * y[0] * (5*z2*invR2 - 1)
+		ay += j2Factor * y[1] * (5*z2*invR2 - 1)
+		az += j2Factor * y[2] * (5*z2*invR2 - 3)
+		
+		return []float64{y[3], y[4], y[5], ax, ay, az}
+	}
+
+	y := []float64{s.X, s.Y, s.Z, s.VX, s.VY, s.VZ}
+	k1 := f(y)
+	k2 := f(vecAddScaled(y, k1, dt*0.5))
+	k3 := f(vecAddScaled(y, k2, dt*0.5))
+	k4 := f(vecAddScaled(y, k3, dt))
+
+	res := make([]float64, 6)
+	for i := 0; i < 6; i++ {
+		res[i] = y[i] + (dt/6.0)*(k1[i]+2*k2[i]+2*k3[i]+k4[i])
+	}
+	return orbital.State{X: res[0], Y: res[1], Z: res[2], VX: res[3], VY: res[4], VZ: res[5]}
+}
+
+func RefineTCA(s1, s2 orbital.State, tStart float64) (float64, float64) {
+	t := tStart
+	for i := 0; i < 5; i++ {
+		x1 := PropagateExplicit(s1, t)
+		x2 := PropagateExplicit(s2, t)
+		
+		r_rel := []float64{x1.X - x2.X, x1.Y - x2.Y, x1.Z - x2.Z}
+		v_rel := []float64{x1.VX - x2.VX, x1.VY - x2.VY, x1.VZ - x2.VZ}
+		
+		f := r_rel[0]*v_rel[0] + r_rel[1]*v_rel[1] + r_rel[2]*v_rel[2]
+		
+		// f' = v_rel^2 + r_rel * a_rel
+		a1 := Accel(x1)
+		a2 := Accel(x2)
+		a_rel := []float64{a1[0] - a2[0], a1[1] - a2[1], a1[2] - a2[2]}
+		
+		v2 := v_rel[0]*v_rel[0] + v_rel[1]*v_rel[1] + v_rel[2]*v_rel[2]
+		rdota := r_rel[0]*a_rel[0] + r_rel[1]*a_rel[1] + r_rel[2]*a_rel[2]
+		fprime := v2 + rdota
+		
+		if math.Abs(fprime) < 1e-12 { break }
+		t = t - f/fprime
+	}
+	x1 := PropagateExplicit(s1, t)
+	x2 := PropagateExplicit(s2, t)
+	dist := math.Sqrt(math.Pow(x1.X-x2.X, 2) + math.Pow(x1.Y-x2.Y, 2) + math.Pow(x1.Z-x2.Z, 2))
+	return t, dist
+}
+
+func PropagateExplicit(s orbital.State, t float64) orbital.State {
+	// Simple multi-step RK4 for refinement
+	dt := 1.0
+	curr := s
+	for i := 0.0; i < t; i += dt {
+		step := dt
+		if t-i < dt { step = t-i }
+		curr = PropagateOneStep(curr, step, 0)
+	}
+	return curr
+}
+
+func Accel(y orbital.State) []float64 {
+	r2 := y.X*y.X + y.Y*y.Y + y.Z*y.Z
+	r := math.Sqrt(r2)
+	r3 := r2 * r
+	ax := -EARTH_MU * y.X / r3
+	ay := -EARTH_MU * y.Y / r3
+	az := -EARTH_MU * y.Z / r3
+	z2 := y.Z * y.Z
+	invR2 := 1.0 / r2
+	j2Factor := 1.5 * J2 * EARTH_MU * RE * RE / math.Pow(r, 5)
+	ax += j2Factor * y.X * (5*z2*invR2 - 1)
+	ay += j2Factor * y.Y * (5*z2*invR2 - 1)
+	az += j2Factor * y.Z * (5*z2*invR2 - 3)
+	return []float64{ax, ay, az}
+}
+
+func vecAddScaled(v, dv []float64, s float64) []float64 {
+	res := make([]float64, len(v))
+	for i := range v {
+		res[i] = v[i] + dv[i]*s
+	}
+	return res
+}

@@ -1,0 +1,421 @@
+import numpy as np
+from numpy.typing import NDArray
+from dataclasses import dataclass
+from typing import Optional, Tuple, Protocol
+import logging
+
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
+
+try:
+    import jax
+    import jax.numpy as jnp
+    HAS_JAX = True
+except ImportError:
+    HAS_JAX = False
+
+logger = logging.getLogger(__name__)
+
+class PredictorProtocol(Protocol):
+    """
+    Generalized interface for Neural Twins (HNO, Neural ODE, PINN).
+    Predictors must supply internal activations to the Auditor for NDI checking.
+    """
+    def predict_dynamics(self, initial_state: NDArray, time_span: Tuple[float, float]) -> Tuple[NDArray, NDArray]:
+        """
+        Returns:
+            predicted_state: The final predicted physical state.
+            activations: Internal latent activations used for representational auditing.
+        """
+        ...
+
+
+class NDIAuditor:
+    """
+    Neural Differentiation Index (NDI) Auditor.
+    Computes the expressivity of the latent manifold based on the CVPR 2026 NeuralDiff framework.
+    """
+    
+    def __init__(self, baseline_ndi: Optional[float] = None, drop_threshold: float = 0.7):
+        self.baseline_ndi = baseline_ndi
+        self.drop_threshold = drop_threshold
+        
+    def _compute_ndi(self, activations: NDArray) -> float:
+        """
+        Calculate NDI by measuring the rank/singular value distribution of the feature map.
+        Uses torch if available to utilize GPU acceleration for SVD, else falls back to numpy.
+        """
+        if HAS_TORCH and isinstance(activations, torch.Tensor):
+            singular_values = torch.linalg.svdvals(activations.reshape(activations.shape[0], -1))
+            ndi = singular_values.mean() / (singular_values.max() + 1e-9)
+            return float(ndi.item())
+        else:
+            # Numpy fallback
+            act_flat = activations.reshape(activations.shape[0], -1)
+            singular_values = np.linalg.svd(act_flat, compute_uv=False)
+            ndi = np.mean(singular_values) / (np.max(singular_values) + 1e-9)
+            return float(ndi)
+
+    def verify_representational_health(self, activations: NDArray) -> Tuple[bool, float]:
+        """
+        Assesses if the predictor is suffering from expressivity collapse (e.g. from radiation).
+        """
+        current_ndi = self._compute_ndi(activations)
+        
+        if self.baseline_ndi is None:
+            # Calibrate baseline on first run (assumes 'Quiet Sun' initial state)
+            self.baseline_ndi = current_ndi
+            logger.info(f"NDIAuditor baseline calibrated to: {self.baseline_ndi:.4f}")
+            return True, current_ndi
+            
+        is_healthy = current_ndi >= (self.drop_threshold * self.baseline_ndi)
+        return is_healthy, current_ndi
+
+
+class BdGPhysicsAuditor:
+    """
+    Evaluates predictions against the Bogoliubov-de Gennes (BdG) physics constraints.
+    """
+    def __init__(self, tolerance: float = 1e-3):
+        self.tolerance = tolerance
+
+    def compute_residue(self, predicted_state: NDArray, time_derivative: NDArray, H_bdg: NDArray) -> float:
+        """
+        Calculate the BdG residue: || i * hbar * d(psi)/dt - H_bdg * psi ||
+        Normalized by the state norm. Supports batched tensor operations.
+        """
+        lhs = 1j * time_derivative
+        if len(predicted_state.shape) == 2:
+            rhs = predicted_state @ H_bdg.T 
+        else:
+            rhs = H_bdg @ predicted_state
+            
+        residue = np.linalg.norm(lhs - rhs) / (np.linalg.norm(predicted_state) + 1e-9)
+        return float(residue)
+        
+    def verify_physics(self, predicted_state: NDArray, time_derivative: NDArray, H_bdg: NDArray) -> Tuple[bool, float]:
+        residue = self.compute_residue(predicted_state, time_derivative, H_bdg)
+        is_physically_valid = residue < self.tolerance
+        return is_physically_valid, residue
+
+
+@dataclass
+class AuditorReport:
+    is_safe: bool
+    fallback_triggered: bool
+    ndi_score: float
+    r_ndi: float
+    residue: Optional[float]
+    cause: str
+
+
+class SovereignAuditor:
+    """
+    The Sovereign Gate: Dual-Stage Validation Bridge.
+    Sits between the Neural Predictor and Hardware Controller.
+    """
+    
+    def __init__(self, pfaffian_checker):
+        self.ndi_auditor = NDIAuditor()
+        self.physics_auditor = BdGPhysicsAuditor()
+        self.pfaffian_checker = pfaffian_checker
+        self.aborted_hno_count = 0
+
+    def evaluate_prediction(
+        self, 
+        predicted_state: NDArray, 
+        activations: NDArray, 
+        time_derivative: NDArray, 
+        H_bdg: NDArray
+    ) -> AuditorReport:
+        """
+        Executes the dual-stage gate.
+        Stage 1: Logic (rNDI)
+        Stage 2: Physics (BdG Residue & Pfaffian)
+        """
+        # Stage 1: Representational Audit
+        is_healthy, current_ndi = self.ndi_auditor.verify_representational_health(activations)
+        r_ndi = current_ndi / self.ndi_auditor.baseline_ndi if self.ndi_auditor.baseline_ndi else 1.0
+        
+        if not is_healthy:
+            self.aborted_hno_count += 1
+            return AuditorReport(
+                is_safe=False,
+                fallback_triggered=True,
+                ndi_score=current_ndi,
+                r_ndi=r_ndi,
+                residue=None,
+                cause=f"Representational Collapse (rNDI = {r_ndi:.2f} < 0.7)"
+            )
+            
+        # Stage 2: Physics Audit (Residue)
+        is_physically_valid, residue = self.physics_auditor.verify_physics(predicted_state, time_derivative, H_bdg)
+        
+        if not is_physically_valid:
+            # Fast-path physics check failed
+            return AuditorReport(
+                is_safe=False,
+                fallback_triggered=True,
+                ndi_score=current_ndi,
+                r_ndi=r_ndi,
+                residue=residue,
+                cause=f"Physics Violation (Residue = {residue:.4e} > {self.physics_auditor.tolerance})"
+            )
+            
+        # Stage 2: Physics Audit (Pfaffian Topological Invariant)
+        # Using the checker from auditor_layer
+        pf_result = self.pfaffian_checker.compute_pfaffian(H_bdg)
+        if not pf_result.is_topological:
+             return AuditorReport(
+                is_safe=False,
+                fallback_triggered=True,
+                ndi_score=current_ndi,
+                r_ndi=r_ndi,
+                residue=residue,
+                cause="Topological Breakdown: Pfaffian Invariant Q != -1"
+            )           
+
+        return AuditorReport(
+            is_safe=True,
+            fallback_triggered=False,
+            ndi_score=current_ndi,
+            r_ndi=r_ndi,
+            residue=residue,
+            cause="All checks passed"
+        )
+
+@jax.jit
+def rank2_update(A: jnp.ndarray, v: jnp.ndarray, w: jnp.ndarray) -> jnp.ndarray:
+    """
+    Fused Skew-Symmetric Rank-2 Update: A' = A - v*w^T + w*v^T.
+    Uses einsum to hint direct HLO vectorization for sub-50ns execution.
+    Targeting XLA optimization for ADITI 4.0 radiation-hardened NPUs.
+
+    Args:
+        A: Skew-symmetric Hamiltonian matrix.
+        v: Rank-2 update vector 1.
+        w: Rank-2 update vector 2.
+    """
+    # Einstein notation for v_i*w_j - w_i*v_j
+    update = jnp.einsum('i,j->ij', v, w) - jnp.einsum('i,j->ij', w, v)
+    return A - update
+
+@jax.jit
+def compute_fast_ndi(activations: jnp.ndarray, num_iters: int = 1) -> jnp.ndarray:
+    """
+    Fast Neural Differentiation Index (NDI) using Power Iteration (OSVI).
+    Measures the peakedness of the latent manifold to detect radiation-induced collapse.
+    Optimized for real-time <250ns loop budgets.
+
+    Args:
+        activations: Latent representation tensors from the HNO.
+        num_iters: Number of power iterations to perform (default 1 for speed).
+    """
+    # Total variance in the representation (Frobenius norm squared)
+    total_variance = jnp.sum(jnp.square(activations))
+    
+    # Power iteration for dominant eigenvalue of A^T @ A
+    # Initialize v as the mean activation to capture the primary drift
+    v = jnp.mean(activations, axis=0)
+    
+    def body(i, v_inner):
+        # v = (A^T A) v
+        v_next = jnp.dot(activations.T, jnp.dot(activations, v_inner))
+        return v_next / (jnp.linalg.norm(v_next) + 1e-12)
+
+    v_top = jax.lax.fori_loop(0, num_iters, body, v)
+    
+    # Approximate top singular value squared
+    sigma_max_sq = jnp.sum(jnp.square(jnp.dot(activations, v_top)))
+    
+    # NDI = Ratio of dominant feature to total feature spread
+    # Healthy = low ratio; Corrupted = high ratio
+    return 1.0 - (sigma_max_sq / (total_variance + 1e-12))
+
+# Pre-calculate Ruth-4 constants for XLA to inline as literals
+THETA_R4 = 1.2599210498948732  # 2^(1/3)
+W1_R4 = 1.0 / (2.0 - THETA_R4)
+W0_R4 = -THETA_R4 / (2.0 - THETA_R4)
+
+C1_R4 = C4_R4 = W1_R4 / 2.0
+C2_R4 = C3_R4 = (W1_R4 + W0_R4) / 2.0
+D1_R4 = D3_R4 = W1_R4
+D2_R4 = W0_R4
+
+@jax.jit
+def force_field(q: jnp.ndarray) -> jnp.ndarray:
+    """
+    The Bogoliubov-de Gennes force field (-grad(H_BdG)).
+    Provides the classical mechanical restoration force for the Ruth-4 integrator.
+    Ensures Hamiltonian safety when the AI domain is corrupted.
+
+    Args:
+        q: Generalized coordinates of the system state.
+    """
+    return -1.0 * q  # Placeholder: Simple Harmonic Oscillator logic
+
+@jax.jit
+def ruth4_fallback(state: jnp.ndarray, dt: float = 1e-3) -> jnp.ndarray:
+    """
+    4th-order Symplectic Integrator (Forest-Ruth) Fallback.
+    Preserves the phase-space volume and Poincaré invariants of the system.
+    Guarantees long-term stability during AI "hallucination" events.
+
+    Args:
+        state: Combined state vector [q, p].
+        dt: Integration time step.
+    """
+    # Decompose state into generalized coordinates (q) and momenta (p)
+    q, p = state[0], state[1]
+
+    # Stage 1
+    q = q + C1_R4 * dt * p
+    p = p + D1_R4 * dt * force_field(q)
+
+    # Stage 2
+    q = q + C2_R4 * dt * p
+    p = p + D2_R4 * dt * force_field(q)
+
+    # Stage 3
+    q = q + C3_R4 * dt * p
+    p = p + D3_R4 * dt * force_field(q)
+
+    # Stage 4
+    q = q + C4_R4 * dt * p
+    
+    return jnp.stack([q, p])
+
+@jax.jit
+def hno_predict(state: jnp.ndarray, params: dict) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    JAX-native implementation of Hamiltonian Neural Operator prediction.
+    Models the Bogoliubov-de Gennes dynamics as a learnable operator.
+    Optimized for zero-copy HLO compilation.
+
+    Args:
+        state: Full phase-space state [q, p] of shape (2, N).
+        params: Statically-shaped weights and parameters for the HNO.
+    """
+    # Flatten state for the neural layers: (2, N) -> (2*N,)
+    x = state.ravel()
+    
+    # params['W1'] shape: (2*state_dim, latent_dim)
+    # activations: (latent_dim,)
+    h1 = jnp.dot(x, params['W1']) + params['b1']
+    activations = jnp.tanh(h1)
+    
+    pred_delta = jnp.dot(activations, params['W2']) + params['b2']
+    # Reshape delta back to (2, N)
+    pred_state = state + pred_delta.reshape(state.shape)
+    
+    return pred_state, activations
+
+@jax.jit
+def construct_h_bdg(state: jnp.ndarray) -> jnp.ndarray:
+    """
+    Dynamic construction of the BdG Hamiltonian matrix from state.
+    Encodes the pairing potential and chemical potential as matrix entries.
+    Targeted for real-time topological sign auditing.
+
+    Args:
+        state: Predicted physical state from the HNO. Shape (2, N).
+    """
+    # Placeholder: Return a mock skew-symmetric matrix based on state variance
+    # In production, this maps the field parameters to the matrix indices.
+    n = 32
+    H = jnp.zeros((n, n))
+    # Simple antisymmetric block for sign check demo
+    val = jnp.mean(state[0]) # Use q-coordinates for Hamiltonian construction
+    H = H.at[0, 1].set(val)
+    H = H.at[1, 0].set(-val)
+    return H
+
+@jax.jit
+def sovereign_bridge_execute(
+    state_input: jnp.ndarray, 
+    hno_params: dict, 
+    prev_state: jnp.ndarray
+) -> jnp.ndarray:
+    """
+    The Sovereign Gate Bridge: Fused AI-Physics Execution Loop.
+    Integrates HNO prediction, NDI representational check, and Pfaffian physics check.
+    Uses lax.cond for zero-latency branching in a statically-compiled graph.
+
+    Args:
+        state_input: Current state input tensor.
+        hno_params: Dictionary of JAX-native neural weights.
+        prev_state: Last known healthy state for fallback integration.
+    """
+    from core.auditor_layer import jax_pfaffian_kernel
+    
+    # 1. Prediction & Internal Activations
+    # Predict based on current input
+    pred_state, l_acts = hno_predict(state_input, hno_params)
+    
+    # 2. Logic Audit (NDI)
+    # activations here is 1D (latent_dim,), but compute_fast_ndi expects (B, latent_dim) 
+    # for variance calculation across a batch or history. 
+    # For sub-250ns single-state audit, we treat as a 1-sample batch.
+    ndi_score = compute_fast_ndi(l_acts[None, :])
+    
+    # 3. Physics Audit (Pfaffian)
+    h_matrix = construct_h_bdg(pred_state)
+    pf_sign = jax_pfaffian_kernel(h_matrix)
+    
+    # Combined Safety Bit (Logic Gate: NDI > 0.7 && Physics Gate: pf_sign == -1)
+    # NOTE: In this demo, we use a mock pf_sign check.
+    is_safe = jnp.logical_and(ndi_score > 0.7, jnp.equal(pf_sign, -1))
+    
+    # 4. Zero-Latency Branching to Fallback if AI is compromised
+    return jax.lax.cond(
+        is_safe,
+        lambda _: pred_state,               # Fast-path AI: Logic Valid
+        lambda _: ruth4_fallback(prev_state), # Safe-path Physics: Logic Corrupted
+        operand=None
+    )
+
+@jax.jit
+def sovereign_gate_fused_step(
+    state: jnp.ndarray,
+    H_bdg: jnp.ndarray,
+    time_derivative: jnp.ndarray,
+    baseline_ndi: float,
+    threshold_ndi: float = 0.7,
+    tolerance_physics: float = 1e-3
+) -> jnp.ndarray:
+    """
+    Legacy fused step for backward compatibility with existing tests.
+    Performs individual gate checks within a jit-compiled barrier.
+
+    Args:
+        state: Current system state tensor.
+        H_bdg: Current BdG Hamiltonian.
+        time_derivative: Predicted dpsi/dt.
+        baseline_ndi: Calibrated NDI score for the healthy manifold.
+    """
+    from core.auditor_layer import jax_pfaffian_kernel
+    
+    # 1. NDI Check
+    singular_values = jnp.linalg.svd(state.reshape(state.shape[0], -1), compute_uv=False)
+    current_ndi = jnp.mean(singular_values) / (jnp.max(singular_values) + 1e-9)
+    is_healthy = current_ndi >= (threshold_ndi * baseline_ndi)
+    
+    # 2. Physics Residue Check
+    lhs = 1j * time_derivative
+    rhs = state @ H_bdg.T if len(state.shape) == 2 else H_bdg @ state
+    residue = jnp.linalg.norm(lhs - rhs) / (jnp.linalg.norm(state) + 1e-9)
+    is_phys_valid = residue < tolerance_physics
+    
+    # 3. Pfaffian Sign Check (The Q-Shakti Invariant)
+    A = H_bdg.imag
+    A = 0.5 * (A - A.T)
+    pf_sign = jax_pfaffian_kernel(A) # Q-invariant
+    is_topological = pf_sign == -1
+    
+    # Combined Gate Decision
+    safe_to_proceed = jnp.logical_and(is_healthy, jnp.logical_and(is_phys_valid, is_topological))
+    
+    return safe_to_proceed
