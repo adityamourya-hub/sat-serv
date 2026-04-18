@@ -15,14 +15,14 @@ type Vector3 [3]float64
  * Hardened for Clean Architecture: Separates data from behavior.
  */
 type State struct {
-	Pos      Vector3
-	Vel      Vector3
-	EpochJD  float64 // Julian Date
-	E_hal    float64 // Hamiltonian Energy for auditing
+	Pos     Vector3
+	Vel     Vector3
+	EpochJD float64 // Julian Date
+	E_hal   float64 // Hamiltonian Energy for auditing
 }
 
 /**
- * SolarIndices represents the F10.7 and magnetic index values used 
+ * SolarIndices represents the F10.7 and magnetic index values used
  * for high-precision atmospheric density modeling.
  */
 type SolarIndices struct {
@@ -43,13 +43,17 @@ type Observation struct {
 
 /**
  * PhysicsParams represents the environmental and structural parameters of an object.
+ *
+ * ADITI 4.0: BallisticCoeff enables per-object drag differentiation based on
+ * historical TLE analysis and physical object properties.
  */
 type PhysicsParams struct {
-	Mass     float64
-	DragArea float64
-	SRPArea  float64
-	Cd       float64
-	Cr       float64
+	Mass           float64
+	DragArea       float64
+	SRPArea        float64
+	Cd             float64
+	Cr             float64
+	BallisticCoeff float64 // BC = m/(Cd*A) in kg/m^2, derived from TLE B*
 }
 
 /**
@@ -96,7 +100,7 @@ type HistoryRefiner interface {
 
 /**
  * StateToVector converts a physical State object into a 6D float slice.
- * This is used for input to numerical integrators, Kalman filters, 
+ * This is used for input to numerical integrators, Kalman filters,
  * and neural ODE kernels that expect a flat double-precision array.
  * It maps Pos[0..2] and Vel[0..2] to the first 6 elements.
  */
@@ -151,7 +155,7 @@ func (s *State) ToCanonical() (q, p Vector3) {
 func FromCanonical(q, p Vector3, epochJD float64) State {
 	scaleAcc := RE_KM / (TU_SEC * TU_SEC) // Not used for state, but for ref
 	_ = scaleAcc
-	
+
 	return State{
 		Pos: Vector3{
 			q[0] * RE_KM,

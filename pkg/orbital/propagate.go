@@ -6,8 +6,9 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/joshuaferrara/go-satellite"
 	"ssis/pkg/physics"
+
+	"github.com/joshuaferrara/go-satellite"
 )
 
 // Consts for WGS-84 (Commonly used in SGP4)
@@ -37,7 +38,7 @@ type Propagator interface {
 /**
  * IsNilPropagator checks if a Propagator interface is truly nil.
  * In Go, an interface is nil only if both its type and value are nil.
- * This function uses reflection to detect the common 'nil pointer in interface' 
+ * This function uses reflection to detect the common 'nil pointer in interface'
  * anti-pattern which causes standard nil checks to fail.
  */
 func IsNilPropagator(p Propagator) bool {
@@ -94,7 +95,7 @@ type PropagatorConfig struct {
 }
 
 /**
- * DefaultPropagatorConfig returns a baseline configuration utilizing 
+ * DefaultPropagatorConfig returns a baseline configuration utilizing
  * the standard SGP4 analytical model with fallback enabled.
  */
 func DefaultPropagatorConfig() PropagatorConfig {
@@ -121,8 +122,8 @@ func NewPropagator(tle *physics.TLE) (Propagator, error) {
 }
 
 /**
- * NewPropagatorWithConfig is a high-level factory function that dispatches 
- * to the appropriate propagator engine (SGP4, AXIOM_GO, AXIOM_ONNX) 
+ * NewPropagatorWithConfig is a high-level factory function that dispatches
+ * to the appropriate propagator engine (SGP4, AXIOM_GO, AXIOM_ONNX)
  * based on the provided configuration.
  */
 func NewPropagatorWithConfig(tle *physics.TLE, config PropagatorConfig) (Propagator, error) {
@@ -175,7 +176,7 @@ func NewPropagatorWithConfig(tle *physics.TLE, config PropagatorConfig) (Propaga
 }
 
 /**
- * Propagate computes the satellite state at a given time delta (in minutes) 
+ * Propagate computes the satellite state at a given time delta (in minutes)
  * from the TLE epoch using the SGP4 analytical model.
  * It includes a numerical stability guard to prevent divergence beyond 10 years.
  */
@@ -209,7 +210,7 @@ func (p *SGP4Propagator) Propagate(minutesSinceEpoch float64) (physics.State, er
 }
 
 /**
- * PropagateSGP4 is a legacy entry point for synchronous, standard 
+ * PropagateSGP4 is a legacy entry point for synchronous, standard
  * SGP4 propagation from a raw TLE string and a calendar epoch.
  */
 func PropagateSGP4(tleLine1, tleLine2 string, epoch time.Time) (pos, vel [3]float64, err error) {
@@ -234,7 +235,7 @@ func PropagateSGP4(tleLine1, tleLine2 string, epoch time.Time) (pos, vel [3]floa
 }
 
 /**
- * PropagateCartesianState performs numerical integration of orbital states 
+ * PropagateCartesianState performs numerical integration of orbital states
  * using a 4th-Order Runge-Kutta (RK4) method with a fine-grained 10s step size.
  * Zero-allocation inner loop: uses stack-allocated [6]float64 scratch arrays.
  */
@@ -301,10 +302,10 @@ func PropagateCartesianState(x []float64, dt float64, jd float64, params physics
 func PropagateWithSTM(state []float64, phi [][]float64, dtSec float64, jd float64, params physics.PhysicsParams) ([]float64, [][]float64) {
 	// 1. Numerically integrate the state (6D)
 	nextState := PropagateCartesianState(state, dtSec, jd, params)
-	
+
 	// 2. Compute the Jacobian A = df/dx
 	A := ComputeJacobian(state[0], state[1], state[2], state[3], state[4], state[5], jd, params)
-	
+
 	// 3. Approximate Phi(t+dt) = I + A*dt (First-order expansion for stability)
 	nextPhi := make([][]float64, 7)
 	for i := 0; i < 7; i++ {
@@ -317,7 +318,7 @@ func PropagateWithSTM(state []float64, phi [][]float64, dtSec float64, jd float6
 			nextPhi[i][j] = phi[i][j] + term*dtSec
 		}
 	}
-	
+
 	return nextState, nextPhi
 }
 
@@ -334,42 +335,58 @@ func vecAddScaled(v, dv []float64, s float64) []float64 {
 }
 
 /**
- * OrbitalAcceleration computes the instantaneous ECI acceleration including 
+ * OrbitalAcceleration computes the instantaneous ECI acceleration including
  * Point-Mass Gravity, J2 Perturbation, Exponential Drag, and Lunar 3rd Body.
  * It serves as the primary physics kernel for numerical propagation.
  */
 /**
  * OrbitalAcceleration computes the derivative of the state vector (ax, ay, az).
  * Hardened for iDEX ADITI 4.0 Industry Standards.
- * Includes: J2-J4 Gravity, Sun/Moon Perturbations, Drag, and SRP.
+ * Includes: J2-J4 Gravity, Sun/Moon Perturbations, Drag (with Earth rotation), and SRP.
  */
 func OrbitalAcceleration(x, y, z, vx, vy, vz float64, jd float64, params physics.PhysicsParams) (ax, ay, az float64) {
 	// 1. Point Mass + J2-J4 Zonal Harmonics
 	ax, ay, az = GravityAccelerationGCRF(x, y, z)
 
-	// 2. Atmospheric Drag (Industry Standard NRLMSISE-00)
+	// 2. Atmospheric Drag (with Earth rotation correction)
+	// Drag must use velocity relative to rotating atmosphere, not inertial velocity
 	r := math.Sqrt(x*x + y*y + z*z)
 	alt := r - physics.EARTH_R_EQUATORIAL
-	if alt < 1200 {
+	if alt < 1200 && params.Mass > 0 {
 		rho := physics.GetDensityUnified(x, y, z, jd)
-		v2 := vx*vx + vy*vy + vz*vz
-		speed := math.Sqrt(v2)
-		// Acceleration = -0.5 * rho * v^2 * (A/m) * Cd * (v_rel / speed)
-		dragAcc := 0.5 * rho * v2 * (params.DragArea / params.Mass) * params.Cd
-		ax -= dragAcc * vx / speed
-		ay -= dragAcc * vy / speed
-		az -= dragAcc * vz / speed
+
+		// Earth's rotation vector (rad/s): omega = [0, 0, 7.2921158553e-5]
+		// v_rel = v_inertial - (omega x r)
+		omegaZ := 7.2921158553e-5
+		vxRel := vx - (-omegaZ * y)
+		vyRel := vy - (omegaZ * x)
+		vzRel := vz // No z-component for Earth rotation
+
+		vRel2 := vxRel*vxRel + vyRel*vyRel + vzRel*vzRel
+		vRelMag := math.Sqrt(vRel2)
+
+		if vRelMag > 1e-6 {
+			// Acceleration = -0.5 * rho * v_rel^2 * (A/m) * Cd * (v_rel / |v_rel|)
+			dragCoeff := 0.5 * rho * (params.DragArea / params.Mass) * params.Cd
+			ax -= dragCoeff * vRelMag * vxRel
+			ay -= dragCoeff * vRelMag * vyRel
+			az -= dragCoeff * vRelMag * vzRel
+		}
 	}
 
-	// 3. Solar Radiation Pressure (SRP)
+	// 3. Solar Radiation Pressure (SRP) with conical shadow model
+	// Uses advanced penumbra/umbra geometry for GEO/HEO accuracy
 	if params.SRPArea > 0 && params.Cr > 0 {
-		sax, say, saz := SolarRadiationPressure(x, y, z, jd, params.SRPArea, params.Mass, params.Cr)
+		satPos := [3]float64{x, y, z}
+		sx, sy, sz := SunPosition(jd)
+		sunPos := [3]float64{sx, sy, sz}
+		sax, say, saz := SRPAcceleration(satPos, sunPos, params.SRPArea, params.Mass, params.Cr)
 		ax += sax
 		ay += say
 		az += saz
 	}
 
-	// 4. 3rd Body: Moon (Simplified Position)
+	// 4. 3rd Body: Moon
 	mx, my, mz := physics.MoonPosition(jd)
 	rmoon3 := math.Pow(mx*mx+my*my+mz*mz, 1.5)
 	dmx, dmy, dmz := mx-x, my-y, mz-z
@@ -377,6 +394,15 @@ func OrbitalAcceleration(x, y, z, vx, vy, vz float64, jd float64, params physics
 	ax += physics.MOON_MU_IAU * (dmx/drmoon3 - mx/rmoon3)
 	ay += physics.MOON_MU_IAU * (dmy/drmoon3 - my/rmoon3)
 	az += physics.MOON_MU_IAU * (dmz/drmoon3 - mz/rmoon3)
+
+	// 5. 3rd Body: Sun (critical for GEO operations)
+	sx, sy, sz := SunPosition(jd)
+	rsun3 := math.Pow(sx*sx+sy*sy+sz*sz, 1.5)
+	dsx, dsy, dsz := sx-x, sy-y, sz-z
+	drsun3 := math.Pow(dsx*dsx+dsy*dsy+dsz*dsz, 1.5)
+	ax += physics.SUN_MU_IAU * (dsx/drsun3 - sx/rsun3)
+	ay += physics.SUN_MU_IAU * (dsy/drsun3 - sy/rsun3)
+	az += physics.SUN_MU_IAU * (dsz/drsun3 - sz/rsun3)
 
 	return ax, ay, az
 }
