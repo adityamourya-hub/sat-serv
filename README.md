@@ -21,7 +21,7 @@
 
 # Architecture
 
-SSIS implements a **Differentiable Physics-Managed Awareness** plane, unifying high-performance Go-based catalog management with the **Axiom-Zero v3** JAX-native physics core.
+ a **Differentiable Physics-Managed Awareness** plane, unifying high-performance Go-based catalog management with the **Axiom-Zero v3** JAX-native physics core.
 
 ### Design
 
