@@ -1,30 +1,29 @@
-# Sovereign Space Intelligence Substrate (SSIS) 🇮🇳
-**ADITI 4.0 Challenge — Strategic Space Domain Awareness (SDA) Platform**
 
-SSIS is a battle-hardened, indigenous, and autonomous command-and-control substrate designed for the Indian Air Force. It provides sub-second volumetric surveillance, hypersonic threat detection, and symplectic orbital prediction at planetary scale.
 
-## 🚀 Key Capabilities (ADITI Matrix)
+ command-and-control substrate designed for the Indian Air Force. It provides sub-second volumetric surveillance, hypersonic threat detection, and symplectic orbital prediction at planetary scale.
+
+# Capabilities
 
 | Capability | Description | Status |
 | :--- | :--- | :--- |
-| **(a) Data Fusion** | Real-time multi-sensor fusion and volumetric screening. | ✅ Production |
-| **(b) Proximity Alerts** | Neighbourhood Watch (Intelligent intent & proximity alerts). | ✅ Production |
-| **(d) Hypersonic Tracking** | High-fidelity 8-state UKF for Glide Vehicle (HGV) tracking. | ✅ Production |
-| **(g) Maneuver Detection** | PINN-accelerated learned residual analysis for delta-V discovery. | ✅ Axiom-Zero |
-| **(i) Rapid Processing** | Sub-second propagation of 30k+ objects via Symplectic Kernels. | ✅ Axiom-Zero |
+| **(a) Data Fusion** | Real-time multi-sensor fusion and volumetric screening. | 
+| **(b) Proximity Alerts** | Neighbourhood Watch (Intelligent intent & proximity alerts). | 
+| **(d) Hypersonic Tracking** | High-fidelity 8-state UKF for Glide Vehicle (HGV) tracking. | 
+| **(g) Maneuver Detection** | PINN-accelerated learned residual analysis for delta-V discovery. | 
+| **(i) Rapid Processing** | Sub-second propagation of 30k+ objects via Symplectic Kernels. | 
 
-## 🛡️ Sovereign Security Baseline
+# Security Baseline
 
 - **Zero-Trust gRPC**: Mandatory Ed25519 signing for all telemetry responses via logic-level interceptors.
 - **mTLS 1.3 Hardening**: Hardware-anchored transport security with mandatory client-cert verification.
 - **Indigenous Physics Core**: Axiom-Zero symplectic substrate (Yoshida-4/8) ensuring zero secular energy drift.
 - **Air-Gapped Ready**: Zero external dependencies; designed for on-prem Kubernetes / air-gapped deployment.
 
-## 🛠️ Unified Architecture
+# Architecture
 
 SSIS implements a **Differentiable Physics-Managed Awareness** plane, unifying high-performance Go-based catalog management with the **Axiom-Zero v3** JAX-native physics core.
 
-### Two-Layer Design
+### Design
 
 **Layer 1: Go Operations Plane** (High-concurrency orchestration)
 - `pkg/catalog`: High-churn optimized catalog management
@@ -40,14 +39,14 @@ SSIS implements a **Differentiable Physics-Managed Awareness** plane, unifying h
 - `ai/v3/hamiltonian_discovery.py`: Learned Hamiltonian dynamics
 - `ai/v3/physics_geometry_layer.py`: Equinoctial element differentiable geometry
 
-### The Sovereign Bridge
+###  Bridge
 
 1. **Modeling (Python/JAX)**: High-order Hamiltonian dynamics learned using rational-KAN (rKAN) models
 2. **Synthesis**: Trained weights for Force Potential (∇V) exported to JSON artifacts
 3. **Operation (Go)**: Go-native rKAN kernel implements Legendre basis and softplus projections
 4. **Integration**: Trajectories evolved using 4th-Order Symplectic Yoshida Integrator in pure Go, ensuring 10⁻¹⁵ energy conservation
 
-## 🚦 Getting Started
+
 
 ### Prerequisites
 - Go 1.21+
