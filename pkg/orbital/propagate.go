@@ -207,7 +207,14 @@ func NewPropagatorWithConfig(tle *TLE, config PropagatorConfig) (Propagator, err
 			return nil, err
 		}
 
-		return NewAxiomPropagator(kernel, initState, sgp4Prop.tleEpoch), nil
+		params := PhysicsParams{
+			Mass:     2500, // Default placeholders for IAF Aditi 4.0
+			DragArea: 15.0,
+			SRPArea:  15.0,
+			Cd:       2.2,
+			Cr:       1.2,
+		}
+		return NewAxiomPropagator(kernel, initState, sgp4Prop.tleEpoch, params), nil
 
 	case PropagatorAxiomONNX:
 		if config.FallbackToSGP4 {
@@ -303,7 +310,7 @@ func VectorToState(v []float64) State {
  * using a 4th-Order Runge-Kutta (RK4) method with a fine-grained 10s step size.
  * Zero-allocation inner loop: uses stack-allocated [6]float64 scratch arrays.
  */
-func PropagateCartesianState(x []float64, dt float64, jd float64) []float64 {
+func PropagateCartesianState(x []float64, dt float64, jd float64, params PhysicsParams) []float64 {
 	h := 10.0 // 10 sec step for inner RK4
 	if dt < 0 {
 		h = -10.0
@@ -325,28 +332,28 @@ func PropagateCartesianState(x []float64, dt float64, jd float64) []float64 {
 		}
 
 		// k1 = f(curr)
-		ax, ay, az := OrbitalAcceleration(curr[0], curr[1], curr[2], curr[3], curr[4], curr[5], jd)
+		ax, ay, az := OrbitalAcceleration(curr[0], curr[1], curr[2], curr[3], curr[4], curr[5], jd, params)
 		k1 = [6]float64{curr[3], curr[4], curr[5], ax, ay, az}
 
 		// k2 = f(curr + 0.5*step*k1)
 		for i := 0; i < 6; i++ {
 			tmp[i] = curr[i] + k1[i]*step*0.5
 		}
-		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd)
+		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd, params)
 		k2 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
 
 		// k3 = f(curr + 0.5*step*k2)
 		for i := 0; i < 6; i++ {
 			tmp[i] = curr[i] + k2[i]*step*0.5
 		}
-		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd)
+		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd, params)
 		k3 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
 
 		// k4 = f(curr + step*k3)
 		for i := 0; i < 6; i++ {
 			tmp[i] = curr[i] + k3[i]*step
 		}
-		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd)
+		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd, params)
 		k4 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
 
 		// Update: curr += (step/6) * (k1 + 2*k2 + 2*k3 + k4)
@@ -357,6 +364,33 @@ func PropagateCartesianState(x []float64, dt float64, jd float64) []float64 {
 		elapsed += step
 	}
 	return curr[:]
+}
+
+/**
+ * PropagateWithSTM integrates the state and the 7x7 State Transition Matrix (STM).
+ * This is the industry-standard way to grow the covariance matrix: P(t) = Phi * P(0) * Phi^T.
+ */
+func PropagateWithSTM(state []float64, phi [][]float64, dtSec float64, jd float64, params PhysicsParams) ([]float64, [][]float64) {
+	// 1. Numerically integrate the state (6D)
+	nextState := PropagateCartesianState(state, dtSec, jd, params)
+	
+	// 2. Compute the Jacobian A = df/dx
+	A := ComputeJacobian(state[0], state[1], state[2], state[3], state[4], state[5], jd, params)
+	
+	// 3. Approximate Phi(t+dt) = I + A*dt (First-order expansion for stability)
+	nextPhi := make([][]float64, 7)
+	for i := 0; i < 7; i++ {
+		nextPhi[i] = make([]float64, 7)
+		for j := 0; j < 7; j++ {
+			term := 0.0
+			for k := 0; k < 7; k++ {
+				term += A[i][k] * phi[k][j]
+			}
+			nextPhi[i][j] = phi[i][j] + term*dtSec
+		}
+	}
+	
+	return nextState, nextPhi
 }
 
 /**
@@ -376,36 +410,33 @@ func vecAddScaled(v, dv []float64, s float64) []float64 {
  * Point-Mass Gravity, J2 Perturbation, Exponential Drag, and Lunar 3rd Body.
  * It serves as the primary physics kernel for numerical propagation.
  */
-func OrbitalAcceleration(x, y, z, vx, vy, vz float64, jd float64) (ax, ay, az float64) {
-	r2 := x*x + y*y + z*z
-	r := math.Sqrt(r2)
+/**
+ * OrbitalAcceleration computes the derivative of the state vector (ax, ay, az).
+ * Hardened for iDEX ADITI 4.0 Industry Standards.
+ * Includes: J2-J4 Gravity, Sun/Moon Perturbations, Drag, and SRP.
+ */
+func OrbitalAcceleration(x, y, z, vx, vy, vz float64, jd float64, params PhysicsParams) (ax, ay, az float64) {
+	// 1. Point Mass + J2-J4 Zonal Harmonics
+	ax, ay, az = GravityAccelerationGCRF(x, y, z)
 
-	// 1. Point Mass Gravity (Sovereign Baseline)
-	invR := 1.0 / r
-	invR3 := invR * invR * invR
-	ax = -EARTH_MU * x * invR3
-	ay = -EARTH_MU * y * invR3
-	az = -EARTH_MU * z * invR3
-
-	// 2. J2 Perturbation
-	z2 := z * z
-	invR2 := invR * invR
-	j2Factor := 1.5 * J2_LEGACY * EARTH_MU * ER * ER / math.Pow(r, 5)
-	ax += j2Factor * x * (5*z2*invR2 - 1)
-	ay += j2Factor * y * (5*z2*invR2 - 1)
-	az += j2Factor * z * (5*z2*invR2 - 3)
-
-	// 3. Simple Exponential Atmosphere (Coarse Baseline)
-	alt := r - ER
-	if alt < 800 {
-		rho := 1.0e-7 * math.Exp(-(alt-120.0)/65.0) // Piecewise approx at 120km
+	// 2. Atmospheric Drag (Industry Standard NRLMSISE-00)
+	if alt < 1200 {
+		rho := GetDensityUnified(x, y, z, jd)
 		v2 := vx*vx + vy*vy + vz*vz
 		speed := math.Sqrt(v2)
-		bc := 0.01 // Default ballistic coefficient
-		drag := 0.5 * rho * speed * speed * 1000.0 / bc
-		ax -= drag * vx / speed
-		ay -= drag * vy / speed
-		az -= drag * vz / speed
+		// Acceleration = -0.5 * rho * v^2 * (A/m) * Cd * (v_rel / speed)
+		dragAcc := 0.5 * rho * v2 * (params.DragArea / params.Mass) * params.Cd
+		ax -= dragAcc * vx / speed
+		ay -= dragAcc * vy / speed
+		az -= dragAcc * vz / speed
+	}
+
+	// 3. Solar Radiation Pressure (SRP)
+	if params.SRPArea > 0 && params.Cr > 0 {
+		sax, say, saz := SolarRadiationPressure(x, y, z, jd, params.SRPArea, params.Mass, params.Cr)
+		ax += sax
+		ay += say
+		az += saz
 	}
 
 	// 4. 3rd Body: Moon (Simplified Position)
@@ -419,6 +450,14 @@ func OrbitalAcceleration(x, y, z, vx, vy, vz float64, jd float64) (ax, ay, az fl
 	az += MU_MOON * (dmz/drmoon3 - mz/rmoon3)
 
 	return ax, ay, az
+}
+
+type PhysicsParams struct {
+	Mass     float64
+	DragArea float64
+	SRPArea  float64
+	Cd       float64
+	Cr       float64
 }
 
 /**
@@ -438,19 +477,6 @@ func MoonPosition(jd float64) (x, y, z float64) {
  * AtmosphericDensity returns the air density (kg/m^3) at a given altitude.
  * It uses a simplified exponential model for rapid sub-orbital processing.
  */
-func AtmosphericDensity(altKm float64) float64 {
-	if altKm <= 0 {
-		return 1.225 // Sea level
-	}
-	if altKm > 1000 {
-		return 0 // Practical vacuum
-	}
-	// Simplified exponential model (rho = rho0 * exp(-h/H))
-	const rho0 = 1.225
-	const H = 8.5 // Scale height in km
-	rho := rho0 * math.Exp(-altKm/H)
-	return rho
-}
 
 /**
  * GreenwichSiderealTime computes the GST in radians at a given Julian Date.

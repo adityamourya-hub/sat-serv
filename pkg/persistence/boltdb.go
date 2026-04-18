@@ -50,7 +50,7 @@ func (b *BoltDBBackend) Close() error {
 	return b.db.Close()
 }
 
-func (b *BoltDBBackend) UpsertObject(record catalog.ObjectRecord) error {
+func (b *BoltDBBackend) UpsertObject(record catalog.SDAObject) error {
 	return b.db.Update(func(tx *bbolt.Tx) error {
 		objBucket := tx.Bucket([]byte("objects"))
 		histBucket := tx.Bucket([]byte("history"))
@@ -65,8 +65,8 @@ func (b *BoltDBBackend) UpsertObject(record catalog.ObjectRecord) error {
 			return err
 		}
 
-		// Historical entry: ID:Timestamp
-		histKey := []byte(fmt.Sprintf("%d:%d", record.ID, int64(record.Timestamp)))
+		// Historical entry: ID:EpochTT
+		histKey := []byte(fmt.Sprintf("%d:%.6f", record.ID, record.EpochTT))
 		return histBucket.Put(histKey, buf.Bytes())
 	})
 }
@@ -77,12 +77,12 @@ func (b *BoltDBBackend) DeleteObject(id int) error {
 	})
 }
 
-func (b *BoltDBBackend) GetLatestSnapshot() ([]catalog.ObjectRecord, error) {
-	var records []catalog.ObjectRecord
+func (b *BoltDBBackend) GetLatestSnapshot() ([]catalog.SDAObject, error) {
+	var records []catalog.SDAObject
 	err := b.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte("objects"))
 		return bucket.ForEach(func(k, v []byte) error {
-			var rec catalog.ObjectRecord
+			var rec catalog.SDAObject
 			if err := gob.NewDecoder(bytes.NewReader(v)).Decode(&rec); err == nil {
 				records = append(records, rec)
 			}
@@ -92,8 +92,8 @@ func (b *BoltDBBackend) GetLatestSnapshot() ([]catalog.ObjectRecord, error) {
 	return records, err
 }
 
-func (b *BoltDBBackend) GetObjectAtTime(id int, t time.Time) (catalog.ObjectRecord, error) {
-	var rec catalog.ObjectRecord
+func (b *BoltDBBackend) GetObjectAtTime(id int, t time.Time) (catalog.SDAObject, error) {
+	var rec catalog.SDAObject
 	targetTS := t.Unix()
 	
 	err := b.db.View(func(tx *bbolt.Tx) error {
@@ -136,17 +136,17 @@ func parseHistoryTS(key []byte) (int64, bool) {
 	return ts, true
 }
 
-func (b *BoltDBBackend) QueryObjectsInWindow(start, end time.Time) ([]catalog.ObjectRecord, error) {
-	var records []catalog.ObjectRecord
+func (b *BoltDBBackend) QueryObjectsInWindow(start, end time.Time) ([]catalog.SDAObject, error) {
+	var records []catalog.SDAObject
 	err := b.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte("history"))
 		c := bucket.Cursor()
 		
 		for k, v := c.First(); k != nil; k, v = c.Next() {
-			var rec catalog.ObjectRecord
+			var rec catalog.SDAObject
 			if err := gob.NewDecoder(bytes.NewReader(v)).Decode(&rec); err == nil {
-				ts := int64(rec.Timestamp)
-				if ts >= start.Unix() && ts <= end.Unix() {
+				ts := rec.EpochTT
+				if ts >= float64(start.Unix())/86400.0+2440587.5 && ts <= float64(end.Unix())/86400.0+2440587.5 {
 					records = append(records, rec)
 				}
 			}

@@ -12,11 +12,11 @@ import (
 // PersistenceBackend defines the interface for database implementations.
 type PersistenceBackend interface {
 	Close() error
-	UpsertObject(record catalog.ObjectRecord) error
+	UpsertObject(record catalog.SDAObject) error
 	DeleteObject(id int) error
-	GetLatestSnapshot() ([]catalog.ObjectRecord, error)
-	GetObjectAtTime(id int, t time.Time) (catalog.ObjectRecord, error)
-	QueryObjectsInWindow(start, end time.Time) ([]catalog.ObjectRecord, error)
+	GetLatestSnapshot() ([]catalog.SDAObject, error)
+	GetObjectAtTime(id int, t time.Time) (catalog.SDAObject, error)
+	QueryObjectsInWindow(start, end time.Time) ([]catalog.SDAObject, error)
 	PersistHypothesis(hyp *catalog.GlobalHypothesis) error
 }
 
@@ -64,7 +64,7 @@ func NewPersistentStore(cfg Config, cellSize float64) (*PersistentStore, error) 
 	// 1. Reload latest snapshot from DB
 	records, err := backend.GetLatestSnapshot()
 	if err == nil && len(records) > 0 {
-		validRecords := []catalog.ObjectRecord{}
+		validRecords := []catalog.SDAObject{}
 		for _, r := range records {
 			// Optional: Verify Ed25519 signature before loading
 			// payload := fmt.Sprintf("%d|%s|%f", r.ID, r.TLELine1, r.Timestamp)
@@ -95,10 +95,10 @@ func (ps *PersistentStore) Close() error {
 }
 
 // Historical & Time-Range Query Passthrough
-func (ps *PersistentStore) GetObjectAtTime(id int, t time.Time) (catalog.ObjectRecord, error) {
+func (ps *PersistentStore) GetObjectAtTime(id int, t time.Time) (catalog.SDAObject, error) {
 	return ps.backend.GetObjectAtTime(id, t)
 }
 
-func (ps *PersistentStore) QueryObjectsInWindow(start, end time.Time) ([]catalog.ObjectRecord, error) {
+func (ps *PersistentStore) QueryObjectsInWindow(start, end time.Time) ([]catalog.SDAObject, error) {
 	return ps.backend.QueryObjectsInWindow(start, end)
 }

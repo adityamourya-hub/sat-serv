@@ -114,9 +114,9 @@ func PredictImpactFootprint(initial orbital.State, ballisticCoeff float64, f107,
 		r := math.Sqrt(rx*rx + ry*ry + rz*rz)
 		speed := math.Sqrt(vx*vx + vy*vy + vz*vz)
 		
-		ax, ay, az := orbital.OrbitalAcceleration(rx, ry, rz, vx, vy, vz, baseJd)
+		ax, ay, az := orbital.OrbitalAcceleration(rx, ry, rz, vx, vy, vz, baseJd, orbital.PhysicsParams{Mass: 1000.0, Cd: 2.2, DragArea: 1000.0 / ballisticCoeff}) // BC = m/CdA
 		
-		rho := JacchiaRobertsDensity(r-orbital.ER, f107, ap)
+		rho := orbital.GetDensityUnified(rx, ry, rz, baseJd)
 		// Unit conversion: rho [kg/m^3], speed [km/s], BC [kg/m^2]
 		// a [km/s^2] = 0.5 * rho * speed^2 * 1000 / BC
 		drag := 0.5 * rho * speed * speed * 1000.0 / ballisticCoeff

@@ -327,7 +327,14 @@ func UnscentedMeanCov(sigma [][]float64, wm, wc []float64) ([]float64, [][]float
 }
 
 func propagateSigmaPoint(s []float64, dt float64, jd float64) []float64 {
-	return orbital.PropagateCartesianState(s, dt, jd)
+	params := orbital.PhysicsParams{
+		Mass:     2500,
+		DragArea: 15.0,
+		SRPArea:  15.0,
+		Cd:       2.2,
+		Cr:       1.2,
+	}
+	return orbital.PropagateCartesianState(s, dt, jd, params)
 }
 
 func buildODSummary(epochs []ODEpoch, nis []float64, mahal []float64, traces []float64, accepted int) ODSummary {

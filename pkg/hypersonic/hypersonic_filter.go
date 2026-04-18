@@ -53,10 +53,8 @@ func HypersonicPropagator(s []float64, dt float64, jd float64) []float64 {
 		// 1. Gravity (J2 + Point Mass) - Use unified orbital acceleration
 		ax, ay, az := orbital.OrbitalAcceleration(rx, ry, rz, vx, vy, vz, jd)
 
-		// 2. Atmosphere
-		alt := r - orbital.ER
-		// Using the Jacchia-Roberts model defined in reentry.go (same package)
-		rho := JacchiaRobertsDensity(alt, 150.0, 15.0)
+		// 2. Atmosphere (Consolidated NRLMSISE-00)
+		rho := orbital.GetDensityUnified(rx, ry, rz, jd)
 
 		// 3. Drag
 		if beta <= 0 {

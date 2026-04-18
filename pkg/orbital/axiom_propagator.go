@@ -16,17 +16,19 @@ type AxiomPropagator struct {
 	MU           float64 // Standard gravitational parameter (km^3/s^2)
 	InitialState State
 	Epoch        time.Time
+	Params       PhysicsParams // Force model parameters (Drag, SRP, etc.)
 }
 
 /**
  * NewAxiomPropagator initializes the Sovereign propagator with an rKAN kernel.
  */
-func NewAxiomPropagator(kernel *RKANKernel, init State, epoch time.Time) *AxiomPropagator {
+func NewAxiomPropagator(kernel *RKANKernel, init State, epoch time.Time, params PhysicsParams) *AxiomPropagator {
 	return &AxiomPropagator{
 		Kernel:       kernel,
-		MU:           398600.4418, // WGS-84
+		MU:           EARTH_MU_ADITI,
 		InitialState: init,
 		Epoch:        epoch,
+		Params:       params,
 	}
 }
 
@@ -39,23 +41,16 @@ func toJulianDate(t time.Time) float64 {
 // getAcceleration computes the total acceleration (Keplerian + AI Perturbation)
 // p and jd are required for the advanced Physical Feature Layer (Resonance, Ephemeris).
 func (p *AxiomPropagator) getAcceleration(q, v [3]float64, jd float64) [3]float64 {
-	rSq := q[0]*q[0] + q[1]*q[1] + q[2]*q[2]
-	r := math.Sqrt(rSq) + 1e-12
+	// 1. High-Fidelity Physics Core (J2-J4, Moon, Sun, Drag, SRP)
+	ax, ay, az := OrbitalAcceleration(q[0], q[1], q[2], v[0], v[1], v[2], jd, p.Params)
 	
-	// 1. Keplerian Central Force
-	kepler := [3]float64{
-		-p.MU * q[0] / (r * r * r),
-		-p.MU * q[1] / (r * r * r),
-		-p.MU * q[2] / (r * r * r),
-	}
-	
-	// 2. Axiom-Zero rKAN Perturbation (Learned 13-feature logic)
+	// 2. Axiom-Zero rKAN Perturbation (Learned Residual Manifold)
 	perturb := p.Kernel.GetAcceleration(q, v, jd)
 	
 	return [3]float64{
-		kepler[0] + perturb[0],
-		kepler[1] + perturb[1],
-		kepler[2] + perturb[2],
+		ax + perturb[0],
+		ay + perturb[1],
+		az + perturb[2],
 	}
 }
 

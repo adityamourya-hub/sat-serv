@@ -43,7 +43,7 @@ func ScreenIndianAssets(store *catalog.Store, threatRadiusKm float64) []Proximit
 	snapshot := store.Snapshot()
 
 	// Separate Indian assets from others
-	indianAssets := make([]catalog.ObjectRecord, 0)
+	indianAssets := make([]catalog.SDAObject, 0)
 	others := make([]spatial.BVHObject, 0, len(snapshot))
 
 	for _, rec := range snapshot {
@@ -72,13 +72,13 @@ func ScreenIndianAssets(store *catalog.Store, threatRadiusKm float64) []Proximit
 		max := octree.Vector3{X: asset.Pos.X + threatRadiusKm, Y: asset.Pos.Y + threatRadiusKm, Z: asset.Pos.Z + threatRadiusKm}
 		
 		// Use a tight temporal window around the asset's current timestamp
-		tMin := asset.Timestamp - 0.5
-		tMax := asset.Timestamp + 0.5
+		tMin := asset.EpochTT - 0.5
+		tMax := asset.EpochTT + 0.5
 		
 		nearby := bvh.QueryRange(min, max, tMin, tMax)
 
 		for _, obj := range nearby {
-			threat := obj.(catalog.ObjectRecord)
+			threat := obj.(catalog.SDAObject)
 			if threat.ID == asset.ID || threat.CountryCode == "IND" {
 				continue // Skip self and other Indian assets
 			}
@@ -122,7 +122,7 @@ func ScreenIndianAssets(store *catalog.Store, threatRadiusKm float64) []Proximit
  * Entry Point: Logs the encounter IDs and distance.
  * Exit Point: Resulting threat level [0, 1] and description.
  */
-func evaluateThreat(asset, threat catalog.ObjectRecord, dist float64) (float64, string, bool) {
+func evaluateThreat(asset, threat catalog.SDAObject, dist float64) (float64, string, bool) {
 	fmt.Printf("DEBUG: Entry evaluateThreat Asset=%d Threat=%d Dist=%.2f\n", asset.ID, threat.ID, dist)
 	level := 0.1 // Base level for proximity
 	desc := "Proximity detected"

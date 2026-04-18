@@ -33,20 +33,25 @@ func NewSQLiteBackend(path string) (*SQLiteBackend, error) {
 			name TEXT,
 			country_code TEXT,
 			asset_type TEXT,
+			status TEXT,
 			pos_x REAL,
 			pos_y REAL,
 			pos_z REAL,
 			vel_x REAL,
 			vel_y REAL,
 			vel_z REAL,
-			pos_sigma_km REAL,
+			epoch_tt REAL,
+			mass_kg REAL,
+			drag_area REAL,
+			srp_area REAL,
+			od_quality REAL,
+			sensor_id TEXT,
 			last_update_unix INTEGER,
 			version INTEGER,
-			timestamp REAL,
 			tle_line1 TEXT,
 			tle_line2 TEXT
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_objects_timestamp ON objects(timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_objects_epoch ON objects(epoch_tt)`,
 		`CREATE TABLE IF NOT EXISTS history (
 			id INTEGER,
 			timestamp REAL,
@@ -69,35 +74,34 @@ func (b *SQLiteBackend) Close() error {
 	return b.db.Close()
 }
 
-func (b *SQLiteBackend) UpsertObject(r catalog.ObjectRecord) error {
+func (b *SQLiteBackend) UpsertObject(r catalog.SDAObject) error {
 	tx, err := b.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	ts := r.Timestamp
-	if ts <= 0 {
-		ts = float64(time.Now().Unix())
-		r.Timestamp = ts
-	}
-
 	if _, err := tx.Exec(`
-		INSERT INTO objects (id, name, country_code, asset_type, pos_x, pos_y, pos_z, vel_x, vel_y, vel_z, pos_sigma_km, last_update_unix, version, timestamp, tle_line1, tle_line2)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO objects (id, name, country_code, asset_type, status, pos_x, pos_y, pos_z, vel_x, vel_y, vel_z, epoch_tt, mass_kg, drag_area, srp_area, od_quality, sensor_id, last_update_unix, version, tle_line1, tle_line2)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name,
 			country_code=excluded.country_code,
 			asset_type=excluded.asset_type,
+			status=excluded.status,
 			pos_x=excluded.pos_x, pos_y=excluded.pos_y, pos_z=excluded.pos_z,
 			vel_x=excluded.vel_x, vel_y=excluded.vel_y, vel_z=excluded.vel_z,
-			pos_sigma_km=excluded.pos_sigma_km,
+			epoch_tt=excluded.epoch_tt,
+			mass_kg=excluded.mass_kg,
+			drag_area=excluded.drag_area,
+			srp_area=excluded.srp_area,
+			od_quality=excluded.od_quality,
+			sensor_id=excluded.sensor_id,
 			last_update_unix=excluded.last_update_unix,
 			version=excluded.version,
-			timestamp=excluded.timestamp,
 			tle_line1=excluded.tle_line1,
 			tle_line2=excluded.tle_line2
-	`, r.ID, r.Name, r.CountryCode, r.AssetType, r.Pos.X, r.Pos.Y, r.Pos.Z, r.Vel.X, r.Vel.Y, r.Vel.Z, r.PosSigmaKm, r.LastUpdateUnix, r.Version, ts, r.TLELine1, r.TLELine2); err != nil {
+	`, r.ID, r.Name, r.CountryCode, r.AssetType, string(r.Status), r.Pos.X, r.Pos.Y, r.Pos.Z, r.Vel.X, r.Vel.Y, r.Vel.Z, r.EpochTT, r.MassKg, r.DragArea, r.SRPArea, r.ODQualityScore, r.SensorID, r.LastUpdateUnix, r.Version, r.TLELine1, r.TLELine2); err != nil {
 		return err
 	}
 
@@ -109,7 +113,7 @@ func (b *SQLiteBackend) UpsertObject(r catalog.ObjectRecord) error {
 		INSERT INTO history (id, timestamp, data)
 		VALUES (?, ?, ?)
 		ON CONFLICT(id, timestamp) DO UPDATE SET data=excluded.data
-	`, r.ID, ts, buf.Bytes()); err != nil {
+	`, r.ID, r.EpochTT, buf.Bytes()); err != nil {
 		return err
 	}
 
@@ -121,25 +125,27 @@ func (b *SQLiteBackend) DeleteObject(id int) error {
 	return err
 }
 
-func (b *SQLiteBackend) GetLatestSnapshot() ([]catalog.ObjectRecord, error) {
-	rows, err := b.db.Query("SELECT id, name, country_code, asset_type, pos_x, pos_y, pos_z, vel_x, vel_y, vel_z, pos_sigma_km, last_update_unix, version, timestamp, tle_line1, tle_line2 FROM objects")
+func (b *SQLiteBackend) GetLatestSnapshot() ([]catalog.SDAObject, error) {
+	rows, err := b.db.Query("SELECT id, name, country_code, asset_type, status, pos_x, pos_y, pos_z, vel_x, vel_y, vel_z, epoch_tt, mass_kg, drag_area, srp_area, od_quality, sensor_id, last_update_unix, version, tle_line1, tle_line2 FROM objects")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var records []catalog.ObjectRecord
+	var records []catalog.SDAObject
 	for rows.Next() {
-		var r catalog.ObjectRecord
-		err := rows.Scan(&r.ID, &r.Name, &r.CountryCode, &r.AssetType, &r.Pos.X, &r.Pos.Y, &r.Pos.Z, &r.Vel.X, &r.Vel.Y, &r.Vel.Z, &r.PosSigmaKm, &r.LastUpdateUnix, &r.Version, &r.Timestamp, &r.TLELine1, &r.TLELine2)
+		var r catalog.SDAObject
+		var status string
+		err := rows.Scan(&r.ID, &r.Name, &r.CountryCode, &r.AssetType, &status, &r.Pos.X, &r.Pos.Y, &r.Pos.Z, &r.Vel.X, &r.Vel.Y, &r.Vel.Z, &r.EpochTT, &r.MassKg, &r.DragArea, &r.SRPArea, &r.ODQualityScore, &r.SensorID, &r.LastUpdateUnix, &r.Version, &r.TLELine1, &r.TLELine2)
 		if err == nil {
+			r.Status = catalog.ObjectStatus(status)
 			records = append(records, r)
 		}
 	}
 	return records, nil
 }
 
-func (b *SQLiteBackend) GetObjectAtTime(id int, t time.Time) (catalog.ObjectRecord, error) {
+func (b *SQLiteBackend) GetObjectAtTime(id int, t time.Time) (catalog.SDAObject, error) {
 	row := b.db.QueryRow(`
 		SELECT data
 		FROM history
@@ -151,19 +157,19 @@ func (b *SQLiteBackend) GetObjectAtTime(id int, t time.Time) (catalog.ObjectReco
 	var blob []byte
 	if err := row.Scan(&blob); err != nil {
 		if err == sql.ErrNoRows {
-			return catalog.ObjectRecord{}, fmt.Errorf("no historical record found for ID %d at time %v", id, t)
+			return catalog.SDAObject{}, fmt.Errorf("no historical record found for ID %d at time %v", id, t)
 		}
-		return catalog.ObjectRecord{}, err
+		return catalog.SDAObject{}, err
 	}
 
-	var rec catalog.ObjectRecord
+	var rec catalog.SDAObject
 	if err := gob.NewDecoder(bytes.NewReader(blob)).Decode(&rec); err != nil {
-		return catalog.ObjectRecord{}, err
+		return catalog.SDAObject{}, err
 	}
 	return rec, nil
 }
 
-func (b *SQLiteBackend) QueryObjectsInWindow(start, end time.Time) ([]catalog.ObjectRecord, error) {
+func (b *SQLiteBackend) QueryObjectsInWindow(start, end time.Time) ([]catalog.SDAObject, error) {
 	rows, err := b.db.Query(`
 		SELECT data
 		FROM history
@@ -175,13 +181,13 @@ func (b *SQLiteBackend) QueryObjectsInWindow(start, end time.Time) ([]catalog.Ob
 	}
 	defer rows.Close()
 
-	records := make([]catalog.ObjectRecord, 0)
+	records := make([]catalog.SDAObject, 0)
 	for rows.Next() {
 		var blob []byte
 		if err := rows.Scan(&blob); err != nil {
 			continue
 		}
-		var rec catalog.ObjectRecord
+		var rec catalog.SDAObject
 		if err := gob.NewDecoder(bytes.NewReader(blob)).Decode(&rec); err == nil {
 			records = append(records, rec)
 		}

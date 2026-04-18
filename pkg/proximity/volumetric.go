@@ -17,7 +17,7 @@ type RegionOfInterest struct {
 // ScanGroundRegion implements Volumetric Scan (ADITI 4.0 Requirement a).
 // It identifies all space objects currently passing through the user-defined
 // region above a ground site.
-func ScanGroundRegion(roi RegionOfInterest, store *catalog.Store, epoch time.Time) []catalog.ObjectRecord {
+func ScanGroundRegion(roi RegionOfInterest, store *catalog.Store, epoch time.Time) []catalog.SDAObject {
 	if store == nil {
 		return nil
 	}
@@ -66,7 +66,7 @@ func ScanGroundRegion(roi RegionOfInterest, store *catalog.Store, epoch time.Tim
 	// Bound the temporal window drastically to match epoch +/- 1 hour
 	epochF := float64(epoch.Unix())
 	candidates := store.QueryRange(min, max, epochF-3600, epochF+3600) 
-	results := make([]catalog.ObjectRecord, 0)
+	results := make([]catalog.SDAObject, 0)
 
 	cosTheta := math.Cos(theta)
 	for _, rec := range candidates {
@@ -117,7 +117,7 @@ func ScanGroundRegion(roi RegionOfInterest, store *catalog.Store, epoch time.Tim
  * @param epoch: Target time.
  * @return: Signed-ready records within ROI.
  */
-func ScanGroundRegionWithAxiom(roi RegionOfInterest, store *catalog.Store, kernel *orbital.RKANKernel, epoch time.Time) []catalog.ObjectRecord {
+func ScanGroundRegionWithAxiom(roi RegionOfInterest, store *catalog.Store, kernel *orbital.RKANKernel, epoch time.Time) []catalog.SDAObject {
 	if store == nil || kernel == nil {
 		return nil
 	}
@@ -155,7 +155,7 @@ func ScanGroundRegionWithAxiom(roi RegionOfInterest, store *catalog.Store, kerne
 
 	epochF := float64(epoch.Unix())
 	candidates := store.QueryRange(min, max, epochF-3600, epochF+3600)
-	results := make([]catalog.ObjectRecord, 0)
+	results := make([]catalog.SDAObject, 0)
 
 	cosTheta := math.Cos(theta)
 	for _, rec := range candidates {
@@ -165,9 +165,9 @@ func ScanGroundRegionWithAxiom(roi RegionOfInterest, store *catalog.Store, kerne
 		// We initialize a temporary Propagator for the candidate
 		init := orbital.State{X: rec.Pos.X, Y: rec.Pos.Y, Z: rec.Pos.Z}
 		// For the demo, we use the timestamp stored in the record
-		deltaMins := (epochF - rec.Timestamp) / 60.0
+		deltaMins := (epochF - rec.EpochTT) / 60.0
 		
-		axProp := orbital.NewAxiomPropagator(kernel, init, time.Unix(int64(rec.Timestamp), 0))
+		axProp := orbital.NewAxiomPropagator(kernel, init, time.Unix(int64(rec.EpochTT), 0))
 		state, err := axProp.Propagate(deltaMins)
 		if err != nil {
 			continue

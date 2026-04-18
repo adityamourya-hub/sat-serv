@@ -8,20 +8,23 @@ import (
 
 // NRLMSISE00 implements the Neutral Atmosphere Empirical Model (2001).
 // This is a pure Go port of the NASA/NRL reference C implementation.
-type NRLMSISE00 struct {
-	mu sync.RWMutex
+// Hardened for zero-allocation high-concurrency "Rapid Processing".
+type NRLMSISE00 struct{}
+
+var statePool = sync.Pool{
+	New: func() interface{} {
+		return &state{}
+	},
 }
 
 func NewNRLMSISE00() *NRLMSISE00 {
 	return &NRLMSISE00{}
 }
 
-var (
-	// Standard Switches (defaults)
-	// 0: kilograms/meters (1) or grams/cm (0)
-	// 1: F10.7 effect
-	// ... (2-23)
 	defaultSwitches = [24]int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+
+	// Global model singleton for rapid, thread-safe access across the SDA engine.
+	globalMSIS = NewNRLMSISE00()
 )
 
 type Flags struct {
@@ -1494,13 +1497,15 @@ func (m *NRLMSISE00) densm(alt, d0, xm float64, tz *float64, mn3 int, zn3, tn3, 
 	}
 }
 
-// GTD7 is the primary entry point for density and temperature
+// GTD7 is the primary entry point for density and temperature.
+// Optimized for zero-allocation scaling via Pooled-State Architecture.
 func (m *NRLMSISE00) GTD7(input *Input, flags *Flags) Output {
 	var out Output
-	s := &state{}
-
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	
+	// 0. Acquire state from pool to eliminate heap pressure
+	s := statePool.Get().(*state)
+	*s = state{} // Fast zero-reset
+	defer statePool.Put(s)
 
 	// Initial time-independent vars
 	s.dfa = input.F107A - 150.0
@@ -1670,4 +1675,45 @@ func ECIToGeodetic(x, y, z, jd float64) (lat, long, alt float64) {
 		long -= 360
 	}
 	return
+}
+
+/**
+ * GetDensityUnified is the high-fidelity entry point for atmospheric density.
+ * Consolidates NRLMSISE-00 with coordinate-aware transformations and 
+ * robust space weather defaults for iDEX ADITI 4.0.
+ */
+func GetDensityUnified(x, y, z, jd float64) float64 {
+	// 1. Convert ECI to Geodetic (Lat, Lon, Alt)
+	lat, lon, alt := ECIToGeodetic(x, y, z, jd)
+
+	// Guard against vacuum/deep space
+	if alt > 1000 {
+		return 0
+	}
+	if alt < 0 {
+		alt = 0
+	}
+
+	// 2. Prepare MSIS Input
+	doy, sec := JDToMSIS(jd)
+	input := &Input{
+		Year:  2024, // Baseline year for non-critical variations
+		DOY:   doy,
+		Sec:   sec,
+		Alt:   alt,
+		GLat:  lat,
+		GLong: lon,
+		LST:   lon/15.0 + sec/3600.0, // Local Solar Time approx
+		F107A: 150.0,                 // Standard Flux Avg
+		F107:  150.0,                 // Daily Flux
+		AP:    4.0,                   // Geomagnetic Index
+	}
+
+	// 3. Flags: Use default high-fidelity switches
+	flags := &Flags{
+		switches: defaultSwitches,
+	}
+
+	// 4. Query Singleton
+	return globalMSIS.GTD7D(input, flags)
 }

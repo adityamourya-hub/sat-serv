@@ -11,31 +11,62 @@ import (
 	"ssis/pkg/spatial"
 )
 
+type CoordinateFrame string
+
+const (
+	FrameGCRF    CoordinateFrame = "GCRF"    // High-fidelity GCRF (IAU 2000/2006)
+	FrameEME2000 CoordinateFrame = "EME2000" // Mean J2000
+	FrameECEF    CoordinateFrame = "ECEF"    // Earth-Centered Fixed
+)
+
+type ObjectStatus string
+
+const (
+	StatusActive ObjectStatus = "ACTIVE"
+	StatusDecayed ObjectStatus = "DECAYED"
+	StatusLost    ObjectStatus = "LOST"
+)
+
 /**
- * ObjectRecord defines the persistent state and analytical metadata of a tracked space object.
+ * SDAObject defines the mission-ready persistent state and analytical metadata 
+ * of a tracked space object, compliant with the iDEX ADITI 4.0 industry hardening.
  */
-type ObjectRecord struct {
-	ID             int
-	Name           string
-	CountryCode    string
-	AssetType      string
-	Pos            octree.Vector3
-	Vel            octree.Vector3
-	PosSigmaKm     float64
-	Covariance     [6][6]float64
-	LastUpdateUnix int64
-	Version        int
-	Timestamp      float64
-	TLELine1       string
-	TLELine2       string
-	IsSGP4         bool
-	Cd             float64
-	AMR            float64
+type SDAObject struct {
+	ID             int             `json:"object_id"`
+	Name           string          `json:"name"`
+	CountryCode    string          `json:"country_code"`
+	AssetType      string          `json:"type"` // e.g., PAYLOAD, ROCKET_BODY, DEBRIS
+	Status         ObjectStatus    `json:"status"`
+	
+	// State & Uncertainty
+	Pos            octree.Vector3  `json:"position"` // ECI km
+	Vel            octree.Vector3  `json:"velocity"` // ECI km/s
+	Covariance     [6][6]float64   `json:"covariance"`
+	EpochTT        float64         `json:"epoch_tt"` // Terrestrial Time Julian Date
+	Frame          CoordinateFrame `json:"frame"`
+
+	// Physical Characteristics (Environment Interactions)
+	MassKg         float64 `json:"mass_kg"`
+	DragArea       float64 `json:"drag_area_m2"`
+	SRPArea        float64 `json:"srp_area_m2"`
+	Cd             float64 `json:"drag_coeff"`
+	Cr             float64 `json:"reflectivity_coeff"`
+	RCS            float64 `json:"rcs_m2"`
+	
+	// Provenance & Quality
+	LastUpdateUnix int64   `json:"last_updated"`
+	Version        int     `json:"version"`
+	ODQualityScore float64 `json:"od_quality"`
+	SensorID       string  `json:"sensor_id"`
+	
+	// Legacy Support
+	TLELine1       string `json:"tle_l1,omitempty"`
+	TLELine2       string `json:"tle_l2,omitempty"`
 }
 
-func (r ObjectRecord) GetPosition() octree.Vector3 { return r.Pos }
-func (r ObjectRecord) GetID() int                  { return r.ID }
-func (r ObjectRecord) GetTimestamp() float64       { return r.Timestamp }
+func (r SDAObject) GetPosition() octree.Vector3 { return r.Pos }
+func (r SDAObject) GetID() int                  { return r.ID }
+func (r SDAObject) GetTimestamp() float64       { return r.EpochTT }
 
 type TrackObservation struct {
 	TrackID       int
@@ -45,7 +76,7 @@ type TrackObservation struct {
 }
 
 type TrackAssociationCandidate struct {
-	Record           ObjectRecord
+	Record           SDAObject
 	DistanceKm       float64
 	AssociationScore float64
 	Confidence       float64
@@ -81,7 +112,7 @@ type TrackAssociationInference struct {
 type Store struct {
 	mu      sync.RWMutex
 	version int
-	records map[int]ObjectRecord
+	records map[int]SDAObject
 	grid    *spatial.HashGrid
 	index   *BVHIndex // Production Index: Bounding Volume Hierarchy
 
@@ -89,7 +120,7 @@ type Store struct {
 }
 
 type Delta struct {
-	Upserts []ObjectRecord
+	Upserts []SDAObject
 	Deletes []int
 }
 
@@ -98,7 +129,7 @@ type Delta struct {
  */
 func NewStore(cellSize float64) *Store {
 	return &Store{
-		records: make(map[int]ObjectRecord),
+		records: make(map[int]SDAObject),
 		grid:    spatial.NewHashGrid(cellSize),
 		index:   &BVHIndex{Root: nil},
 	}
@@ -133,7 +164,7 @@ func (s *Store) ApplyDeltaWithRebuild(delta Delta, fullRebuild bool) int {
 	}
 
 	// Rebuild BVH Index (Current requirement: Broad-phase rebuild)
-	allRecords := make([]ObjectRecord, 0, len(s.records))
+	allRecords := make([]SDAObject, 0, len(s.records))
 	for _, rec := range s.records {
 		allRecords = append(allRecords, rec)
 	}
@@ -151,7 +182,7 @@ func (s *Store) ApplyDeltaWithRebuild(delta Delta, fullRebuild bool) int {
 /**
  * QueryRange performs a localized volume scan using the BVH tree.
  */
-func (s *Store) QueryRange(min, max octree.Vector3, tMin, tMax float64) []ObjectRecord {
+func (s *Store) QueryRange(min, max octree.Vector3, tMin, tMax float64) []SDAObject {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.index.QueryRange(min, max, tMin, tMax)
