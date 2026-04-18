@@ -20,6 +20,7 @@ type RapidTrack struct {
 	AltitudeKm          float64
 	BurnoutVelocityKmS  float64
 	FlightPathAngleRad  float64
+	AzimuthRad          float64 // 0=North, pi/2=East
 	LaunchLat           float64
 	LaunchLon           float64
 	DistanceToAssetKm   float64
@@ -274,7 +275,8 @@ func ProcessRapidTracksHybrid(tracks []RapidTrack, maxDistanceKm float64, maxRes
 				item.track.LaunchLat,
 				item.track.LaunchLon,
 				item.track.BurnoutVelocityKmS,
-				item.track.FlightPathAngleRad,
+				item.track.FlightPathAngleRad*(180.0/math.Pi),
+				item.track.AzimuthRad*(180.0/math.Pi),
 			)
 			a.Reentry = SolveAerospace(item.track.Mach, item.track.AltitudeKm)
 		case ThreatOrbital:

@@ -4,6 +4,7 @@ import (
 	"math"
 	"sync"
 	"time"
+	"ssis/pkg/physics"
 )
 
 // NRLMSISE00 implements the Neutral Atmosphere Empirical Model (2001).
@@ -1653,28 +1654,15 @@ func JDToMSIS(jd float64) (doy int, sec float64) {
 	return
 }
 
-// ECIToGeodetic performs a first-order TEME ECI to Geodetic conversion
+// ECIToGeodetic performs a high-fidelity WGS-84 ECI to Geodetic conversion.
 func ECIToGeodetic(x, y, z, jd float64) (lat, long, alt float64) {
-	r := math.Sqrt(x*x + y*y + z*z)
-	alt = r - 6378.137 // km
-
-	lat = math.Asin(z/r) * 180.0 / math.Pi
-
-	t_utc := (jd - 2451545.0) / 36525.0
-	gmst := 6.30038809898*(jd-2451545.0) + 4.8949612127 + (0.0000213366+0.00000006003*t_utc)*t_utc
-	gmst = math.Mod(gmst, 2.0*math.Pi)
-	if gmst < 0 {
-		gmst += 2.0 * math.Pi
-	}
-
-	lon_rad := math.Atan2(y, x) - gmst
-	long = math.Mod(lon_rad*180.0/math.Pi, 360.0)
-	if long < -180 {
-		long += 360
-	} else if long > 180 {
-		long -= 360
-	}
-	return
+	// 1. Rotate ECI to ECEF
+	xf, yf, zf := physics.ECIToECEF(x, y, z, jd)
+	
+	// 2. Convert ECEF to Geodetic (WGS-84)
+	phi, lambda, h := physics.ECEFToGeodeticWGS84(xf, yf, zf)
+	
+	return phi * (180.0 / math.Pi), lambda * (180.0 / math.Pi), h
 }
 
 /**
