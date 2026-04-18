@@ -5,7 +5,7 @@ package onnx
 import (
 	"fmt"
 
-	"ssis/pkg/proximity"
+	"ssis/pkg/physics"
 )
 
 // CollisionONNXModel is a default-build stub for GATv2 surrogate collision scoring.
@@ -24,11 +24,11 @@ func (m *CollisionONNXModel) Name() string {
 	return "onnx_gatv2_surrogate_stub"
 }
 
-func (m *CollisionONNXModel) PredictRisk(input proximity.CollisionRiskInput, graph proximity.CollisionNeighborhoodGraph) (proximity.CollisionGraphInference, error) {
+func (m *CollisionONNXModel) PredictRisk(input physics.CollisionRiskInput, graph physics.CollisionNeighborhoodGraph) (physics.CollisionGraphInference, error) {
 	if len(graph.Nodes) == 0 {
-		return proximity.CollisionGraphInference{}, fmt.Errorf("empty graph")
+		return physics.CollisionGraphInference{}, fmt.Errorf("empty graph")
 	}
-	return proximity.CollisionGraphInference{}, fmt.Errorf(
+	return physics.CollisionGraphInference{}, fmt.Errorf(
 		"onnx collision backend not enabled in this build; model=%s", m.ModelPath,
 	)
 }

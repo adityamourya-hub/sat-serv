@@ -3,7 +3,7 @@
 package onnx
 
 import (
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 	"time"
 )
 
@@ -66,7 +66,7 @@ type POLTransformerOutput struct {
 
 type StateSequence struct {
 	ObjectID int
-	States   []orbital.State
+	States   []physics.State
 	Metadata map[string]string
 }
 

@@ -5,16 +5,16 @@ import (
 
 	"ssis/pkg/catalog"
 	"ssis/pkg/octree"
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 // BuildCatalogRecordFromFusion converts a fused orbital state into a catalog record
 // with position uncertainty derived from UKF covariance.
-func BuildCatalogRecordFromFusion(objectID int, name string, state orbital.State, covariance [][]float64) catalog.ObjectRecord {
+func BuildCatalogRecordFromFusion(objectID int, name string, state physics.State, covariance [][]float64) catalog.ObjectRecord {
 	return catalog.ObjectRecord{
 		ID:         objectID,
 		Name:       name,
-		Pos:        octree.Vector3{X: state.X, Y: state.Y, Z: state.Z},
+		Pos:        octree.Vector3{X: state.Pos[0], Y: state.Pos[1], Z: state.Pos[2]},
 		PosSigmaKm: PositionSigmaFromCovariance(covariance),
 	}
 }

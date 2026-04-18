@@ -8,7 +8,7 @@ import (
 
 	engcrypto "ssis/pkg/crypto"
 	safemath "ssis/pkg/math"
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 
 	"gonum.org/v1/gonum/mat"
 	"gonum.org/v1/gonum/stat"
@@ -31,7 +31,7 @@ type ODMeasurement struct {
 type ODEpoch struct {
 	TimestampUnix int64           `json:"timestamp_unix"`
 	Kind          MeasurementKind `json:"kind"`
-	State         orbital.State   `json:"state"`
+	State         physics.State   `json:"state"`
 	Covariance    [][]float64     `json:"covariance"`
 	ThreeSigma    Ellipsoid3Sigma `json:"three_sigma"`
 	InnovationNIS float64         `json:"innovation_nis"`
@@ -65,9 +65,8 @@ type ODResult struct {
 	Signed  ODSignedOutput `json:"signed"`
 }
 
-// RunSequentialODUKF performs sequential orbit determination using UKF with
-// adaptive SNC and innovation gating (Mahalanobis consistency checks).
-func RunSequentialODUKF(initial orbital.State, initialCov [][]float64, measurements []ODMeasurement, ukfCfg UKFConfig, sncCfg SNCConfig, pinn *orbital.PINNRefiner, trans *orbital.HybridTransformer, signer *engcrypto.Signer, objectID int) (ODResult, error) {
+// RunSequentialODUKF performs sequential orbit determination using UKF.
+func RunSequentialODUKF(initial physics.State, initialCov [][]float64, measurements []ODMeasurement, ukfCfg UKFConfig, sncCfg SNCConfig, pinn physics.StateRefiner, trans physics.HistoryRefiner, signer *engcrypto.Signer, objectID int) (ODResult, error) {
 	if len(measurements) == 0 {
 		return ODResult{}, fmt.Errorf("no measurements provided")
 	}
@@ -111,9 +110,7 @@ func RunSequentialODUKF(initial orbital.State, initialCov [][]float64, measureme
 		}
 		x, p = UnscentedMeanCov(predSigma, wm, wc)
 		if pinn != nil {
-			ctx := orbital.DefaultPINNRefineContext()
-			ctx.LongArcThresholdSec = math.Max(90.0, dt)
-			refined, err := pinn.RefineStateAdaptive(x, p, dt, ctx)
+			refined, err := pinn.RefineStateAdaptive(x, p, dt, math.Max(90.0, dt))
 			if err == nil {
 				x = refined
 			}
@@ -327,14 +324,14 @@ func UnscentedMeanCov(sigma [][]float64, wm, wc []float64) ([]float64, [][]float
 }
 
 func propagateSigmaPoint(s []float64, dt float64, jd float64) []float64 {
-	params := orbital.PhysicsParams{
+	params := physics.PhysicsParams{
 		Mass:     2500,
 		DragArea: 15.0,
 		SRPArea:  15.0,
 		Cd:       2.2,
 		Cr:       1.2,
 	}
-	return orbital.PropagateCartesianState(s, dt, jd, params)
+	return physics.PropagateCartesianState(s, dt, jd, params)
 }
 
 func buildODSummary(epochs []ODEpoch, nis []float64, mahal []float64, traces []float64, accepted int) ODSummary {

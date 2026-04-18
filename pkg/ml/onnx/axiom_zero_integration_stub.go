@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"ssis/pkg/catalog"
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 // AxiomZeroEngine stub implementation.
@@ -80,7 +80,7 @@ func (e *AxiomZeroEngine) ModelStatus() map[string]bool {
 
 // GetPhysicsInformedCovariance returns error in stub mode.
 func (e *AxiomZeroEngine) GetPhysicsInformedCovariance(
-	state orbital.State,
+	state physics.State,
 	environmentalFactors map[string]float64,
 ) (RKANCovarianceOutput, error) {
 	return RKANCovarianceOutput{}, fmt.Errorf("Axiom-Zero engine disabled: ONNX runtime not available")
@@ -89,7 +89,7 @@ func (e *AxiomZeroEngine) GetPhysicsInformedCovariance(
 // DetectAndAttributeManeuver returns error in stub mode.
 func (e *AxiomZeroEngine) DetectAndAttributeManeuver(
 	objectID int,
-	states []orbital.State,
+	states []physics.State,
 ) (DeltaRKANOutput, error) {
 	return DeltaRKANOutput{}, fmt.Errorf("Axiom-Zero engine disabled: ONNX runtime not available")
 }
@@ -97,7 +97,7 @@ func (e *AxiomZeroEngine) DetectAndAttributeManeuver(
 // ClassifyBehavior returns error in stub mode.
 func (e *AxiomZeroEngine) ClassifyBehavior(
 	objectID int,
-	states []orbital.State,
+	states []physics.State,
 ) (POLTransformerOutput, error) {
 	return POLTransformerOutput{}, fmt.Errorf("Axiom-Zero engine disabled: ONNX runtime not available")
 }

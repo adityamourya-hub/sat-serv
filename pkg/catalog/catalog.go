@@ -59,10 +59,21 @@ type SDAObject struct {
 	ODQualityScore float64 `json:"od_quality"`
 	SensorID       string  `json:"sensor_id"`
 	
+	// Uncertainty (State Sigma)
+	PosSigmaKm     float64 `json:"pos_sigma_km"`
+	VelSigmaKmS    float64 `json:"vel_sigma_kms"`
+	
 	// Legacy Support
 	TLELine1       string `json:"tle_l1,omitempty"`
 	TLELine2       string `json:"tle_l2,omitempty"`
+	
+	// Alias for BVH alignment
+	Timestamp      float64 `json:"-"`
 }
+
+// ObjectRecord is a legacy alias for SDAObject to support BVH indexing 
+// and internal structural consistency during the Phase 1.7 migration.
+type ObjectRecord = SDAObject
 
 func (r SDAObject) GetPosition() octree.Vector3 { return r.Pos }
 func (r SDAObject) GetID() int                  { return r.ID }

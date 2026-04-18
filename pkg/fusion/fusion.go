@@ -7,7 +7,7 @@ import (
 
 	engcrypto "ssis/pkg/crypto"
 	safemath "ssis/pkg/math"
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 type UKFConfig struct {
@@ -43,7 +43,7 @@ type RadarMeasurement struct {
 }
 
 type TLEMeasurement struct {
-	State         orbital.State `json:"state"`
+	State         physics.State `json:"state"`
 	PositionStdKm float64       `json:"position_std_km"`
 	VelocityStdKm float64       `json:"velocity_std_km"`
 }
@@ -51,7 +51,7 @@ type TLEMeasurement struct {
 type FusionInput struct {
 	ObjectID         int              `json:"object_id"`
 	EventType        string           `json:"event_type"`
-	PriorState       orbital.State    `json:"prior_state"`
+	PriorState       physics.State    `json:"prior_state"`
 	PriorCovariance  [][]float64       `json:"prior_covariance"`
 	DeltaTimeSec     float64          `json:"delta_time_sec"`
 	RadarMeasurement *RadarMeasurement `json:"radar_measurement,omitempty"`
@@ -67,7 +67,7 @@ type Ellipsoid3Sigma struct {
 
 type FusionResult struct {
 	ObjectID    int              `json:"object_id"`
-	State       orbital.State    `json:"state"`
+	State       physics.State    `json:"state"`
 	Covariance  [][]float64      `json:"covariance"`
 	ThreeSigma  Ellipsoid3Sigma  `json:"three_sigma"`
 	SensorsUsed []string         `json:"sensors_used"`
@@ -78,7 +78,7 @@ type UncertaintyAlert struct {
 	ObjectID       int             `json:"object_id"`
 	AlertType      string          `json:"alert_type"`
 	TimestampUTC   string          `json:"timestamp_utc"`
-	State          orbital.State   `json:"state"`
+	State          physics.State   `json:"state"`
 	ThreeSigma     Ellipsoid3Sigma `json:"three_sigma"`
 	Signature      string          `json:"signature"`
 	SignatureValid bool            `json:"signature_valid"`
@@ -100,7 +100,7 @@ var radarSiteRegistry = map[int]RadarSite{
 func FuseWithUKF(input FusionInput, cfg UKFConfig) (FusionResult, error) {
 	fmt.Printf("IAF_SDA: Fusing data for Object %d (dt=%.1fs)\n", input.ObjectID, input.DeltaTimeSec)
 
-	x := orbital.StateToVector(input.PriorState)
+	x := physics.StateToVector(input.PriorState)
 	p := input.PriorCovariance
 	if len(p) != 6 {
 		p = safemath.ZeroMatrix(6, 6)
@@ -112,7 +112,7 @@ func FuseWithUKF(input FusionInput, cfg UKFConfig) (FusionResult, error) {
 	// 1. Prediction (Using Physics Core Numerical Propagator)
 	jd := float64(time.Now().Unix())/86400.0 + 2440587.5
 	if input.DeltaTimeSec > 0 {
-		x = orbital.PropagateCartesianState(x, input.DeltaTimeSec, jd)
+		x = physics.PropagateCartesianState(x, input.DeltaTimeSec, jd, physics.PhysicsParams{})
 		// Propagate covariance with SNC
 		q := buildSNCCovariance(input.DeltaTimeSec, cfg)
 		p = safemath.MatrixAdd(p, q)
@@ -149,7 +149,7 @@ func FuseWithUKF(input FusionInput, cfg UKFConfig) (FusionResult, error) {
 		}
 	}
 
-	res.State = orbital.VectorToState(x)
+	res.State = physics.VectorToState(x)
 	res.Covariance = p
 	res.ThreeSigma = ComputeThreeSigmaEllipsoid(p)
 
@@ -160,7 +160,7 @@ func FuseWithUKF(input FusionInput, cfg UKFConfig) (FusionResult, error) {
 	return res, nil
 }
 
-func PropagateWithUKF(initial orbital.State, initialCov [][]float64, stepSec float64, steps int, cfg UKFConfig, pinn *orbital.PINNRefiner, trans *orbital.HybridTransformer, signer *engcrypto.Signer, objectID int, eventType string) ([]FusionResult, error) {
+func PropagateWithUKF(initial physics.State, initialCov [][]float64, stepSec float64, steps int, cfg UKFConfig, pinn physics.StateRefiner, trans physics.HistoryRefiner, signer *engcrypto.Signer, objectID int, eventType string) ([]FusionResult, error) {
 	currState := initial
 	currCov := initialCov
 	results := make([]FusionResult, 0, steps)
@@ -187,7 +187,7 @@ func PropagateWithUKF(initial orbital.State, initialCov [][]float64, stepSec flo
 	return results, nil
 }
 
-func BuildSignedUncertaintyAlert(objectID int, alertType string, state orbital.State, cov [][]float64, ts Ellipsoid3Sigma, signer *engcrypto.Signer) *UncertaintyAlert {
+func BuildSignedUncertaintyAlert(objectID int, alertType string, state physics.State, cov [][]float64, ts Ellipsoid3Sigma, signer *engcrypto.Signer) *UncertaintyAlert {
 	alert := &UncertaintyAlert{
 		ObjectID:     objectID,
 		AlertType:    alertType,
@@ -241,7 +241,7 @@ func ComputeThreeSigmaEllipsoid(p [][]float64) Ellipsoid3Sigma {
 }
 
 func RadarMeasurementVector(m RadarMeasurement) []float64 {
-	return []float64{m.RangeKm, m.RangeRateKmS, m.AzimuthDeg * orbital.DE2RA, m.ElevationDeg * orbital.DE2RA}
+	return []float64{m.RangeKm, m.RangeRateKmS, m.AzimuthDeg * physics.RAD_PER_DEG, m.ElevationDeg * physics.RAD_PER_DEG}
 }
 
 func RadarMeasurementNoise(m RadarMeasurement) [][]float64 {
@@ -253,9 +253,9 @@ func RadarMeasurementNoise(m RadarMeasurement) [][]float64 {
 	if rrStd <= 0 {
 		rrStd = 0.005
 	}
-	aStdRad := m.AngleStdDeg * orbital.DE2RA
+	aStdRad := m.AngleStdDeg * physics.RAD_PER_DEG
 	if aStdRad <= 0 {
-		aStdRad = 0.08 * orbital.DE2RA
+		aStdRad = 0.08 * physics.RAD_PER_DEG
 	}
 	r := safemath.ZeroMatrix(4, 4)
 	r[0][0] = rStd * rStd
@@ -281,15 +281,15 @@ func RadarMeasurementFromState(x []float64, siteID int, jd float64) []float64 {
 		return []float64{rng, rangeRate, az, el}
 	}
 
-	gst := orbital.GreenwichSiderealTime(jd)
-	phi := site.LatDeg * orbital.DE2RA
-	lambda := site.LonDeg * orbital.DE2RA + gst
+	gst := physics.GreenwichSiderealTime(jd)
+	phi := site.LatDeg * physics.RAD_PER_DEG
+	lambda := site.LonDeg * physics.RAD_PER_DEG + gst
 	cosPhi := math.Cos(phi)
 	sinPhi := math.Sin(phi)
 	cosLambda := math.Cos(lambda)
 	sinLambda := math.Sin(lambda)
 
-	rs := orbital.ER + site.AltKm
+	rs := physics.RE_KM + site.AltKm
 	sx := rs * cosPhi * cosLambda
 	sy := rs * cosPhi * sinLambda
 	sz := rs * sinPhi
@@ -317,7 +317,7 @@ func RadarMeasurementFromState(x []float64, siteID int, jd float64) []float64 {
 }
 
 func TLEMeasurementVector(m TLEMeasurement) []float64 {
-	s := orbital.StateToVector(m.State)
+	s := physics.StateToVector(m.State)
 	return []float64{s[0], s[1], s[2], s[3], s[4], s[5]}
 }
 

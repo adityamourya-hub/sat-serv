@@ -5,7 +5,7 @@ package onnx
 import (
 	"fmt"
 
-	"ssis/pkg/maneuver"
+	"ssis/pkg/physics"
 )
 
 // ManeuverONNXModel is a stub in default builds.
@@ -25,12 +25,12 @@ func (m *ManeuverONNXModel) Name() string {
 	return "onnx_lstm_attention_stub"
 }
 
-func (m *ManeuverONNXModel) Predict(window []maneuver.ManeuverFrame) (maneuver.ManeuverInference, error) {
+func (m *ManeuverONNXModel) Predict(window []physics.ManeuverFrame) (physics.ManeuverInference, error) {
 	if len(window) == 0 {
-		return maneuver.ManeuverInference{}, fmt.Errorf("empty maneuver frame window")
+		return physics.ManeuverInference{}, fmt.Errorf("empty maneuver frame window")
 	}
 
-	return maneuver.ManeuverInference{}, fmt.Errorf(
+	return physics.ManeuverInference{}, fmt.Errorf(
 		"onnx runtime backend is not enabled in this build; model=%s", m.ModelPath,
 	)
 }

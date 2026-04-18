@@ -5,7 +5,7 @@ package onnx
 import (
 	"fmt"
 
-	"ssis/pkg/hypersonic"
+	"ssis/pkg/physics"
 )
 
 // RapidRankerONNXModel is a default-build stub for XGBoost/LightGBM ranker inference.
@@ -24,8 +24,8 @@ func (m *RapidRankerONNXModel) Name() string {
 	return "onnx_xgboost_ranker_stub"
 }
 
-func (m *RapidRankerONNXModel) Rank(track hypersonic.RapidTrack, class hypersonic.ThreatClass, reachable bool, baselinePriority int) (hypersonic.RapidRankInference, error) {
-	return hypersonic.RapidRankInference{}, fmt.Errorf(
+func (m *RapidRankerONNXModel) Rank(track physics.RapidTrack, class physics.ThreatClass, reachable bool, baselinePriority int) (physics.RapidRankInference, error) {
+	return physics.RapidRankInference{}, fmt.Errorf(
 		"onnx rapid ranker backend not enabled in this build; model=%s", m.ModelPath,
 	)
 }
@@ -46,8 +46,8 @@ func (m *RapidPolicyONNXModel) Name() string {
 	return "onnx_ppo_policy_stub"
 }
 
-func (m *RapidPolicyONNXModel) Recommend(track hypersonic.RapidTrack, class hypersonic.ThreatClass, score float64, reachable bool) (hypersonic.RapidPolicyInference, error) {
-	return hypersonic.RapidPolicyInference{}, fmt.Errorf(
+func (m *RapidPolicyONNXModel) Recommend(track physics.RapidTrack, class physics.ThreatClass, score float64, reachable bool) (physics.RapidPolicyInference, error) {
+	return physics.RapidPolicyInference{}, fmt.Errorf(
 		"onnx rapid policy backend not enabled in this build; model=%s", m.ModelPath,
 	)
 }

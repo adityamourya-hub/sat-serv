@@ -3,6 +3,7 @@ package orbital
 import (
 	"fmt"
 	"math"
+	"ssis/pkg/physics"
 )
 
 /**
@@ -13,8 +14,8 @@ import (
  * Crucial for avoiding the numerical overhead of integration in real-time screening.
  */
 type DataPoint struct {
-	Time  float64 // Relative time in seconds
-	State State   // Position (km) and Velocity (km/s)
+	Time  float64       // Relative time in seconds
+	State physics.State // Position (km) and Velocity (km/s)
 }
 
 /**
@@ -24,28 +25,28 @@ type DataPoint struct {
  * It calculates the Lagrange basis polynomials independently for each component of (X, Y, Z, VX, VY, VZ).
  * Ensures that the resulting state maintains the fidelity of the original high-definition source.
  */
-func LagrangeInterpolate(points []DataPoint, targetTime float64) State {
+func LagrangeInterpolate(points []DataPoint, targetTime float64) physics.State {
 	fmt.Printf("[TRC] Entering LagrangeInterpolate for targetTime: %.3f with %d points\n", targetTime, len(points))
 	defer fmt.Printf("[TRC] Exiting LagrangeInterpolate\n")
 
 	n := len(points)
 	if n == 0 {
-		return State{}
+		return physics.State{}
 	}
 	if n == 1 {
 		return points[0].State
 	}
 
-	var res State
+	var res physics.State
 	// Interpolate Position X, Y, Z
-	res.X = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.X })
-	res.Y = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.Y })
-	res.Z = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.Z })
+	res.Pos[0] = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.Pos[0] })
+	res.Pos[1] = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.Pos[1] })
+	res.Pos[2] = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.Pos[2] })
 
 	// Interpolate Velocity VX, VY, VZ
-	res.VX = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.VX })
-	res.VY = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.VY })
-	res.VZ = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.VZ })
+	res.Vel[0] = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.Vel[0] })
+	res.Vel[1] = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.Vel[1] })
+	res.Vel[2] = interpolateComponent(points, targetTime, func(dp DataPoint) float64 { return dp.State.Vel[2] })
 
 	return res
 }

@@ -10,14 +10,14 @@ import (
 type mockManeuverModel struct {
 	prob float64
 	conf float64
-	typ  ManeuverType
+	typ  physics.ManeuverType
 	dv   float64
 }
 
 func (m mockManeuverModel) Name() string { return "mock_lstm_attention" }
 
-func (m mockManeuverModel) Predict(window []ManeuverFrame) (ManeuverInference, error) {
-	return ManeuverInference{
+func (m mockManeuverModel) Predict(window []physics.ManeuverFrame) (physics.ManeuverInference, error) {
+	return physics.ManeuverInference{
 		Probability: m.prob,
 		Confidence:  m.conf,
 		Type:        m.typ,
@@ -63,7 +63,7 @@ func TestDetectManeuversHybridUsesModel(t *testing.T) {
 }
 
 func TestHeuristicSHAP(t *testing.T) {
-	window := []ManeuverFrame{{Residual: 0.04, DeltaV: 0.01}, {Residual: 0.09, DeltaV: 0.02}}
+	window := []physics.ManeuverFrame{{Residual: 0.04, DeltaV: 0.01}, {Residual: 0.09, DeltaV: 0.02}}
 	shap := HeuristicSHAP(window)
 	if len(shap) != 2 {
 		t.Fatalf("Expected two feature contributions, got %d", len(shap))

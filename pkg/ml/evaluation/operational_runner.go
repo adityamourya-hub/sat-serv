@@ -11,14 +11,15 @@ import (
 
 	"ssis/pkg/common"
 	engcrypto "ssis/pkg/crypto"
-	"ssis/pkg/hypersonic"
 	"ssis/pkg/ml"
 	"ssis/pkg/ml/explainability"
 	"ssis/pkg/ml/hybrid"
-	ssis_orbital "ssis/pkg/orbital"
-	"ssis/pkg/proximity"
+	"ssis/pkg/physics"
 )
 
+/**
+ * OperationalRunConfig controls the scope and concurrency of mission simulations.
+ */
 type OperationalRunConfig struct {
 	CatalogSize  int
 	Concurrency  int
@@ -30,6 +31,9 @@ type OperationalRunConfig struct {
 	Strict       bool
 }
 
+/**
+ * SignedOperationalAlert represents a cryptographically verifiable cognitive event.
+ */
 type SignedOperationalAlert struct {
 	EventID           string              `json:"event_id"`
 	TimestampUnix     int64               `json:"timestamp_unix"`
@@ -47,6 +51,9 @@ type SignedOperationalAlert struct {
 	PublicKeyHex      string              `json:"public_key_hex,omitempty"`
 }
 
+/**
+ * AlertExplainability packages cognitive attributions for the operator.
+ */
 type AlertExplainability struct {
 	Summary          string                          `json:"summary"`
 	TopSignals       []string                        `json:"top_signals"`
@@ -54,6 +61,9 @@ type AlertExplainability struct {
 	RapidExplanation explainability.RapidExplanation `json:"rapid_explanation"`
 }
 
+/**
+ * OperationalRunMetrics captures mission-scale performance and quality KPIs.
+ */
 type OperationalRunMetrics struct {
 	TotalRequests          int                    `json:"total_requests"`
 	TotalAlerts            int                    `json:"total_alerts"`
@@ -70,7 +80,14 @@ type OperationalRunMetrics struct {
 	SignedAlertExample     SignedOperationalAlert `json:"signed_alert_example"`
 }
 
+/**
+ * RunOperationalSimulation executes a compressed watch cycle to validate end-to-end stability.
+ * Refactored to utilize the physics substrate schemas (ADITI 4.0).
+ */
 func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, error) {
+	fmt.Printf("[TRC] Entering RunOperationalSimulation\n")
+	defer fmt.Printf("[TRC] Exiting RunOperationalSimulation\n")
+
 	strict := cfg.Strict || common.StrictModeEnabled()
 	if cfg.CatalogSize <= 0 {
 		cfg.CatalogSize = 10000
@@ -120,7 +137,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 		signer = engcrypto.NewSigner("operational-sim-fallback")
 	}
 
-	cycleSteps := cfg.WatchHours * 12 // 5-minute ticks over full watch cycle
+	cycleSteps := cfg.WatchHours * 12 
 	if cycleSteps < 24 {
 		cycleSteps = 24
 	}
@@ -144,7 +161,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 			for idx := range jobs {
 				t0 := time.Now()
 				threat := dataset.Threats[idx%len(dataset.Threats)]
-				maneuver := dataset.Maneuvers[idx%len(dataset.Maneuvers)]
+				maneuverData := dataset.Maneuvers[idx%len(dataset.Maneuvers)]
 
 				localAlerts := 0
 				fallbackTriggered := false
@@ -152,7 +169,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 				switch idx % 4 {
 				case 0:
 					res, decision := orch.EvaluateCollision(
-						proximity.CollisionRiskInput{
+						physics.CollisionRiskInput{
 							MissDistanceKm:      threat.MissDistanceKm,
 							HardbodyRadiusKm:    0.005,
 							RelativeVelocityKmS: threat.RelativeVelocityKmS,
@@ -161,7 +178,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 							SigmaIntrackKm:      0.03,
 							SigmaCrosstrackKm:   0.03,
 						},
-						proximity.CollisionNeighborhoodGraph{Nodes: []proximity.CollisionGraphNode{{ID: threat.TargetObjectID}, {ID: threat.ThreatID}}},
+						physics.CollisionNeighborhoodGraph{Nodes: []physics.CollisionGraphNode{{ObjectID: threat.TargetObjectID}, {ObjectID: threat.ThreatID}}},
 					)
 					if decision.Source == "fallback" {
 						fallbackTriggered = true
@@ -170,7 +187,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 						localAlerts++
 					}
 				case 1:
-					assessments, decisions := orch.RankRapid([]hypersonic.RapidTrack{{
+					assessments, decisions := orch.RankRapid([]physics.RapidTrack{{
 						ID:                 threat.ThreatID,
 						Mach:               threat.Mach,
 						AltitudeKm:         threat.AltitudeKm,
@@ -185,7 +202,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 						localAlerts++
 					}
 				case 2:
-					events, decisions := orch.DetectManeuvers(maneuver.ObjectID, maneuver.ResidualWindow, maneuver.DeltaVWindow)
+					events, decisions := orch.DetectManeuvers(maneuverData.ObjectID, maneuverData.ResidualWindow, maneuverData.DeltaVWindow)
 					for _, d := range decisions {
 						if d.Source == "fallback" {
 							fallbackTriggered = true
@@ -196,11 +213,9 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 						localAlerts++
 					}
 				case 3:
-					// Phase 3 Tactical Reachability Assessment
-					// Mock objects as states for evaluation
-					asset := ssis_orbital_state(threat.TargetObjectID)
-					intruder := ssis_orbital_state(threat.ThreatID)
-					reach, err := orch.EvaluateReachability(asset, intruder, 0.05, 7200.0) // 2h horizon
+					asset := generatePhysicsState(threat.TargetObjectID)
+					intruder := generatePhysicsState(threat.ThreatID)
+					reach, err := orch.EvaluateReachability(asset, intruder, 0.05, 7200.0) 
 					if err == nil && reach.IsThreat {
 						countMu.Lock()
 						reachabilityAlerts++
@@ -241,7 +256,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 	for i := 0; i < minInt(500, len(dataset.Threats)); i++ {
 		threat := dataset.Threats[i]
 		cases = append(cases, CollisionCase{
-			Input: proximity.CollisionRiskInput{
+			Input: physics.CollisionRiskInput{
 				MissDistanceKm:      threat.MissDistanceKm,
 				HardbodyRadiusKm:    0.005,
 				RelativeVelocityKmS: threat.RelativeVelocityKmS,
@@ -250,7 +265,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 				SigmaIntrackKm:      0.03,
 				SigmaCrosstrackKm:   0.03,
 			},
-			Graph:       proximity.CollisionNeighborhoodGraph{Nodes: []proximity.CollisionGraphNode{{ID: threat.TargetObjectID}}},
+			Graph:       physics.CollisionNeighborhoodGraph{Nodes: []physics.CollisionGraphNode{{ObjectID: threat.TargetObjectID}}},
 			IsCollision: threat.RiskLabel >= 0.2,
 		})
 	}
@@ -260,7 +275,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 	}
 
 	baseFeatures := []SHAPFeature{{Feature: "distance", Contribution: 0.55}, {Feature: "mach", Contribution: 0.25}, {Feature: "rcs", Contribution: 0.20}}
-	rInf, rErr := engine.PredictRapidScore(hypersonic.RapidTrack{
+	rInf, rErr := engine.PredictRapidScore(physics.RapidTrack{
 		ID:                dataset.Threats[0].ThreatID,
 		DistanceToAssetKm: dataset.Threats[0].DistanceToAssetKm,
 		Mach:              dataset.Threats[0].Mach,
@@ -271,7 +286,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 		if strict {
 			return OperationalRunMetrics{}, fmt.Errorf("strict mode: rapid inference failed: %w", rErr)
 		}
-		rInf, _ = ml.NewDummyInferenceEngine().PredictRapidScore(hypersonic.RapidTrack{
+		rInf, _ = ml.NewDummyInferenceEngine().PredictRapidScore(physics.RapidTrack{
 			ID:                dataset.Threats[0].ThreatID,
 			DistanceToAssetKm: dataset.Threats[0].DistanceToAssetKm,
 			Mach:              dataset.Threats[0].Mach,
@@ -285,7 +300,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 	fidelity := SHAPFidelityAgainstBaseline(modelFeatures, baseFeatures, 5)
 
 	explainTag := "shap_attention_uncertainty"
-	explainedRapid := explainability.ExplainRapid(hypersonic.RapidTrack{
+	explainedRapid := explainability.ExplainRapid(physics.RapidTrack{
 		Mach:               dataset.Threats[0].Mach,
 		AltitudeKm:         dataset.Threats[0].AltitudeKm,
 		BurnoutVelocityKmS: dataset.Threats[0].BurnoutVelocityKmS,
@@ -368,7 +383,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 	return metrics, nil
 }
 
-func buildAlertReasonCodes(inf hypersonic.RapidRankInference, distanceToAssetKm float64) []string {
+func buildAlertReasonCodes(inf physics.RapidRankInference, distanceToAssetKm float64) []string {
 	reasons := []string{"explainability_attached"}
 	if inf.Score >= 140 {
 		reasons = append(reasons, "score_high")
@@ -462,15 +477,19 @@ func RenderADITIReportMarkdown(metrics OperationalRunMetrics) string {
 	)
 }
 
-func ssis_orbital_state(id int) ssis_orbital.State {
-	fmt.Printf("DEBUG: Entry ssis_orbital_state ID=%d\n", id)
-	return ssis_orbital.State{
-		X: 7000.0 + float64(id%100)*10.0,
-		Y: float64(id%50) * 5.0,
-		Z: float64(id%30) * 2.0,
-		VX: 0.1,
-		VY: 7.5,
-		VZ: 0.05,
+func generatePhysicsState(id int) physics.State {
+	fmt.Printf("[TRC] Entering generatePhysicsState ID=%d\n", id)
+	return physics.State{
+		Pos: [3]float64{
+			7000.0 + float64(id%100)*10.0,
+			float64(id%50) * 5.0,
+			float64(id%30) * 2.0,
+		},
+		Vel: [3]float64{
+			0.1,
+			7.5,
+			0.05,
+		},
 	}
 }
 

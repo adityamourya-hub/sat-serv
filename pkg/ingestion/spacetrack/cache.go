@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 /**
@@ -16,7 +16,7 @@ import (
  */
 type CacheEntry struct {
 	Timestamp time.Time      `json:"timestamp"`
-	Objects   []*orbital.TLE `json:"objects"`
+	Objects   []*physics.TLE `json:"objects"`
 }
 
 /**
@@ -30,10 +30,10 @@ type PersistentCache struct {
 
 /**
  * NewPersistentCache initializes the cache directory and sets the default TTL for TLE data.
- * <plan_complexity>Low</plan_complexity><total_lines_estimate>90</total_lines_estimate>
  */
 func NewPersistentCache(dir string) *PersistentCache {
-	fmt.Printf("DEBUG: Initializing Persistent Cache in %s\n", dir)
+	fmt.Printf("[TRC] Entering NewPersistentCache for %s\n", dir)
+	defer fmt.Printf("[TRC] Exiting NewPersistentCache\n")
 	return &PersistentCache{
 		CacheDir: dir,
 		TTL:      4 * time.Hour,
@@ -44,8 +44,10 @@ func NewPersistentCache(dir string) *PersistentCache {
  * Save persists a slice of TLEs to a uniquely named file based on the query name.
  * Uses JSON serialization for the outer envelope to preserve timestamp metadata.
  */
-func (c *PersistentCache) Save(name string, objects []*orbital.TLE) error {
-	fmt.Printf("DEBUG: Saving %d objects to cache: %s\n", len(objects), name)
+func (c *PersistentCache) Save(name string, objects []*physics.TLE) error {
+	fmt.Printf("[TRC] Entering PersistentCache.Save for %s (%d objects)\n", name, len(objects))
+	defer fmt.Printf("[TRC] Exiting PersistentCache.Save\n")
+
 	if err := os.MkdirAll(c.CacheDir, 0755); err != nil {
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
@@ -65,7 +67,6 @@ func (c *PersistentCache) Save(name string, objects []*orbital.TLE) error {
 		return fmt.Errorf("failed to write cache file: %w", err)
 	}
 
-	fmt.Println("DEBUG: Cache save complete")
 	return nil
 }
 
@@ -73,8 +74,10 @@ func (c *PersistentCache) Save(name string, objects []*orbital.TLE) error {
  * Load retrieves a cached entry if it exists and has not exceeded the TTL.
  * Returns the objects or an error if the cache is missing or stale.
  */
-func (c *PersistentCache) Load(name string) ([]*orbital.TLE, error) {
-	fmt.Printf("DEBUG: Attempting to load from cache: %s\n", name)
+func (c *PersistentCache) Load(name string) ([]*physics.TLE, error) {
+	fmt.Printf("[TRC] Entering PersistentCache.Load for %s\n", name)
+	defer fmt.Printf("[TRC] Exiting PersistentCache.Load\n")
+
 	path := filepath.Join(c.CacheDir, name+".json")
 	
 	info, err := os.Stat(path)
@@ -85,7 +88,6 @@ func (c *PersistentCache) Load(name string) ([]*orbital.TLE, error) {
 		return nil, fmt.Errorf("failed to stat cache file: %w", err)
 	}
 
-	// Double check TTL against file system and internal timestamp
 	if time.Since(info.ModTime()) > c.TTL {
 		return nil, fmt.Errorf("cache stale for %s (age > %v)", name, c.TTL)
 	}
@@ -104,6 +106,5 @@ func (c *PersistentCache) Load(name string) ([]*orbital.TLE, error) {
 		return nil, fmt.Errorf("cache payload stale for %s", name)
 	}
 
-	fmt.Printf("DEBUG: Successfully loaded %d objects from cache\n", len(entry.Objects))
 	return entry.Objects, nil
 }

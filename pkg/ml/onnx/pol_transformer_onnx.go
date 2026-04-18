@@ -9,7 +9,7 @@ import (
 
 	onnx "github.com/yalue/onnxruntime_go"
 
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 /**
@@ -96,7 +96,7 @@ type POLTransformerOutput struct {
 // StateSequence represents orbital state history for POL analysis.
 type StateSequence struct {
 	ObjectID int
-	States   []orbital.State // Should be sorted by time
+	States   []physics.State // Should be sorted by time
 	Metadata map[string]string
 }
 
@@ -398,7 +398,7 @@ func (m *POLTransformerModel) InferBatch(requests []InferenceRequest) []Inferenc
 	for i, req := range requests {
 		sequence := StateSequence{ObjectID: -1}
 
-		if states, ok := req.Inputs["states"].([]orbital.State); ok {
+		if states, ok := req.Inputs["states"].([]physics.State); ok {
 			sequence.States = states
 		}
 		if objID, ok := req.Inputs["object_id"].(int); ok {

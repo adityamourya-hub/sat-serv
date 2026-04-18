@@ -3,7 +3,7 @@
 package onnx
 
 import (
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 	"time"
 )
 
@@ -58,7 +58,7 @@ type DeltaRKANOutput struct {
 
 type StateHistory struct {
 	ObjectID int
-	States   []orbital.State
+	States   []physics.State
 }
 
 func NewDeltaRKANAttributorModel(modelPath string, timesteps int) (*DeltaRKANAttributorModel, error) {
@@ -119,6 +119,6 @@ func (m *DeltaRKANAttributorModel) InferBatch(requests []InferenceRequest) []Inf
 	return results
 }
 
-func ComputeRTNFrame(state orbital.State) ([3]float64, [3]float64, [3]float64) {
+func ComputeRTNFrame(state physics.State) ([3]float64, [3]float64, [3]float64) {
 	return [3]float64{1, 0, 0}, [3]float64{0, 1, 0}, [3]float64{0, 0, 1}
 }

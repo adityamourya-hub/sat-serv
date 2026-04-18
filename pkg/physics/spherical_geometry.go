@@ -4,16 +4,12 @@ import (
 	"math"
 )
 
+// GreenwichSiderealTime removed (duplicated in frame_transforms.go)
+
 /**
  * Spherical Geometry and Keplerian Utilities
  * Hardened for IAF ADITI 4.0 ballistic impact precision.
  */
-
-const (
-	EARTH_ROTATION_RATE = 7.292115e-5 // rad/s
-	EARTH_MU            = 398600.4418  // km^3/s^2
-	EARTH_R             = 6378.137    // km
-)
 
 /**
  * SphericalProject calculates the destination coordinates (lat, lon) given an initial 
@@ -55,8 +51,7 @@ func CalculateSubOrbitalToF(a, e, rBurnout, gamma, psi float64) float64 {
 	}
 
 	// 2. Eccentric Anomaly at Impact (Ei)
-	// At impact r = RE, but the arc angle is Eb + psi
-	// It's cleaner to solve for nu_i = nu_b + psi
+	// JD_EPOCH and SEC_PER_DAY removed (using constants.go)
 	sinNuB := (math.Sqrt(a*a*(1-e*e)) * math.Sin(eb)) / rBurnout
 	cosNuB := (math.Cos(eb) - e) / (1 - e*math.Cos(eb))
 	nuB := math.Atan2(sinNuB, cosNuB)
@@ -70,9 +65,13 @@ func CalculateSubOrbitalToF(a, e, rBurnout, gamma, psi float64) float64 {
 	}
 
 	// 3. TOF = sqrt(a^3/mu) * diff(Mean Anomaly)
-	sqrtA3Mu := math.Sqrt(math.Pow(a, 3) / EARTH_MU)
+	sqrtA3Mu := math.Sqrt(math.Pow(a, 3) / EARTH_MU_IAU)
 	maB := eb - e*math.Sin(eb)
 	maI := ei - e*math.Sin(ei)
 	
 	return sqrtA3Mu * (maI - maB)
 }
+
+// ComputePCADispersion removed (duplicated in forces.go)
+
+// CalculateLiftVectorECI removed (duplicated in coordinates.go)

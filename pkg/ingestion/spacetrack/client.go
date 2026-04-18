@@ -9,14 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 /**
  * Client implements a production-grade interface for the Space-Track.org REST API.
  * This client manages authenticated sessions via a CookieJar and provides methods
  * for querying the unified space catalog for tactical SSA data.
- * Adheres to sovereign data ingestion protocols for the SSIS platform.
  */
 type Client struct {
 	httpClient *http.Client
@@ -26,10 +25,11 @@ type Client struct {
 /**
  * NewClient initializes a new Space-Track API client with an internal cookie jar
  * for session persistence. Sets reasonable timeouts for tactical ingestion.
- * <plan_complexity>Medium</plan_complexity><total_lines_estimate>120</total_lines_estimate>
  */
 func NewClient() (*Client, error) {
-	fmt.Println("DEBUG: Initializing Space-Track Client")
+	fmt.Printf("[TRC] Entering NewClient\n")
+	defer fmt.Printf("[TRC] Exiting NewClient\n")
+
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cookie jar: %w", err)
@@ -47,10 +47,11 @@ func NewClient() (*Client, error) {
 /**
  * Login authenticates against the Space-Track.org service.
  * Stores authentication cookies in the client's internal jar for subsequent requests.
- * Uses the /ajaxauth/login endpoint as requested by the protocol.
  */
 func (c *Client) Login(username, password string) error {
-	fmt.Printf("DEBUG: Attempting Space-Track login for user: %s\n", username)
+	fmt.Printf("[TRC] Entering Client.Login for user: %s\n", username)
+	defer fmt.Printf("[TRC] Exiting Client.Login\n")
+
 	loginURL := fmt.Sprintf("%s/ajaxauth/login", c.baseURL)
 	data := url.Values{}
 	data.Set("identity", username)
@@ -71,17 +72,17 @@ func (c *Client) Login(username, password string) error {
 		return fmt.Errorf("login credentials rejected by Space-Track")
 	}
 
-	fmt.Println("DEBUG: Space-Track login successful")
 	return nil
 }
 
 /**
  * QueryTLE executes a custom basicspacedata query against the TLE class.
- * Returns a slice of parsed orbital.TLE objects.
- * Supports filtering string (e.g., "NORAD_CAT_ID/25544,38779/orderby/NORAD_CAT_ID/format/tle").
+ * Returns a slice of parsed physics.TLE objects.
  */
-func (c *Client) QueryTLE(query string) ([]*orbital.TLE, error) {
-	fmt.Printf("DEBUG: Executing Space-Track TLE query: %s\n", query)
+func (c *Client) QueryTLE(query string) ([]*physics.TLE, error) {
+	fmt.Printf("[TRC] Entering Client.QueryTLE: %s\n", query)
+	defer fmt.Printf("[TRC] Exiting Client.QueryTLE\n")
+
 	fullURL := fmt.Sprintf("%s/basicspacedata/query/class/tle_latest/%s", c.baseURL, query)
 	
 	resp, err := c.httpClient.Get(fullURL)
@@ -104,42 +105,37 @@ func (c *Client) QueryTLE(query string) ([]*orbital.TLE, error) {
 		return nil, fmt.Errorf("received empty TLE response from Space-Track")
 	}
 
-	// Space-Track 'format/tle' returns raw TLE blocks, which we split by object
-	// Note: 2-line elements are often preceded by a name line in '3-line' format
 	return parseRawTLEBlocks(rawString)
 }
 
 /**
  * parseRawTLEBlocks converts a concatenated string of TLEs into structured objects.
- * It leverages the orbital package's hardened parsing logic.
  */
-func parseRawTLEBlocks(data string) ([]*orbital.TLE, error) {
-	fmt.Println("DEBUG: Parsing raw TLE blocks from API response")
+func parseRawTLEBlocks(data string) ([]*physics.TLE, error) {
+	fmt.Printf("[TRC] Entering parseRawTLEBlocks\n")
+	defer fmt.Printf("[TRC] Exiting parseRawTLEBlocks\n")
+
 	lines := strings.Split(data, "\n")
-	var results []*orbital.TLE
+	var results []*physics.TLE
 	var currentBlock []string
 
 	for _, line := range lines {
-		// Only trim surrounding block whitespace, but preserve internal column alignment
-		// A TLE line must be at least 69 characters; significant padding is preserved.
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		currentBlock = append(currentBlock, line)
 		
-		// Standard TLE lines start with '1 ' or '2 '
 		if len(currentBlock) >= 2 && strings.HasPrefix(currentBlock[len(currentBlock)-1], "2 ") {
 			dataBlock := strings.Join(currentBlock, "\n")
-			tle, err := orbital.ParseTLE(dataBlock)
+			tle, err := physics.ParseTLE(dataBlock)
 			if err == nil {
 				results = append(results, tle)
 			} else {
-				fmt.Printf("DEBUG: Skipping invalid TLE block: %v\n", err)
+				fmt.Printf("[TRC] Skipping invalid TLE block: %v\n", err)
 			}
 			currentBlock = nil
 		}
 	}
 
-	fmt.Printf("DEBUG: Successfully parsed %d TLEs\n", len(results))
 	return results, nil
 }

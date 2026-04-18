@@ -2,9 +2,8 @@ package hypersonic
 
 import (
 	"math"
-	"time"
+
 	"ssis/pkg/physics"
-	"ssis/pkg/orbital"
 )
 
 /**
@@ -35,18 +34,18 @@ func ComputeBallisticImpact(launchLat, launchLon, vBurnoutKmS, gammaDeg, azimuth
 	gamma := gammaDeg * (math.Pi / 180.0)
 	beta := azimuthDeg * (math.Pi / 180.0)
 	
-	rb := physics.WGS84_A // Burnout near surface
+	rb := physics.EARTH_R_EQUATORIAL // Burnout near surface
 	v2 := vBurnoutKmS * vBurnoutKmS
-	Q := (v2 * rb) / physics.EARTH_MU
+	Q := (v2 * rb) / physics.EARTH_MU_IAU
 	a := rb / (2.0 - Q)
 	ecc := math.Sqrt(1.0 - (rb/a)*(2.0-rb/a)*math.Pow(math.Cos(gamma), 2))
 	
 	// Exact Range Angle (Psi) to surface impact (Analytical Estimate)
 	tanPsiHalf := (Q * math.Sin(gamma) * math.Cos(gamma)) / (1.0 - Q*math.Pow(math.Cos(gamma), 2))
-	psi_total := 2.0 * math.Atan(tanPsiHalf)
+	_ = tanPsiHalf // PSI calculation for future reference
 	
 	// Terminal Handover Baseline: 120km (Entry Interface)
-	r_ei := physics.WGS84_A + 120.0
+	r_ei := physics.EARTH_R_EQUATORIAL + 120.0
 	var tof, finalLat, finalLon, finalV float64
 	
 	if a*(1+ecc) < r_ei {
@@ -72,7 +71,7 @@ func ComputeBallisticImpact(launchLat, launchLon, vBurnoutKmS, gammaDeg, azimuth
 		latEI, lonEI := physics.SphericalProject(latB, lonB, psi_ei, beta)
 		
 		// Terminal Numerical Handover (120km -> 0km)
-		tof_terminal, lat_i, lon_i, v_i := propagateNumerical(latEI, lonEI-(physics.EARTH_ROTATION_RATE*tof_midcourse), vBurnoutKmS, -math.Acos(physics.WGS84_A*(1+ecc*math.Cos(nuEI))/(a*(1-ecc*ecc))), beta, 2451545.0+tof_midcourse/86400.0)
+		tof_terminal, lat_i, lon_i, v_i := propagateNumerical(latEI, lonEI-(physics.EARTH_OMEGA*tof_midcourse), vBurnoutKmS, -math.Acos(physics.EARTH_R_EQUATORIAL*(1+ecc*math.Cos(nuEI))/(a*(1-ecc*ecc))), beta, 2451545.0+tof_midcourse/86400.0)
 		
 		tof = tof_midcourse + tof_terminal
 		finalLat, finalLon, finalV = lat_i, lon_i, v_i
@@ -81,7 +80,7 @@ func ComputeBallisticImpact(launchLat, launchLon, vBurnoutKmS, gammaDeg, azimuth
 	return BallisticThreat{
 		ImpactLat:      finalLat * (180.0 / math.Pi),
 		ImpactLon:      finalLon * (180.0 / math.Pi),
-		ApogeeKm:       a*(1.0+ecc) - physics.WGS84_A,
+		ApogeeKm:       a*(1.0+ecc) - physics.EARTH_R_EQUATORIAL,
 		TimeOfFlight:   tof,
 		ImpactVelocity: finalV,
 	}
@@ -98,7 +97,7 @@ func propagateNumerical(lat, lon, v, gamma, beta, jd float64) (tof, finalLat, fi
 	// ... (Simplification: integrate in geodetic alt-alpha-beta for sub-orbital) ...
 	// To maintain SSIS standards, we use RKF45 with OrbitalAcceleration
 	
-	rk := orbital.NewIntegratorRKF45()
+	rk := physics.NewIntegratorRKF45()
 	rk.AbsError = 1e-8
 	rk.RelError = 1e-8
 	
@@ -107,18 +106,18 @@ func propagateNumerical(lat, lon, v, gamma, beta, jd float64) (tof, finalLat, fi
 	dt := 1.0
 	
 	f := func(t float64, x_s []float64) []float64 {
-		ax, ay, az := orbital.OrbitalAcceleration(x_s[0], x_s[1], x_s[2], x_s[3], x_s[4], x_s[5], jd+t/86400.0, orbital.PhysicsParams{Mass: 1000.0, Cd: 2.2, DragArea: 1.0})
+		ax, ay, az := physics.OrbitalAcceleration(x_s[0], x_s[1], x_s[2], x_s[3], x_s[4], x_s[5], jd+t/86400.0, physics.PhysicsParams{Mass: 1000.0, Cd: 2.2, DragArea: 1.0})
 		return []float64{x_s[3], x_s[4], x_s[5], ax, ay, az}
 	}
 
 	for i := 0; i < 5000; i++ {
-		_, _, alt := orbital.ECIToGeodetic(y_state[0], y_state[1], y_state[2], jd+t/86400.0)
+		_, _, alt := physics.ECIToGeodetic(y_state[0], y_state[1], y_state[2], jd+t/86400.0)
 		if alt <= 0 {
 			break
 		}
 		t, y_state, dt = rk.Step(t, dt, y_state, f)
 	}
 	
-	phi, lambda, _ := orbital.ECIToGeodetic(y_state[0], y_state[1], y_state[2], jd+t/86400.0)
+	phi, lambda, _ := physics.ECIToGeodetic(y_state[0], y_state[1], y_state[2], jd+t/86400.0)
 	return t, phi * (math.Pi / 180.0), lambda * (math.Pi / 180.0), math.Sqrt(y_state[3]*y_state[3] + y_state[4]*y_state[4] + y_state[5]*y_state[5])
 }

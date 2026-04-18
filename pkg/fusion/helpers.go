@@ -2,18 +2,15 @@ package fusion
 
 import (
 	safemath "ssis/pkg/math"
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
-func stateToVector(s orbital.State) []float64 {
-	return []float64{s.X, s.Y, s.Z, s.VX, s.VY, s.VZ}
+func stateToVector(s physics.State) []float64 {
+	return physics.StateToVector(s)
 }
 
-func vectorToState(v []float64) orbital.State {
-	if len(v) < 6 {
-		return orbital.State{}
-	}
-	return orbital.State{X: v[0], Y: v[1], Z: v[2], VX: v[3], VY: v[4], VZ: v[5]}
+func vectorToState(v []float64) physics.State {
+	return physics.VectorToState(v)
 }
 
 func normalizeCovariance(p [][]float64, n int) [][]float64 {

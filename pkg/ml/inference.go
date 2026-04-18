@@ -13,20 +13,23 @@ import (
 	ort "github.com/yalue/onnxruntime_go"
 
 	"ssis/pkg/common"
-	"ssis/pkg/hypersonic"
 	"ssis/pkg/maneuver"
+	"ssis/pkg/physics"
 	"ssis/pkg/proximity"
 )
 
-// InferenceEngine orchestrates all ML model predictions with fallback logic.
+/**
+ * InferenceEngine orchestrates all ML model predictions with fallback logic.
+ * Migrated to utilize the physics substrate schemas (ADITI 4.0).
+ */
 type InferenceEngine interface {
-	PredictRapidScore(track hypersonic.RapidTrack) (hypersonic.RapidRankInference, error)
-	PredictManeuver(window []maneuver.ManeuverFrame) (maneuver.ManeuverInference, error)
-	PredictCollisionRisk(input proximity.CollisionRiskInput, graph proximity.CollisionNeighborhoodGraph) (proximity.CollisionGraphInference, error)
+	PredictRapidScore(track physics.RapidTrack) (physics.RapidRankInference, error)
+	PredictManeuver(window []physics.ManeuverFrame) (physics.ManeuverInference, error)
+	PredictCollisionRisk(input physics.CollisionRiskInput, graph physics.CollisionNeighborhoodGraph) (physics.CollisionGraphInference, error)
 	IsHealthy() bool
 }
 
-// DummyInferenceEngine remains as fallback when ONNX is unavailable in air-gapped setups.
+// DummyInferenceEngine remains as fallback when ONNX is unavailable.
 type DummyInferenceEngine struct {
 	Name string
 }
@@ -35,7 +38,10 @@ func NewDummyInferenceEngine() *DummyInferenceEngine {
 	return &DummyInferenceEngine{Name: "DummyInferenceEngine"}
 }
 
-func (e *DummyInferenceEngine) PredictRapidScore(track hypersonic.RapidTrack) (hypersonic.RapidRankInference, error) {
+func (e *DummyInferenceEngine) PredictRapidScore(track physics.RapidTrack) (physics.RapidRankInference, error) {
+	fmt.Printf("[TRC] Entering DummyInferenceEngine.PredictRapidScore for track ID %d\n", track.ID)
+	defer fmt.Printf("[TRC] Exiting DummyInferenceEngine.PredictRapidScore\n")
+
 	baseScore := 50.0
 	reachable := track.DistanceToAssetKm <= 1500.0
 	if reachable {
@@ -49,7 +55,7 @@ func (e *DummyInferenceEngine) PredictRapidScore(track hypersonic.RapidTrack) (h
 	distanceFactor := math.Max(0, 1.0-(track.DistanceToAssetKm/3000.0))
 	baseScore += distanceFactor * 20.0
 	baseScore = math.Min(100, math.Max(0, baseScore))
-	return hypersonic.RapidRankInference{
+	return physics.RapidRankInference{
 		Score:           baseScore,
 		Confidence:      0.45,
 		UncertaintyLow:  math.Max(0, baseScore-15.0),
@@ -63,9 +69,12 @@ func (e *DummyInferenceEngine) PredictRapidScore(track hypersonic.RapidTrack) (h
 	}, nil
 }
 
-func (e *DummyInferenceEngine) PredictManeuver(window []maneuver.ManeuverFrame) (maneuver.ManeuverInference, error) {
+func (e *DummyInferenceEngine) PredictManeuver(window []physics.ManeuverFrame) (physics.ManeuverInference, error) {
+	fmt.Printf("[TRC] Entering DummyInferenceEngine.PredictManeuver for %d frames\n", len(window))
+	defer fmt.Printf("[TRC] Exiting DummyInferenceEngine.PredictManeuver\n")
+
 	if len(window) == 0 {
-		return maneuver.ManeuverInference{}, fmt.Errorf("empty window")
+		return physics.ManeuverInference{}, fmt.Errorf("empty window")
 	}
 	var meanRes, varRes float64
 	for _, frame := range window {
@@ -80,15 +89,15 @@ func (e *DummyInferenceEngine) PredictManeuver(window []maneuver.ManeuverFrame) 
 	stdRes := math.Sqrt(varRes)
 	shap := maneuver.HeuristicSHAP(window)
 	probability := 0.0
-	manType := maneuver.ManeuverNone
+	manType := physics.ManeuverNone
 	if stdRes > 2.0 {
 		probability = 0.7
-		manType = maneuver.ManeuverImpulsive
+		manType = physics.ManeuverImpulsive
 	} else if stdRes > 1.0 {
 		probability = 0.4
-		manType = maneuver.ManeuverLowThrust
+		manType = physics.ManeuverLowThrust
 	}
-	return maneuver.ManeuverInference{
+	return physics.ManeuverInference{
 		Probability: probability,
 		Type:        manType,
 		DeltaV:      stdRes * 0.1,
@@ -97,17 +106,20 @@ func (e *DummyInferenceEngine) PredictManeuver(window []maneuver.ManeuverFrame) 
 	}, nil
 }
 
-func (e *DummyInferenceEngine) PredictCollisionRisk(input proximity.CollisionRiskInput, graph proximity.CollisionNeighborhoodGraph) (proximity.CollisionGraphInference, error) {
+func (e *DummyInferenceEngine) PredictCollisionRisk(input physics.CollisionRiskInput, graph physics.CollisionNeighborhoodGraph) (physics.CollisionGraphInference, error) {
+	fmt.Printf("[TRC] Entering DummyInferenceEngine.PredictCollisionRisk\n")
+	defer fmt.Printf("[TRC] Exiting DummyInferenceEngine.PredictCollisionRisk\n")
+
 	pc := proximity.AlfanoMaxPc(input.MissDistanceKm, input.HardbodyRadiusKm)
 	uncertainty := input.SigmaRadialKm + input.SigmaIntrackKm + input.SigmaCrosstrackKm
 	att := make(map[int]float64, len(graph.Nodes))
 	if len(graph.Nodes) > 0 {
 		w := 1.0 / float64(len(graph.Nodes))
 		for _, n := range graph.Nodes {
-			att[n.ID] = w
+			att[n.ObjectID] = w
 		}
 	}
-	return proximity.CollisionGraphInference{
+	return physics.CollisionGraphInference{
 		RiskScore:        pc,
 		UncertaintyLower: math.Max(0, pc-uncertainty),
 		UncertaintyUpper: math.Min(1.0, pc+uncertainty),
@@ -254,9 +266,12 @@ func NewOnnxInferenceEngine(modelDir string) (*OnnxInferenceEngine, error) {
 	}, nil
 }
 
-func (e *OnnxInferenceEngine) PredictManeuver(window []maneuver.ManeuverFrame) (maneuver.ManeuverInference, error) {
+func (e *OnnxInferenceEngine) PredictManeuver(window []physics.ManeuverFrame) (physics.ManeuverInference, error) {
+	fmt.Printf("[TRC] Entering OnnxInferenceEngine.PredictManeuver for %d frames\n", len(window))
+	defer fmt.Printf("[TRC] Exiting OnnxInferenceEngine.PredictManeuver\n")
+
 	if len(window) == 0 {
-		return maneuver.ManeuverInference{}, fmt.Errorf("empty maneuver window")
+		return physics.ManeuverInference{}, fmt.Errorf("empty maneuver window")
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -267,14 +282,14 @@ func (e *OnnxInferenceEngine) PredictManeuver(window []maneuver.ManeuverFrame) (
 	}
 	in, err := ort.NewTensor(ort.NewShape(1, int64(len(window)), 2), flat)
 	if err != nil {
-		return maneuver.ManeuverInference{}, fmt.Errorf("maneuver input tensor: %w", err)
+		return physics.ManeuverInference{}, fmt.Errorf("maneuver input tensor: %w", err)
 	}
 	defer in.Destroy()
 
 	inputs := []ort.Value{in}
 	outputs := make([]ort.Value, e.maneuverOutputs)
 	if err := e.maneuverSession.Run(inputs, outputs); err != nil {
-		return maneuver.ManeuverInference{}, fmt.Errorf("run maneuver session: %w", err)
+		return physics.ManeuverInference{}, fmt.Errorf("run maneuver session: %w", err)
 	}
 	defer destroyValues(outputs)
 
@@ -283,16 +298,16 @@ func (e *OnnxInferenceEngine) PredictManeuver(window []maneuver.ManeuverFrame) (
 	deltaV := firstFloatAt(outputs, 2, 0)
 	conf := firstFloatAt(outputs, 3, 0)
 
-	mType := maneuver.ManeuverNone
+	mType := physics.ManeuverNone
 	switch typeIdx {
 	case 1:
-		mType = maneuver.ManeuverImpulsive
+		mType = physics.ManeuverImpulsive
 	case 2:
-		mType = maneuver.ManeuverLowThrust
+		mType = physics.ManeuverLowThrust
 	case 3:
-		mType = maneuver.ManeuverHypersonic
+		mType = physics.ManeuverHypersonic
 	}
-	return maneuver.ManeuverInference{
+	return physics.ManeuverInference{
 		Probability: clamp01(prob),
 		Type:        mType,
 		DeltaV:      math.Max(0, deltaV),
@@ -300,7 +315,10 @@ func (e *OnnxInferenceEngine) PredictManeuver(window []maneuver.ManeuverFrame) (
 	}, nil
 }
 
-func (e *OnnxInferenceEngine) PredictCollisionRisk(input proximity.CollisionRiskInput, graph proximity.CollisionNeighborhoodGraph) (proximity.CollisionGraphInference, error) {
+func (e *OnnxInferenceEngine) PredictCollisionRisk(input physics.CollisionRiskInput, graph physics.CollisionNeighborhoodGraph) (physics.CollisionGraphInference, error) {
+	fmt.Printf("[TRC] Entering OnnxInferenceEngine.PredictCollisionRisk\n")
+	defer fmt.Printf("[TRC] Exiting OnnxInferenceEngine.PredictCollisionRisk\n")
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -315,14 +333,14 @@ func (e *OnnxInferenceEngine) PredictCollisionRisk(input proximity.CollisionRisk
 	}
 	in, err := ort.NewTensor(ort.NewShape(1, int64(len(features))), features)
 	if err != nil {
-		return proximity.CollisionGraphInference{}, fmt.Errorf("collision input tensor: %w", err)
+		return physics.CollisionGraphInference{}, fmt.Errorf("collision input tensor: %w", err)
 	}
 	defer in.Destroy()
 
 	inputs := []ort.Value{in}
 	outputs := make([]ort.Value, e.collisionOutputs)
 	if err := e.collisionSession.Run(inputs, outputs); err != nil {
-		return proximity.CollisionGraphInference{}, fmt.Errorf("run collision session: %w", err)
+		return physics.CollisionGraphInference{}, fmt.Errorf("run collision session: %w", err)
 	}
 	defer destroyValues(outputs)
 
@@ -330,11 +348,11 @@ func (e *OnnxInferenceEngine) PredictCollisionRisk(input proximity.CollisionRisk
 	if len(graph.Nodes) > 0 {
 		w := 1.0 / float64(len(graph.Nodes))
 		for _, n := range graph.Nodes {
-			att[n.ID] = w
+			att[n.ObjectID] = w
 		}
 	}
 
-	return proximity.CollisionGraphInference{
+	return physics.CollisionGraphInference{
 		RiskScore:        clamp01(firstFloatAt(outputs, 0, 0)),
 		UncertaintyLower: clamp01(firstFloatAt(outputs, 1, 0)),
 		UncertaintyUpper: clamp01(firstFloatAt(outputs, 2, 0)),
@@ -343,7 +361,10 @@ func (e *OnnxInferenceEngine) PredictCollisionRisk(input proximity.CollisionRisk
 	}, nil
 }
 
-func (e *OnnxInferenceEngine) PredictRapidScore(track hypersonic.RapidTrack) (hypersonic.RapidRankInference, error) {
+func (e *OnnxInferenceEngine) PredictRapidScore(track physics.RapidTrack) (physics.RapidRankInference, error) {
+	fmt.Printf("[TRC] Entering OnnxInferenceEngine.PredictRapidScore for track ID %d\n", track.ID)
+	defer fmt.Printf("[TRC] Exiting OnnxInferenceEngine.PredictRapidScore\n")
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -375,14 +396,14 @@ func (e *OnnxInferenceEngine) PredictRapidScore(track hypersonic.RapidTrack) (hy
 	}
 	in, err := ort.NewTensor(ort.NewShape(1, int64(len(features))), features)
 	if err != nil {
-		return hypersonic.RapidRankInference{}, fmt.Errorf("rapid input tensor: %w", err)
+		return physics.RapidRankInference{}, fmt.Errorf("rapid input tensor: %w", err)
 	}
 	defer in.Destroy()
 
 	inputs := []ort.Value{in}
 	outputs := make([]ort.Value, e.rapidOutputs)
 	if err := e.rapidSession.Run(inputs, outputs); err != nil {
-		return hypersonic.RapidRankInference{}, fmt.Errorf("run rapid session: %w", err)
+		return physics.RapidRankInference{}, fmt.Errorf("run rapid session: %w", err)
 	}
 	defer destroyValues(outputs)
 
@@ -394,7 +415,7 @@ func (e *OnnxInferenceEngine) PredictRapidScore(track hypersonic.RapidTrack) (hy
 		low, high = high, low
 	}
 
-	return hypersonic.RapidRankInference{
+	return physics.RapidRankInference{
 		Score:           clampScore(score),
 		Confidence:      clamp01(conf),
 		UncertaintyLow:  clampScore(low),

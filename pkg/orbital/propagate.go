@@ -7,84 +7,31 @@ import (
 	"time"
 
 	"github.com/joshuaferrara/go-satellite"
+	"ssis/pkg/physics"
 )
 
 // Consts for WGS-84 (Commonly used in SGP4)
 // Standard Physics Constants (Sovereign Baseline)
 const (
-	DE2RA     = math.Pi / 180.0
-	ER        = 6378.135     // SGP4 compliant Earth Radius (km)
 	XKE       = 0.0743669161 // sqrt(GE) in ER^3/min^2
 	J2_LEGACY = 1.08262668355e-3
 	J3        = -2.53215306e-6
 	J4        = -1.6196211e-6
-	CK2       = 0.5 * J2_LEGACY * AE * AE
 	AE        = 1.0
-	EARTH_MU  = 398600.4418 // km^3/sec^2
 )
 
 // MaxPropagationDays defines the stability limit for analytical propagation (10 years).
 const MaxPropagationDays = 365 * 10
 
-/**
- * JulianToCalendar converts a fractional Julian Date (JD) into its Gregorian calendar 
- * components (year, month, day, hour, minute, second).
- * It implements the algorithm from Jean Meeus' "Astronomical Algorithms", 
- * robustly handling both Julian and Gregorian calendar transitions.
- */
-func JulianToCalendar(jd float64) (year, month, day, hour, minute, second int) {
-	// Algorithm from Meeus, Astronomical Algorithms
-	jd = jd + 0.5
-	Z := int(jd)
-	F := jd - float64(Z)
-	var A int
-	if Z < 2299161 {
-		A = Z
-	} else {
-		alpha := int((float64(Z) - 1867216.25) / 36524.25)
-		A = Z + 1 + alpha - int(float64(alpha)/4)
-	}
-	B := A + 1524
-	C := int((float64(B) - 122.1) / 365.25)
-	D := int(365.25 * float64(C))
-	E := int((float64(B) - float64(D)) / 30.6001)
-
-	day = B - D - int(30.6001*float64(E))
-	if E < 14 {
-		month = E - 1
-	} else {
-		month = E - 13
-	}
-	if month > 2 {
-		year = C - 4716
-	} else {
-		year = C - 4715
-	}
-
-	// Extract time from fractional day
-	F = F * 24.0
-	hour = int(F)
-	F = (F - float64(hour)) * 60.0
-	minute = int(F)
-	second = int((F - float64(minute)) * 60.0)
-
-	return
-}
-
-// State represents the orbital state (position and velocity) in ECI coordinates.
-type State struct {
-	X, Y, Z    float64 // Position (km)
-	VX, VY, VZ float64 // Velocity (km/s)
-	E_hal      float64 // Specific Orbital Energy for Hamiltonian audit
-}
+// JulianToCalendar removed (migrated to pkg/physics)
 
 // Propagator defines the interface for orbital trajectory generation.
 type Propagator interface {
 	/**
 	 * Propagate computes the object state at a relative time from epoch.
-	 * Returns (State, error) to handle stability limits.
+	 * Returns (physics.State, error) to handle stability limits.
 	 */
-	Propagate(minutesSinceEpoch float64) (State, error)
+	Propagate(minutesSinceEpoch float64) (physics.State, error)
 }
 
 /**
@@ -114,7 +61,7 @@ type SGP4Propagator struct {
  * unified epoch parsing and prevent numerical drift.
  * It uses the 'wgs84' gravity model for consistency with NORAD standards.
  */
-func NewSGP4Propagator(tle *TLE) *SGP4Propagator {
+func NewSGP4Propagator(tle *physics.TLE) *SGP4Propagator {
 	if tle == nil {
 		return nil
 	}
@@ -162,7 +109,7 @@ func DefaultPropagatorConfig() PropagatorConfig {
  * NewPropagator is a legacy factory function that returns a default SGP4 propagator.
  * It is maintained for backwards compatibility with the operational runner.
  */
-func NewPropagator(tle *TLE) (Propagator, error) {
+func NewPropagator(tle *physics.TLE) (Propagator, error) {
 	if tle == nil {
 		return nil, fmt.Errorf("NewPropagator: nil TLE provided")
 	}
@@ -178,7 +125,7 @@ func NewPropagator(tle *TLE) (Propagator, error) {
  * to the appropriate propagator engine (SGP4, AXIOM_GO, AXIOM_ONNX) 
  * based on the provided configuration.
  */
-func NewPropagatorWithConfig(tle *TLE, config PropagatorConfig) (Propagator, error) {
+func NewPropagatorWithConfig(tle *physics.TLE, config PropagatorConfig) (Propagator, error) {
 	if tle == nil {
 		return nil, fmt.Errorf("NewPropagatorWithConfig: nil TLE provided")
 	}
@@ -207,7 +154,7 @@ func NewPropagatorWithConfig(tle *TLE, config PropagatorConfig) (Propagator, err
 			return nil, err
 		}
 
-		params := PhysicsParams{
+		params := physics.PhysicsParams{
 			Mass:     2500, // Default placeholders for IAF Aditi 4.0
 			DragArea: 15.0,
 			SRPArea:  15.0,
@@ -232,29 +179,31 @@ func NewPropagatorWithConfig(tle *TLE, config PropagatorConfig) (Propagator, err
  * from the TLE epoch using the SGP4 analytical model.
  * It includes a numerical stability guard to prevent divergence beyond 10 years.
  */
-func (p *SGP4Propagator) Propagate(minutesSinceEpoch float64) (State, error) {
-	// 1. Stability Check (Limit propagation to +/- 10 years to prevent SGP4 divergence)
+// Propagate computes the satellite state...
+func (p *SGP4Propagator) Propagate(minutesSinceEpoch float64) (physics.State, error) {
+	// 1. Stability Check
 	if math.Abs(minutesSinceEpoch) > MaxPropagationDays*1440 {
-		return State{}, fmt.Errorf("SGP4Propagator.Propagate: exceeds %d-day stability limit", MaxPropagationDays)
+		return physics.State{}, fmt.Errorf("SGP4Propagator.Propagate: exceeds %d-day stability limit", MaxPropagationDays)
 	}
 
 	// 2. High-precision Julian Day calculation
 	targetJD := p.epochJD + (minutesSinceEpoch / 1440.0)
 
 	// 3. Convert Julian Date to calendar components for go-satellite
-	year, month, day, hour, minute, second := JulianToCalendar(targetJD)
+	year, month, day, hour, minute, second := physics.JulianToCalendar(targetJD)
 
-	// 4. Dispatch to go-satellite core (Propagate returns ECI Position (km) and Velocity (km/s))
+	// 4. Dispatch to go-satellite core
 	pos, vel := satellite.Propagate(p.sat, year, month, day, hour, minute, second)
 
 	// Guard against NaN/Inf divergence
 	if math.IsNaN(pos.X) || math.IsInf(pos.X, 0) {
-		return State{}, fmt.Errorf("SGP4Propagator.Propagate: numerical divergence (NaN/Inf) at t=%.2f min", minutesSinceEpoch)
+		return physics.State{}, fmt.Errorf("SGP4Propagator.Propagate: numerical divergence (NaN/Inf) at t=%.2f min", minutesSinceEpoch)
 	}
 
-	st := State{
-		X: pos.X, Y: pos.Y, Z: pos.Z,
-		VX: vel.X, VY: vel.Y, VZ: vel.Z,
+	st := physics.State{
+		Pos:     physics.Vector3{pos.X, pos.Y, pos.Z},
+		Vel:     physics.Vector3{vel.X, vel.Y, vel.Z},
+		EpochJD: targetJD,
 	}
 	return st, nil
 }
@@ -278,31 +227,10 @@ func PropagateSGP4(tleLine1, tleLine2 string, epoch time.Time) (pos, vel [3]floa
 		return pos, vel, err
 	}
 
-	pos[0], pos[1], pos[2] = state.X, state.Y, state.Z
-	vel[0], vel[1], vel[2] = state.VX, state.VY, state.VZ
+	pos[0], pos[1], pos[2] = state.Pos[0], state.Pos[1], state.Pos[2]
+	vel[0], vel[1], vel[2] = state.Vel[0], state.Vel[1], state.Vel[2]
 
 	return pos, vel, nil
-}
-
-/**
- * StateToVector flattens a State struct into a 6-element float64 slice 
- * for compatibility with linear algebra libraries and ML kernels.
- */
-func StateToVector(s State) []float64 {
-	v := []float64{s.X, s.Y, s.Z, s.VX, s.VY, s.VZ}
-	return v
-}
-
-/**
- * VectorToState reconstructs a State struct from a 6-element float64 slice.
- * It performs defensive checks to ensure the slice length is sufficient.
- */
-func VectorToState(v []float64) State {
-	if len(v) < 6 {
-		return State{}
-	}
-	st := State{X: v[0], Y: v[1], Z: v[2], VX: v[3], VY: v[4], VZ: v[5]}
-	return st
 }
 
 /**
@@ -310,7 +238,7 @@ func VectorToState(v []float64) State {
  * using a 4th-Order Runge-Kutta (RK4) method with a fine-grained 10s step size.
  * Zero-allocation inner loop: uses stack-allocated [6]float64 scratch arrays.
  */
-func PropagateCartesianState(x []float64, dt float64, jd float64, params PhysicsParams) []float64 {
+func PropagateCartesianState(x []float64, dt float64, jd float64, params physics.PhysicsParams) []float64 {
 	h := 10.0 // 10 sec step for inner RK4
 	if dt < 0 {
 		h = -10.0
@@ -370,7 +298,7 @@ func PropagateCartesianState(x []float64, dt float64, jd float64, params Physics
  * PropagateWithSTM integrates the state and the 7x7 State Transition Matrix (STM).
  * This is the industry-standard way to grow the covariance matrix: P(t) = Phi * P(0) * Phi^T.
  */
-func PropagateWithSTM(state []float64, phi [][]float64, dtSec float64, jd float64, params PhysicsParams) ([]float64, [][]float64) {
+func PropagateWithSTM(state []float64, phi [][]float64, dtSec float64, jd float64, params physics.PhysicsParams) ([]float64, [][]float64) {
 	// 1. Numerically integrate the state (6D)
 	nextState := PropagateCartesianState(state, dtSec, jd, params)
 	
@@ -415,13 +343,15 @@ func vecAddScaled(v, dv []float64, s float64) []float64 {
  * Hardened for iDEX ADITI 4.0 Industry Standards.
  * Includes: J2-J4 Gravity, Sun/Moon Perturbations, Drag, and SRP.
  */
-func OrbitalAcceleration(x, y, z, vx, vy, vz float64, jd float64, params PhysicsParams) (ax, ay, az float64) {
+func OrbitalAcceleration(x, y, z, vx, vy, vz float64, jd float64, params physics.PhysicsParams) (ax, ay, az float64) {
 	// 1. Point Mass + J2-J4 Zonal Harmonics
 	ax, ay, az = GravityAccelerationGCRF(x, y, z)
 
 	// 2. Atmospheric Drag (Industry Standard NRLMSISE-00)
+	r := math.Sqrt(x*x + y*y + z*z)
+	alt := r - physics.EARTH_R_EQUATORIAL
 	if alt < 1200 {
-		rho := GetDensityUnified(x, y, z, jd)
+		rho := physics.GetDensityUnified(x, y, z, jd)
 		v2 := vx*vx + vy*vy + vz*vz
 		speed := math.Sqrt(v2)
 		// Acceleration = -0.5 * rho * v^2 * (A/m) * Cd * (v_rel / speed)
@@ -440,51 +370,15 @@ func OrbitalAcceleration(x, y, z, vx, vy, vz float64, jd float64, params Physics
 	}
 
 	// 4. 3rd Body: Moon (Simplified Position)
-	mx, my, mz := MoonPosition(jd)
+	mx, my, mz := physics.MoonPosition(jd)
 	rmoon3 := math.Pow(mx*mx+my*my+mz*mz, 1.5)
 	dmx, dmy, dmz := mx-x, my-y, mz-z
 	drmoon3 := math.Pow(dmx*dmx+dmy*dmy+dmz*dmz, 1.5)
-	const MU_MOON = 4902.800066
-	ax += MU_MOON * (dmx/drmoon3 - mx/rmoon3)
-	ay += MU_MOON * (dmy/drmoon3 - my/rmoon3)
-	az += MU_MOON * (dmz/drmoon3 - mz/rmoon3)
+	ax += physics.MOON_MU_IAU * (dmx/drmoon3 - mx/rmoon3)
+	ay += physics.MOON_MU_IAU * (dmy/drmoon3 - my/rmoon3)
+	az += physics.MOON_MU_IAU * (dmz/drmoon3 - mz/rmoon3)
 
 	return ax, ay, az
 }
 
-type PhysicsParams struct {
-	Mass     float64
-	DragArea float64
-	SRPArea  float64
-	Cd       float64
-	Cr       float64
-}
-
-/**
- * MoonPosition returns the ECI coordinates (km) of the Moon at a given 
- * Julian Date using a simplified analytical model for Earth-Moon distance.
- */
-func MoonPosition(jd float64) (x, y, z float64) {
-	T := (jd - 2451545.0) / 36525.0
-	LPrime := (218.316 + 481267.881*T) * DE2RA
-	x = 384400.0 * math.Cos(LPrime)
-	y = 384400.0 * math.Sin(LPrime)
-	z = 0.0
-	return
-}
-
-/**
- * AtmosphericDensity returns the air density (kg/m^3) at a given altitude.
- * It uses a simplified exponential model for rapid sub-orbital processing.
- */
-
-/**
- * GreenwichSiderealTime computes the GST in radians at a given Julian Date.
- * It is essential for coordinate transformations between ECI and ECEF frames.
- */
-func GreenwichSiderealTime(jd float64) float64 {
-	T := (jd - 2451545.0) / 36525.0
-	theta := 67310.54841 + (876600*3600+8640184.812866)*T + 0.093104*T*T - 6.2e-6*T*T*T
-	gst := math.Mod(theta*DE2RA/240.0, 2*math.Pi)
-	return gst
-}
+// MoonPosition, GreenwichSiderealTime removed (migrated to pkg/physics)

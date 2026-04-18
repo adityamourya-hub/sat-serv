@@ -7,7 +7,7 @@ import (
 
 	_ "github.com/yalue/onnxruntime_go"
 
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 // This implementation is compiled when built with -tags onnx.

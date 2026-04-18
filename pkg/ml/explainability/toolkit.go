@@ -1,28 +1,34 @@
 package explainability
 
 import (
+	"fmt"
 	"math"
 	"sort"
-	"ssis/pkg/hypersonic"
 	"ssis/pkg/maneuver"
-	"ssis/pkg/proximity"
+	"ssis/pkg/physics"
 )
 
-// SHAPFeature holds a SHAP-like local attribution.
+/**
+ * SHAPFeature holds a SHAP-like local attribution.
+ */
 type SHAPFeature struct {
 	Feature      string  `json:"feature"`
 	Value        float64 `json:"value"`
 	Contribution float64 `json:"contribution"`
 }
 
-// AttentionPoint captures normalized temporal attention for sequence models.
+/**
+ * AttentionPoint captures normalized temporal attention for sequence models.
+ */
 type AttentionPoint struct {
 	Index  int     `json:"index"`
 	Weight float64 `json:"weight"`
 	Value  float64 `json:"value"`
 }
 
-// UncertaintySummary captures generic uncertainty diagnostics.
+/**
+ * UncertaintySummary captures generic uncertainty diagnostics.
+ */
 type UncertaintySummary struct {
 	Mean          float64 `json:"mean"`
 	Lower         float64 `json:"lower"`
@@ -32,27 +38,38 @@ type UncertaintySummary struct {
 	Confidence    float64 `json:"confidence"`
 }
 
-// RapidExplanation packages explainability outputs for rapid-threat scoring.
+/**
+ * RapidExplanation packages explainability outputs for rapid-threat scoring.
+ */
 type RapidExplanation struct {
 	TopFeatures []SHAPFeature      `json:"top_features"`
 	Uncertainty UncertaintySummary `json:"uncertainty"`
 }
 
-// ManeuverExplanation packages explainability outputs for maneuver detection.
+/**
+ * ManeuverExplanation packages explainability outputs for maneuver detection.
+ */
 type ManeuverExplanation struct {
-	SHAP        []maneuver.FeatureContribution `json:"shap"`
+	SHAP        []physics.FeatureContribution `json:"shap"`
 	Attention   []AttentionPoint               `json:"attention"`
 	Uncertainty UncertaintySummary             `json:"uncertainty"`
 }
 
-// CollisionExplanation packages explainability outputs for collision-risk inference.
+/**
+ * CollisionExplanation packages explainability outputs for collision-risk inference.
+ */
 type CollisionExplanation struct {
-	Heatmap     []proximity.CollisionHeatmapCell `json:"heatmap"`
+	Heatmap     []physics.CollisionHeatmapCell `json:"heatmap"`
 	Uncertainty UncertaintySummary               `json:"uncertainty"`
 }
 
-// ExplainRapid builds SHAP-like feature attributions and uncertainty summary.
-func ExplainRapid(track hypersonic.RapidTrack, inference hypersonic.RapidRankInference) RapidExplanation {
+/**
+ * ExplainRapid builds SHAP-like feature attributions and uncertainty summary.
+ */
+func ExplainRapid(track physics.RapidTrack, inference physics.RapidRankInference) RapidExplanation {
+	fmt.Printf("[TRC] Entering ExplainRapid for track %d\n", track.ID)
+	defer fmt.Printf("[TRC] Exiting ExplainRapid\n")
+
 	features := map[string]float64{
 		"mach":                  track.Mach,
 		"altitude_km":           track.AltitudeKm,
@@ -61,7 +78,6 @@ func ExplainRapid(track hypersonic.RapidTrack, inference hypersonic.RapidRankInf
 		"radar_cross_section":   track.RadarCrossSection,
 	}
 
-	// Use provided FeatureWeights or generate heuristic attributions from raw feature values
 	weights := inference.FeatureWeights
 	if len(weights) == 0 {
 		weights = make(map[string]float64, len(features))
@@ -101,8 +117,13 @@ func ExplainRapid(track hypersonic.RapidTrack, inference hypersonic.RapidRankInf
 	}
 }
 
-// ExplainManeuver builds SHAP, attention over the window, and uncertainty.
-func ExplainManeuver(window []maneuver.ManeuverFrame, inf maneuver.ManeuverInference) ManeuverExplanation {
+/**
+ * ExplainManeuver builds SHAP, attention over the window, and uncertainty.
+ */
+func ExplainManeuver(window []physics.ManeuverFrame, inf physics.ManeuverInference) ManeuverExplanation {
+	fmt.Printf("[TRC] Entering ExplainManeuver\n")
+	defer fmt.Printf("[TRC] Exiting ExplainManeuver\n")
+
 	attention := BuildAttentionFromWindow(window)
 	shap := inf.SHAP
 	if len(shap) == 0 {
@@ -125,13 +146,18 @@ func ExplainManeuver(window []maneuver.ManeuverFrame, inf maneuver.ManeuverInfer
 	}
 }
 
-// ExplainCollision builds node heatmap and uncertainty bounds.
-func ExplainCollision(graph proximity.CollisionNeighborhoodGraph, inf proximity.CollisionGraphInference) CollisionExplanation {
-	heatmap := make([]proximity.CollisionHeatmapCell, 0, len(graph.Nodes))
+/**
+ * ExplainCollision builds node heatmap and uncertainty bounds.
+ */
+func ExplainCollision(graph physics.CollisionNeighborhoodGraph, inf physics.CollisionGraphInference) CollisionExplanation {
+	fmt.Printf("[TRC] Entering ExplainCollision\n")
+	defer fmt.Printf("[TRC] Exiting ExplainCollision\n")
+
+	heatmap := make([]physics.CollisionHeatmapCell, 0, len(graph.Nodes))
 	for _, n := range graph.Nodes {
-		att := inf.NodeAttention[n.ID]
-		heatmap = append(heatmap, proximity.CollisionHeatmapCell{
-			NodeID:       n.ID,
+		att := inf.NodeAttention[n.ObjectID]
+		heatmap = append(heatmap, physics.CollisionHeatmapCell{
+			NodeID:       n.ObjectID,
 			Attention:    att,
 			Contribution: att,
 		})
@@ -151,8 +177,10 @@ func ExplainCollision(graph proximity.CollisionNeighborhoodGraph, inf proximity.
 	}
 }
 
-// BuildAttentionFromWindow uses normalized residual magnitudes as attention proxy.
-func BuildAttentionFromWindow(window []maneuver.ManeuverFrame) []AttentionPoint {
+/**
+ * BuildAttentionFromWindow uses normalized residual magnitudes as attention proxy.
+ */
+func BuildAttentionFromWindow(window []physics.ManeuverFrame) []AttentionPoint {
 	if len(window) == 0 {
 		return nil
 	}
@@ -179,14 +207,14 @@ func BuildAttentionFromWindow(window []maneuver.ManeuverFrame) []AttentionPoint 
 	return points
 }
 
-// SummarizeUncertainty computes width diagnostics from prediction bounds.
-// When lower==upper (no bounds provided), it synthesizes a confidence-based interval.
+/**
+ * SummarizeUncertainty computes width diagnostics from prediction bounds.
+ */
 func SummarizeUncertainty(mean, lower, upper, confidence float64) UncertaintySummary {
 	if lower > upper {
 		lower, upper = upper, lower
 	}
 	width := upper - lower
-	// Synthesize bounds when caller provides none (both zero or equal)
 	if width <= 0 && mean != 0 {
 		margin := math.Max(0.05, 0.5*(1.0-confidence)) * math.Abs(mean)
 		lower = mean - margin

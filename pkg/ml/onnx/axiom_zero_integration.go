@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"ssis/pkg/catalog"
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 /**
@@ -175,7 +175,7 @@ func (e *AxiomZeroEngine) ModelStatus() map[string]bool {
 // GetPhysicsInformedCovariance returns covariance inflation for an object.
 // This integrates with the collision package to provide learned uncertainty.
 func (e *AxiomZeroEngine) GetPhysicsInformedCovariance(
-	state orbital.State,
+	state physics.State,
 	environmentalFactors map[string]float64,
 ) (RKANCovarianceOutput, error) {
 	e.mu.RLock()
@@ -187,12 +187,12 @@ func (e *AxiomZeroEngine) GetPhysicsInformedCovariance(
 
 	// Build input from state
 	input := RKANCovarianceInput{
-		PositionX: state.X,
-		PositionY: state.Y,
-		PositionZ: state.Z,
-		VelocityX: state.VX,
-		VelocityY: state.VY,
-		VelocityZ: state.VZ,
+		PositionX: state.Pos[0],
+		PositionY: state.Pos[1],
+		PositionZ: state.Pos[2],
+		VelocityX: state.Vel[0],
+		VelocityY: state.Vel[1],
+		VelocityZ: state.Vel[2],
 	}
 
 	// Add environmental factors if provided
@@ -205,8 +205,8 @@ func (e *AxiomZeroEngine) GetPhysicsInformedCovariance(
 
 	// Compute orbital elements for additional features
 	// Simplified calculations
-	r := []float64{state.X, state.Y, state.Z}
-	v := []float64{state.VX, state.VY, state.VZ}
+	r := []float64{state.Pos[0], state.Pos[1], state.Pos[2]}
+	v := []float64{state.Vel[0], state.Vel[1], state.Vel[2]}
 
 	// Semi-major axis (vis-viva)
 	rMag := 0.0
@@ -246,7 +246,7 @@ func sqrt(x float64) float64 {
 // DetectAndAttributeManeuver analyzes state history and returns maneuver details.
 func (e *AxiomZeroEngine) DetectAndAttributeManeuver(
 	objectID int,
-	states []orbital.State,
+	states []physics.State,
 ) (DeltaRKANOutput, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -266,7 +266,7 @@ func (e *AxiomZeroEngine) DetectAndAttributeManeuver(
 // ClassifyBehavior analyzes an object's state sequence and returns behavior class.
 func (e *AxiomZeroEngine) ClassifyBehavior(
 	objectID int,
-	states []orbital.State,
+	states []physics.State,
 ) (POLTransformerOutput, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()

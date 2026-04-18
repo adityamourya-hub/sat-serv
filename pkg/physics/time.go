@@ -2,7 +2,6 @@ package physics
 
 import (
 	"math"
-	"time"
 )
 
 /**
@@ -13,12 +12,7 @@ import (
  * 3. TT (Terrestrial Time): Ideal coordinate time at the geoid.
  */
 
-const (
-	// JD_EPOCH is the Julian Date of the Unix Epoch (1970-01-01 00:00:00 UTC)
-	JD_EPOCH = 2440587.5
-	// SEC_PER_DAY is the number of seconds in a standard SI day
-	SEC_PER_DAY = 86400.0
-)
+// JD_EPOCH and SEC_PER_DAY removed (using constants.go)
 
 // LeapSecond represents a historical leap second insertion point.
 type LeapSecond struct {
@@ -105,17 +99,57 @@ type EOP struct {
 	LOD    float64 // Length of day (ms)
 }
 
+// GreenwichSiderealTime removed (duplicated in frame_transforms.go)
+
 /**
- * GreenwichMeanSiderealTime computes the GMST in radians including UT1 correction.
+ * JulianToCalendar converts Julian Date to Gregorian calendar components.
+ * Algorithm: Jean Meeus, Astronomical Algorithms.
  */
-func GreenwichMeanSiderealTime(jdUTC float64, ut1_utc float64) float64 {
-	jdUT1 := jdUTC + (ut1_utc / SEC_PER_DAY)
-	t := (jdUT1 - 2451545.0) / 36525.0
-	// IAU 1982 GMST formula
-	theta := 67310.54841 + (876600*3600+8640184.812866)*t + 0.093104*t*t - 6.2e-6*t*t*t
-	gmst := math.Mod(theta*math.Pi/180.0/240.0, 2*math.Pi)
-	if gmst < 0 {
-		gmst += 2 * math.Pi
+func JulianToCalendar(jd float64) (year, month, day, hour, minute, second int) {
+	jd = jd + 0.5
+	Z := int(jd)
+	F := jd - float64(Z)
+	var A int
+	if Z < 2299161 {
+		A = Z
+	} else {
+		alpha := int((float64(Z) - 1867216.25) / 36524.25)
+		A = Z + 1 + alpha - int(float64(alpha)/4)
 	}
-	return gmst
+	B := A + 1524
+	C := int((float64(B) - 122.1) / 365.25)
+	D := int(365.25 * float64(C))
+	E := int((float64(B) - float64(D)) / 30.6001)
+
+	day = B - D - int(30.6001*float64(E))
+	if E < 14 {
+		month = E - 1
+	} else {
+		month = E - 13
+	}
+	if month > 2 {
+		year = C - 4716
+	} else {
+		year = C - 4715
+	}
+
+	F = F * 24.0
+	hour = int(F)
+	F = (F - float64(hour)) * 60.0
+	minute = int(F)
+	second = int((F - float64(minute)) * 60.0)
+	return
+}
+
+/**
+ * MoonPosition returns ECI coordinates (km) of the Moon.
+ */
+func MoonPosition(jd float64) (x, y, z float64) {
+	const DE2RA = math.Pi / 180.0
+	T := (jd - 2451545.0) / 36525.0
+	LPrime := (218.316 + 481267.881*T) * DE2RA
+	x = 384400.0 * math.Cos(LPrime)
+	y = 384400.0 * math.Sin(LPrime)
+	z = 0.0
+	return
 }

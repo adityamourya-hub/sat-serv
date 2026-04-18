@@ -9,6 +9,7 @@ import (
 
 	"ssis/pkg/crypto"
 	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 /**
@@ -21,8 +22,6 @@ import (
  * 2. Audit the physical honesty of the result via Hamiltonian consistency (E_hal).
  * 3. Calculate Information Divergence (D_KL) against the physics baseline.
  * 4. Reject and failover if E_hal deviation or D_KL exceeds thresholds.
- *
- * <plan_complexity>High</plan_complexity><total_lines_estimate>180</total_lines_estimate>
  */
 type HybridPropagator struct {
 	Axiom   *orbital.AxiomPropagator
@@ -38,6 +37,8 @@ type HybridPropagator struct {
  * NewHybridPropagator initializes the physics-gated orchestrator.
  */
 func NewHybridPropagator(axiom *orbital.AxiomPropagator, sgp4 *orbital.SGP4Propagator, metrics *EngineMetrics, signer crypto.Signer) *HybridPropagator {
+	fmt.Printf("[TRC] Entering NewHybridPropagator\n")
+	defer fmt.Printf("[TRC] Exiting NewHybridPropagator\n")
 	return &HybridPropagator{
 		Axiom:             axiom,
 		SGP4:              sgp4,
@@ -54,9 +55,9 @@ func NewHybridPropagator(axiom *orbital.AxiomPropagator, sgp4 *orbital.SGP4Propa
  * @param minutesSinceEpoch: Time delta in minutes.
  * @return: Final verified state, whether it was a failover, and any error.
  */
-func (p *HybridPropagator) Propagate(minutesSinceEpoch float64) (orbital.State, bool, error) {
-	// Entry Point: Physics-Gated Propagation
-	fmt.Printf("DEBUG: Gated Propagation (dt=%.2fm) at %v\n", minutesSinceEpoch, time.Now())
+func (p *HybridPropagator) Propagate(minutesSinceEpoch float64) (physics.State, bool, error) {
+	fmt.Printf("[TRC] Entering HybridPropagator.Propagate dt=%.2fm\n", minutesSinceEpoch)
+	defer fmt.Printf("[TRC] Exiting HybridPropagator.Propagate\n")
 
 	// 1. Primary Ingress: Axiom-Zero (Neural ODE)
 	axiomState, err := p.Axiom.Propagate(minutesSinceEpoch)
@@ -90,43 +91,38 @@ func (p *HybridPropagator) Propagate(minutesSinceEpoch float64) (orbital.State, 
 	}
 
 	// 5. Material Primacy Guardrail: Cryptographic Physics Audit
-	// We sign the Hash(State || E_hal || Timestamp)
 	p.SignAudit(axiomState, ePred)
 
-	// Exit Point: State Accepted as Physically Honest
 	return axiomState, false, nil
 }
 
 /**
  * SignAudit creates a cryptographic proof of the physical state evaluation.
  */
-func (p *HybridPropagator) SignAudit(state orbital.State, energy float64) {
-	// Construct the state manifest (using position hash as identifier)
+func (p *HybridPropagator) SignAudit(state physics.State, energy float64) {
+	// Construct the state manifest
 	manifest := fmt.Sprintf("POS:%.3f,%.3f,%.3f|T:%v|E:%.6f",
-		state.X, state.Y, state.Z, time.Now().Unix(), energy)
+		state.Pos[0], state.Pos[1], state.Pos[2], time.Now().Unix(), energy)
 
-	// SHA-256 Hash
 	hash := sha256.Sum256([]byte(manifest))
 
-	// Ed25519 Signature (returns hex string)
 	sig := p.Signer.Sign(hash[:])
 	if sig != "" {
 		fmt.Printf("AUDIT: Signed State Manifest. Hash=%s Sig=%s\n",
 			hex.EncodeToString(hash[:])[:8], sig[:8])
-		// In production, this would be pushed to a DLT or an immutable log.
 	}
 }
 
 /**
  * CalculateKLDivergence computes the Mahalanobis positional discrepancy.
  */
-func (p *HybridPropagator) CalculateKLDivergence(pState, qState orbital.State) float64 {
+func (p *HybridPropagator) CalculateKLDivergence(pState, qState physics.State) float64 {
 	const sigma = 1.0 // 1km standard deviation in LEO
 	const var_val = sigma * sigma
 
-	dx := pState.X - qState.X
-	dy := pState.Y - qState.Y
-	dz := pState.Z - qState.Z
+	dx := pState.Pos[0] - qState.Pos[0]
+	dy := pState.Pos[1] - qState.Pos[1]
+	dz := pState.Pos[2] - qState.Pos[2]
 
 	distSq := (dx*dx + dy*dy + dz*dz) / var_val
 	return 0.5 * distSq
@@ -136,10 +132,9 @@ func (p *HybridPropagator) CalculateKLDivergence(pState, qState orbital.State) f
  * AuditEnergy computes the specific planetary energy of the orbital state.
  * E = 0.5 * v^2 - mu / r
  */
-func (p *HybridPropagator) AuditEnergy(state orbital.State) float64 {
-	r := math.Sqrt(state.X*state.X + state.Y*state.Y + state.Z*state.Z)
-	v2 := state.VX*state.VX + state.VY*state.VY + state.VZ*state.VZ
+func (p *HybridPropagator) AuditEnergy(state physics.State) float64 {
+	r := math.Sqrt(state.Pos[0]*state.Pos[0] + state.Pos[1]*state.Pos[1] + state.Pos[2]*state.Pos[2])
+	v2 := state.Vel[0]*state.Vel[0] + state.Vel[1]*state.Vel[1] + state.Vel[2]*state.Vel[2]
 
-	// mu is defined in orbital.EARTH_MU
-	return 0.5*v2 - 398600.4418/r
+	return 0.5*v2 - physics.EARTH_MU_IAU/r
 }

@@ -4,13 +4,12 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"time"
 
 	"ssis/pkg/common"
 	"ssis/pkg/hypersonic"
 	"ssis/pkg/maneuver"
 	"ssis/pkg/ml"
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 	"ssis/pkg/proximity"
 )
 
@@ -29,8 +28,7 @@ type Thresholds struct {
 
 /**
  * Orchestrator runs classical -> ML -> fallback in one place.
- * Refactored in Phase 3 to support Reachability Risk Index (RRI) 
- * for tactical neighborhood watch.
+ * Refactored to utilize the physics substrate schemas (ADITI 4.0).
  */
 type Orchestrator struct {
 	Engine     ml.InferenceEngine
@@ -87,8 +85,6 @@ func DefaultThresholds() Thresholds {
 func NewOrchestrator(engine ml.InferenceEngine) *Orchestrator {
 	t := DefaultThresholds()
 	if common.StrictModeEnabled() {
-		// Strict mode must not silently fall back; use permissive gates so healthy
-		// ONNX outputs are consumed directly instead of triggering guardrail fallbacks.
 		t.ManeuverProbability = 1e-9
 		t.ManeuverConfidence = 1e-9
 		t.CollisionConfidence = 1e-9
@@ -124,20 +120,21 @@ func (o *Orchestrator) normalize() {
 /**
  * DetectManeuvers runs classical CUSUM first, then optionally upgrades each alarm with ML.
  */
-func (o *Orchestrator) DetectManeuvers(objectID int, residuals, deltaVs []float64) ([]maneuver.ManeuverEvent, []ManeuverDecision) {
-	fmt.Printf("DEBUG: Entry DetectManeuvers for ObjectID=%d count=%d at %v\n", objectID, len(residuals), time.Now())
+func (o *Orchestrator) DetectManeuvers(objectID int, residuals, deltaVs []float64) ([]physics.ManeuverEvent, []ManeuverDecision) {
+	fmt.Printf("[TRC] Entering Orchestrator.DetectManeuvers for object %d\n", objectID)
+	defer fmt.Printf("[TRC] Exiting Orchestrator.DetectManeuvers\n")
+
 	o.normalize()
 	n := len(residuals)
 	if len(deltaVs) < n {
 		n = len(deltaVs)
 	}
 	if n == 0 {
-		fmt.Printf("DEBUG: Exit DetectManeuvers: no data\n")
 		return nil, nil
 	}
 
 	detector := maneuver.NewCUSUMDetector(0.005, 0.05)
-	events := make([]maneuver.ManeuverEvent, 0, n/5+1)
+	events := make([]physics.ManeuverEvent, 0, n/5+1)
 	decisions := make([]ManeuverDecision, 0, n/5+1)
 
 	for i := 0; i < n; i++ {
@@ -146,7 +143,7 @@ func (o *Orchestrator) DetectManeuvers(objectID int, residuals, deltaVs []float6
 			continue
 		}
 
-		baseline := maneuver.ManeuverEvent{
+		baseline := physics.ManeuverEvent{
 			ObjectID:  objectID,
 			TimeIndex: i,
 			Score:     score,
@@ -161,8 +158,8 @@ func (o *Orchestrator) DetectManeuvers(objectID int, residuals, deltaVs []float6
 			window := buildManeuverInferenceWindow(residuals, deltaVs, i, 24)
 
 			inf, err := o.Engine.PredictManeuver(window)
-			if err == nil && inf.Probability >= o.Thresholds.ManeuverProbability && inf.Confidence >= o.Thresholds.ManeuverConfidence && inf.Type != maneuver.ManeuverNone {
-				selected = maneuver.ManeuverEvent{
+			if err == nil && inf.Probability >= o.Thresholds.ManeuverProbability && inf.Confidence >= o.Thresholds.ManeuverConfidence && inf.Type != physics.ManeuverNone {
+				selected = physics.ManeuverEvent{
 					ObjectID:  objectID,
 					TimeIndex: i,
 					Score:     inf.Probability * inf.Confidence,
@@ -187,15 +184,16 @@ func (o *Orchestrator) DetectManeuvers(objectID int, residuals, deltaVs []float6
 		detector.Reset()
 	}
 
-	fmt.Printf("DEBUG: Exit DetectManeuvers: found %d events\n", len(events))
 	return events, decisions
 }
 
 /**
  * EvaluateCollision runs classical probability first, then accepts ML only if gates pass.
  */
-func (o *Orchestrator) EvaluateCollision(input proximity.CollisionRiskInput, graph proximity.CollisionNeighborhoodGraph) (proximity.CollisionRiskResult, CollisionDecision) {
-	fmt.Printf("DEBUG: Entry EvaluateCollision at %v\n", time.Now())
+func (o *Orchestrator) EvaluateCollision(input physics.CollisionRiskInput, graph physics.CollisionNeighborhoodGraph) (proximity.CollisionRiskResult, CollisionDecision) {
+	fmt.Printf("[TRC] Entering Orchestrator.EvaluateCollision\n")
+	defer fmt.Printf("[TRC] Exiting Orchestrator.EvaluateCollision\n")
+
 	o.normalize()
 	classical := proximity.EvaluateCollisionRisk(input)
 
@@ -237,49 +235,37 @@ func (o *Orchestrator) EvaluateCollision(input proximity.CollisionRiskInput, gra
 	if res.UncertaintyLower > res.UncertaintyUpper {
 		res.UncertaintyLower, res.UncertaintyUpper = res.UncertaintyUpper, res.UncertaintyLower
 	}
-	fmt.Printf("DEBUG: Exit EvaluateCollision: blended probability=%.2e\n", blended)
 	return res, CollisionDecision{Source: "ml", Reason: "thresholds_passed"}
 }
 
 /**
  * EvaluateReachability implements the Tactical Reachability Assessment (Phase 3).
- * It calculates the reachability manifold (RRI) of a potential threat relative to an asset.
- * If the asset resides within the manifold, it triggers a tactical alarm.
- * Entry Point: Logs the asset and threat IDs.
- * Exit Point: Resulting reachability status and manifold volume.
  */
-func (o *Orchestrator) EvaluateReachability(asset, threat orbital.State, deltaV, horizon float64) (ReachabilityDecision, error) {
-	fmt.Printf("DEBUG: Entry EvaluateReachability AssetPos=(%.2f, %.2f) ThreatPos=(%.2f, %.2f) dv=%.3f\n", 
-		asset.X, asset.Y, threat.X, threat.Y, deltaV)
+func (o *Orchestrator) EvaluateReachability(asset, threat physics.State, deltaV, horizon float64) (ReachabilityDecision, error) {
+	fmt.Printf("[TRC] Entering Orchestrator.EvaluateReachability AssetPos=(%.2f, %.2f) ThreatPos=(%.2f, %.2f) dv=%.3f\n", 
+		asset.Pos[0], asset.Pos[1], threat.Pos[0], threat.Pos[1], deltaV)
 	
 	rri, err := proximity.CalculateRRI(asset, threat, deltaV, horizon)
 	if err != nil {
-		fmt.Printf("DEBUG: Exit EvaluateReachability: error %v\n", err)
+		fmt.Printf("[ERR] EvaluateReachability: %v\n", err)
 		return ReachabilityDecision{Source: "error", HorizonSec: horizon}, err
 	}
 
-	// Transform threat-to-asset relative position into the RSW (Hill) frame for manifold check
-	// relPos := threat.RelativePosition(asset) // Hypothetical helper
-	dx := asset.X - threat.X
-	dy := asset.Y - threat.Y
-	dz := asset.Z - threat.Z
-	relPos := [3]float64{dx, dy, dz} // Simplification: assuming input states are already in appropriate frame or transformed
+	dx := asset.Pos[0] - threat.Pos[0]
+	dy := asset.Pos[1] - threat.Pos[1]
+	dz := asset.Pos[2] - threat.Pos[2]
+	relPos := [3]float64{dx, dy, dz} 
 	
 	isThreat := rri.Intersects(relPos)
 	
-	// Calculate volume km^3
 	vol := 0.0
 	if rri.Ellipsoid != nil && rri.Ellipsoid.Matrix != nil {
-		// V = 4/3 * pi * a * b * c where a,b,c are semi-axes
-		// In RRI, the matrix E represents (xT E x <= 1). 
-		// Determinant of E is 1/(a^2 * b^2 * c^2)
 		detE := proximity.Determinant3x3(rri.Ellipsoid.Matrix)
 		if detE > 0 {
 			vol = (4.0/3.0) * math.Pi * (1.0 / math.Sqrt(detE))
 		}
 	}
 
-	fmt.Printf("DEBUG: Exit EvaluateReachability: isThreat=%t volume=%.2f km^3\n", isThreat, vol)
 	return ReachabilityDecision{
 		Source:     "hybrid_rri_engine",
 		IsThreat:   isThreat,
@@ -291,8 +277,10 @@ func (o *Orchestrator) EvaluateReachability(asset, threat orbital.State, deltaV,
 /**
  * RankRapid computes classical ranking first, then adjusts with ML when accepted.
  */
-func (o *Orchestrator) RankRapid(tracks []hypersonic.RapidTrack, maxDistanceKm float64, maxResults int) ([]hypersonic.RapidAssessment, []RapidDecision) {
-	fmt.Printf("DEBUG: Entry RankRapid count=%d at %v\n", len(tracks), time.Now())
+func (o *Orchestrator) RankRapid(tracks []physics.RapidTrack, maxDistanceKm float64, maxResults int) ([]hypersonic.RapidAssessment, []RapidDecision) {
+	fmt.Printf("[TRC] Entering Orchestrator.RankRapid\n")
+	defer fmt.Printf("[TRC] Exiting Orchestrator.RankRapid\n")
+
 	o.normalize()
 	if maxResults <= 0 {
 		maxResults = len(tracks)
@@ -302,7 +290,7 @@ func (o *Orchestrator) RankRapid(tracks []hypersonic.RapidTrack, maxDistanceKm f
 	decisions := make([]RapidDecision, 0, len(tracks))
 
 	for _, track := range tracks {
-		base := hypersonic.ProcessRapidTracks([]hypersonic.RapidTrack{track}, maxDistanceKm, 1)
+		base := hypersonic.ProcessRapidTracks([]physics.RapidTrack{track}, maxDistanceKm, 1)
 		if len(base) == 0 {
 			continue
 		}
@@ -353,18 +341,17 @@ func (o *Orchestrator) RankRapid(tracks []hypersonic.RapidTrack, maxDistanceKm f
 		assessments = assessments[:maxResults]
 	}
 
-	fmt.Printf("DEBUG: Exit RankRapid: ranked %d tracks\n", len(assessments))
 	return assessments, decisions
 }
 
-func heatmapFromAttention(graph proximity.CollisionNeighborhoodGraph, attention map[int]float64) []proximity.CollisionHeatmapCell {
+func heatmapFromAttention(graph physics.CollisionNeighborhoodGraph, attention map[int]float64) []physics.CollisionHeatmapCell {
 	if len(graph.Nodes) == 0 {
 		return nil
 	}
-	out := make([]proximity.CollisionHeatmapCell, 0, len(graph.Nodes))
+	out := make([]physics.CollisionHeatmapCell, 0, len(graph.Nodes))
 	for _, n := range graph.Nodes {
-		a := clamp01(attention[n.ID])
-		out = append(out, proximity.CollisionHeatmapCell{NodeID: n.ID, Attention: a, Contribution: a})
+		a := clamp01(attention[n.ObjectID])
+		out = append(out, physics.CollisionHeatmapCell{NodeID: n.ObjectID, Attention: a, Contribution: a})
 	}
 	return out
 }
@@ -388,17 +375,17 @@ func mergeFeatureHeatmap(base []hypersonic.RapidFeatureContribution, weights map
 	return base
 }
 
-func classicalManeuverType(deltaV, residual float64) maneuver.ManeuverType {
+func classicalManeuverType(deltaV, residual float64) physics.ManeuverType {
 	absResidual := math.Abs(residual)
 	switch {
 	case deltaV >= 0.08:
-		return maneuver.ManeuverImpulsive
+		return physics.ManeuverImpulsive
 	case deltaV >= 0.015:
-		return maneuver.ManeuverLowThrust
+		return physics.ManeuverLowThrust
 	case absResidual >= 0.25:
-		return maneuver.ManeuverHypersonic
+		return physics.ManeuverHypersonic
 	default:
-		return maneuver.ManeuverNone
+		return physics.ManeuverNone
 	}
 }
 
@@ -429,7 +416,7 @@ func selectOr(v, fallback float64) float64 {
 	return fallback
 }
 
-func buildManeuverInferenceWindow(residuals, deltaVs []float64, endIdx, size int) []maneuver.ManeuverFrame {
+func buildManeuverInferenceWindow(residuals, deltaVs []float64, endIdx, size int) []physics.ManeuverFrame {
 	if size <= 0 {
 		size = 24
 	}
@@ -451,9 +438,9 @@ func buildManeuverInferenceWindow(residuals, deltaVs []float64, endIdx, size int
 		start = 0
 	}
 
-	window := make([]maneuver.ManeuverFrame, 0, size)
+	window := make([]physics.ManeuverFrame, 0, size)
 	for i := start; i <= endIdx; i++ {
-		window = append(window, maneuver.ManeuverFrame{
+		window = append(window, physics.ManeuverFrame{
 			Residual: residuals[i],
 			DeltaV:   deltaVs[i],
 		})

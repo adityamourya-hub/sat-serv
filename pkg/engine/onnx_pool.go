@@ -65,11 +65,48 @@ func NewONNXPool(modelDir string, provider string) (*ONNXPool, error) {
 		ExecutionProvider: provider,
 	}
 
+	// Initialize Real Inferrers (Native CGO-bound or Mock Fallback)
+	var axiomInferrer, maneuverInferrer, pcInferrer, sensingInferrer onnx.Inferrer
+	var err error
+
+	axiomInferrer, err = onnx.NewNativeInferrer(
+		axiomCfg.ModelPath, axiomCfg.ModelID, "v1.0",
+		[]string{"state"}, []string{"dynamics"},
+	)
+	if err != nil {
+		fmt.Printf("WARNING: Failed to load Native Axiom Inferrer: %v. Falling back to Mock.\n", err)
+		axiomInferrer = &MockInferrer{ID: "Axiom"}
+	}
+
+	maneuverInferrer, err = onnx.NewNativeInferrer(
+		maneuverCfg.ModelPath, maneuverCfg.ModelID, "v2.0",
+		[]string{"history"}, []string{"maneuver_class", "confidence"},
+	)
+	if err != nil {
+		maneuverInferrer = &MockInferrer{ID: "Maneuver"}
+	}
+
+	pcInferrer, err = onnx.NewNativeInferrer(
+		pcCfg.ModelPath, pcCfg.ModelID, "v2.0",
+		[]string{"proximity_data"}, []string{"pc", "ttca"},
+	)
+	if err != nil {
+		pcInferrer = &MockInferrer{ID: "PC"}
+	}
+
+	sensingInferrer, err = onnx.NewNativeInferrer(
+		sensingCfg.ModelPath, sensingCfg.ModelID, "v1.0",
+		[]string{"iq_buffer"}, []string{"detection_matrix"},
+	)
+	if err != nil {
+		sensingInferrer = &MockInferrer{ID: "Sensing"}
+	}
+
 	pool := &ONNXPool{
-		Axiom:    onnx.NewSession(axiomCfg, &MockInferrer{ID: "Axiom"}),
-		Maneuver: onnx.NewSession(maneuverCfg, &MockInferrer{ID: "Maneuver"}),
-		PC:       onnx.NewSession(pcCfg, &MockInferrer{ID: "PC"}),
-		Sensing:  onnx.NewSession(sensingCfg, &MockInferrer{ID: "Sensing"}),
+		Axiom:    onnx.NewSession(axiomCfg, axiomInferrer),
+		Maneuver: onnx.NewSession(maneuverCfg, maneuverInferrer),
+		PC:       onnx.NewSession(pcCfg, pcInferrer),
+		Sensing:  onnx.NewSession(sensingCfg, sensingInferrer),
 		SHM:      shm,
 	}
 	

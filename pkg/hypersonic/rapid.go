@@ -3,35 +3,16 @@ package hypersonic
 import (
 	"math"
 	"sort"
+	"ssis/pkg/physics"
 )
 
-type ThreatClass string
+// ThreatClass removed (migrated to pkg/physics)
 
-const (
-	ThreatUnknown    ThreatClass = "unknown"
-	ThreatOrbital    ThreatClass = "orbital"
-	ThreatBallistic  ThreatClass = "ballistic"
-	ThreatHypersonic ThreatClass = "hypersonic"
-)
-
-type RapidTrack struct {
-	ID                  int
-	Mach                float64
-	AltitudeKm          float64
-	BurnoutVelocityKmS  float64
-	FlightPathAngleRad  float64
-	AzimuthRad          float64 // 0=North, pi/2=East
-	LaunchLat           float64
-	LaunchLon           float64
-	DistanceToAssetKm   float64
-	RadarCrossSection   float64
-	ManeuverIntentProxy bool
-	ManeuverIntentScore float64
-}
+// RapidTrack removed (migrated to pkg/physics)
 
 type RapidAssessment struct {
 	ID              int
-	Class           ThreatClass
+	Class           physics.ThreatClass
 	Priority        int
 	Reachable       bool
 	DynamicScore    float64
@@ -66,28 +47,18 @@ type RapidFeatureContribution struct {
 	Contribution float64
 }
 
-type RapidRankInference struct {
-	Score           float64
-	Confidence      float64
-	UncertaintyLow  float64
-	UncertaintyHigh float64
-	FeatureWeights  map[string]float64
-}
+// RapidRankInference removed (migrated to pkg/physics)
 
 type RapidPriorityModel interface {
 	Name() string
-	Rank(track RapidTrack, class ThreatClass, reachable bool, baselinePriority int) (RapidRankInference, error)
+	Rank(track physics.RapidTrack, class physics.ThreatClass, reachable bool, baselinePriority int) (physics.RapidRankInference, error)
 }
 
-type RapidPolicyInference struct {
-	Action     EvasiveAction
-	Confidence float64
-	Reason     string
-}
+// RapidPolicyInference removed (migrated to pkg/physics)
 
 type RapidPolicyModel interface {
 	Name() string
-	Recommend(track RapidTrack, class ThreatClass, score float64, reachable bool) (RapidPolicyInference, error)
+	Recommend(track physics.RapidTrack, class physics.ThreatClass, score float64, reachable bool) (physics.RapidPolicyInference, error)
 }
 
 type HybridRapidThreatEngine struct {
@@ -106,31 +77,31 @@ func NewHybridRapidThreatEngine(ranker RapidPriorityModel, policy RapidPolicyMod
 	}
 }
 
-func ClassifyRapidTrack(track RapidTrack) ThreatClass {
+func ClassifyRapidTrack(track physics.RapidTrack) physics.ThreatClass {
 	if track.Mach >= 5.0 && track.AltitudeKm >= 20.0 && track.AltitudeKm <= 100.0 {
-		return ThreatHypersonic
+		return physics.ThreatHypersonic
 	}
 	if track.BurnoutVelocityKmS >= 1.0 && track.AltitudeKm < 300.0 {
-		return ThreatBallistic
+		return physics.ThreatBallistic
 	}
 	if track.AltitudeKm >= 120.0 {
-		return ThreatOrbital
+		return physics.ThreatOrbital
 	}
-	return ThreatUnknown
+	return physics.ThreatUnknown
 }
 
-func ReachabilityGate(track RapidTrack, maxDistanceKm float64) bool {
+func ReachabilityGate(track physics.RapidTrack, maxDistanceKm float64) bool {
 	return track.DistanceToAssetKm <= maxDistanceKm
 }
 
-func threatPriority(track RapidTrack, class ThreatClass) int {
+func threatPriority(track physics.RapidTrack, class physics.ThreatClass) int {
 	score := 0
 	switch class {
-	case ThreatHypersonic:
+	case physics.ThreatHypersonic:
 		score += 100
-	case ThreatBallistic:
+	case physics.ThreatBallistic:
 		score += 80
-	case ThreatOrbital:
+	case physics.ThreatOrbital:
 		score += 40
 	default:
 		score += 20
@@ -162,18 +133,18 @@ func threatPriority(track RapidTrack, class ThreatClass) int {
 	return score
 }
 
-func ProcessRapidTracks(tracks []RapidTrack, maxDistanceKm float64, maxResults int) []RapidAssessment {
+func ProcessRapidTracks(tracks []physics.RapidTrack, maxDistanceKm float64, maxResults int) []RapidAssessment {
 	return ProcessRapidTracksHybrid(tracks, maxDistanceKm, maxResults, nil)
 }
 
-func ProcessRapidTracksHybrid(tracks []RapidTrack, maxDistanceKm float64, maxResults int, engine *HybridRapidThreatEngine) []RapidAssessment {
+func ProcessRapidTracksHybrid(tracks []physics.RapidTrack, maxDistanceKm float64, maxResults int, engine *HybridRapidThreatEngine) []RapidAssessment {
 	if maxResults <= 0 {
 		maxResults = len(tracks)
 	}
 
 	type rankedItem struct {
-		track     RapidTrack
-		class     ThreatClass
+		track     physics.RapidTrack
+		class     physics.ThreatClass
 		priority  int
 		dynScore  float64
 		conf      float64
@@ -232,7 +203,7 @@ func ProcessRapidTracksHybrid(tracks []RapidTrack, maxDistanceKm float64, maxRes
 		if engine != nil && engine.Policy != nil {
 			p, err := engine.Policy.Recommend(track, class, dynScore, reachable)
 			if err == nil && p.Action != "" {
-				rec = EvasiveRecommendation{Action: p.Action, Confidence: clamp01(p.Confidence), Reason: p.Reason}
+				rec = EvasiveRecommendation{Action: EvasiveAction(p.Action), Confidence: clamp01(p.Confidence), Reason: p.Reason}
 			}
 		}
 
@@ -270,7 +241,7 @@ func ProcessRapidTracksHybrid(tracks []RapidTrack, maxDistanceKm float64, maxRes
 		}
 
 		switch item.class {
-		case ThreatBallistic, ThreatHypersonic:
+		case physics.ThreatBallistic, physics.ThreatHypersonic:
 			a.Ballistic = ComputeBallisticImpact(
 				item.track.LaunchLat,
 				item.track.LaunchLon,
@@ -279,7 +250,7 @@ func ProcessRapidTracksHybrid(tracks []RapidTrack, maxDistanceKm float64, maxRes
 				item.track.AzimuthRad*(180.0/math.Pi),
 			)
 			a.Reentry = SolveAerospace(item.track.Mach, item.track.AltitudeKm)
-		case ThreatOrbital:
+		case physics.ThreatOrbital:
 			a.Reentry = SolveAerospace(item.track.Mach, item.track.AltitudeKm)
 		}
 
@@ -289,15 +260,15 @@ func ProcessRapidTracksHybrid(tracks []RapidTrack, maxDistanceKm float64, maxRes
 	return out
 }
 
-func defaultRecommendation(class ThreatClass, score float64, reachable bool) EvasiveRecommendation {
+func defaultRecommendation(class physics.ThreatClass, score float64, reachable bool) EvasiveRecommendation {
 	if !reachable {
 		return EvasiveRecommendation{Action: ActionOutOfReachWatch, Confidence: 0.75, Reason: "outside engagement envelope"}
 	}
 
 	switch {
-	case class == ThreatHypersonic && score >= 140:
+	case class == physics.ThreatHypersonic && score >= 140:
 		return EvasiveRecommendation{Action: ActionEvasiveNow, Confidence: 0.88, Reason: "hypersonic high-priority inbound track"}
-	case class == ThreatBallistic && score >= 120:
+	case class == physics.ThreatBallistic && score >= 120:
 		return EvasiveRecommendation{Action: ActionPrepareEvasive, Confidence: 0.82, Reason: "ballistic trajectory with high threat score"}
 	case score >= 90:
 		return EvasiveRecommendation{Action: ActionSensorRetask, Confidence: 0.76, Reason: "elevated threat; retask sensor and verify track"}
@@ -306,7 +277,7 @@ func defaultRecommendation(class ThreatClass, score float64, reachable bool) Eva
 	}
 }
 
-func heuristicRapidHeatmap(track RapidTrack, class ThreatClass) []RapidFeatureContribution {
+func heuristicRapidHeatmap(track physics.RapidTrack, class physics.ThreatClass) []RapidFeatureContribution {
 	base := []RapidFeatureContribution{
 		{Feature: "distance_to_asset_km", Value: track.DistanceToAssetKm, Contribution: invScaled(track.DistanceToAssetKm, 2000)},
 		{Feature: "mach", Value: track.Mach, Contribution: clamp01(track.Mach / 10.0)},
@@ -316,9 +287,9 @@ func heuristicRapidHeatmap(track RapidTrack, class ThreatClass) []RapidFeatureCo
 	}
 
 	classBoost := 0.1
-	if class == ThreatHypersonic {
+	if class == physics.ThreatHypersonic {
 		classBoost = 0.25
-	} else if class == ThreatBallistic {
+	} else if class == physics.ThreatBallistic {
 		classBoost = 0.18
 	}
 
@@ -346,13 +317,13 @@ func combineRapidHeatmap(base []RapidFeatureContribution, modelWeights map[strin
 	return base
 }
 
-func classPriorityWeight(class ThreatClass) int {
+func classPriorityWeight(class physics.ThreatClass) int {
 	switch class {
-	case ThreatHypersonic:
+	case physics.ThreatHypersonic:
 		return 100
-	case ThreatBallistic:
+	case physics.ThreatBallistic:
 		return 80
-	case ThreatOrbital:
+	case physics.ThreatOrbital:
 		return 40
 	default:
 		return 20

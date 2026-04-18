@@ -7,7 +7,7 @@ import (
 
 	"ssis/pkg/fusion"
 	safemath "ssis/pkg/math"
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 type SubOrbitalLaneConfig struct {
@@ -26,11 +26,11 @@ type SubOrbitalLane struct {
 	State          []float64   // 8-state vector
 	Covariance     [][]float64 // 8x8 matrix
 
-	History []HypersonicState
+	History []physics.HypersonicState
 	IPP     *ImpactArea
 }
 
-func NewSubOrbitalLane(objectID int, initial orbital.State, config SubOrbitalLaneConfig) *SubOrbitalLane {
+func NewSubOrbitalLane(objectID int, initial physics.State, config SubOrbitalLaneConfig) *SubOrbitalLane {
 	if config.HorizonSec <= 0 {
 		config.HorizonSec = 90.0
 	}
@@ -42,7 +42,7 @@ func NewSubOrbitalLane(objectID int, initial orbital.State, config SubOrbitalLan
 	}
 
 	x := make([]float64, 8)
-	copy(x, []float64{initial.X, initial.Y, initial.Z, initial.VX, initial.VY, initial.VZ, config.BetaInitial, config.LDInitial})
+	copy(x, []float64{initial.Pos[0], initial.Pos[1], initial.Pos[2], initial.Vel[0], initial.Vel[1], initial.Vel[2], config.BetaInitial, config.LDInitial})
 
 	p := safemath.ZeroMatrix(8, 8)
 	for i := 0; i < 6; i++ {
@@ -56,7 +56,7 @@ func NewSubOrbitalLane(objectID int, initial orbital.State, config SubOrbitalLan
 		Config:     config,
 		State:      x,
 		Covariance: p,
-		History:    make([]HypersonicState, 0),
+		History:    make([]physics.HypersonicState, 0),
 	}
 }
 
@@ -149,14 +149,14 @@ func (l *SubOrbitalLane) predictImpactAtHorizon(horizon float64, jd float64) Imp
 		y = HypersonicPropagator(y, 1.0, jd+t/86400.0)
 		t += 1.0
 		r := math.Sqrt(y[0]*y[0] + y[1]*y[1] + y[2]*y[2])
-		if r-orbital.ER <= 0 {
+		if r-physics.RE_KM <= 0 {
 			break
 		}
 	}
 
 	rFinal := math.Sqrt(y[0]*y[0] + y[1]*y[1] + y[2]*y[2])
 	if rFinal < 1e-9 {
-		rFinal = orbital.ER
+		rFinal = physics.RE_KM
 	}
 	lat := math.Asin(y[2]/rFinal) * 180.0 / math.Pi
 	lon := math.Atan2(y[1], y[0]) * 180.0 / math.Pi
@@ -177,6 +177,6 @@ func (l *SubOrbitalLane) GetStatus() string {
 		return "Initializing..."
 	}
 	return fmt.Sprintf("Target %d: Alt=%.1fkm, Beta=%.1f, L/D=%.2f -> IPP: %.3fN, %.3fE",
-		l.ObjectID, (math.Sqrt(l.State[0]*l.State[0]+l.State[1]*l.State[1]+l.State[2]*l.State[2]) - orbital.ER),
+		l.ObjectID, (math.Sqrt(l.State[0]*l.State[0]+l.State[1]*l.State[1]+l.State[2]*l.State[2]) - physics.RE_KM),
 		l.State[6], l.State[7], l.IPP.LatDeg, l.IPP.LonDeg)
 }

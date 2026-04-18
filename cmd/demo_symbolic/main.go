@@ -4,21 +4,24 @@ package main
 import (
 	"fmt"
 	"ssis/pkg/maneuver"
+	"ssis/pkg/physics"
 	"time"
 )
 
 type mockManeuverModel struct {
 	prob float64
 	conf float64
-	typ  maneuver.ManeuverType
+	typ  physics.ManeuverType
 	dv   float64
 }
 
 func (m mockManeuverModel) Name() string { return "sovereign_symbolic_demo_model" }
 
-func (m mockManeuverModel) Predict(window []maneuver.ManeuverFrame) (maneuver.ManeuverInference, error) {
+func (m mockManeuverModel) Predict(window []physics.ManeuverFrame) (physics.ManeuverInference, error) {
+	fmt.Printf("[TRC] Entering mockManeuverModel.Predict for %d frames\n", len(window))
+	defer fmt.Printf("[TRC] Exiting mockManeuverModel.Predict\n")
 	// For this demo, we always return a high-confidence maneuver to trigger the symbolic hook
-	return maneuver.ManeuverInference{
+	return physics.ManeuverInference{
 		Probability: m.prob,
 		Confidence:  m.conf,
 		Type:        m.typ,
@@ -34,7 +37,7 @@ func main() {
 	model := mockManeuverModel{
 		prob: 0.95, 
 		conf: 0.85, 
-		typ: maneuver.ManeuverImpulsive, 
+		typ: physics.ManeuverImpulsive, 
 		dv: 0.12,
 	}
 	hybrid := maneuver.NewHybridManeuverDetector(model)
@@ -48,7 +51,7 @@ func main() {
 
 	if len(events) > 0 {
 		fmt.Printf("✅ Detected %d maneuver events.\n", len(events))
-		fmt.Printf("Event 0: Type=%s, Score=%.2f, DeltaV=%.3f km/s\n", 
+		fmt.Printf("Event 0: Type=%v, Score=%.2f, DeltaV=%.3f km/s\n", 
 			events[0].Type, events[0].Score, events[0].DeltaV)
 	} else {
 		fmt.Println("❌ No maneuvers detected.")

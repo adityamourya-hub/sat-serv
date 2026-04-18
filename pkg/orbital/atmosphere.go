@@ -22,6 +22,7 @@ func NewNRLMSISE00() *NRLMSISE00 {
 	return &NRLMSISE00{}
 }
 
+var (
 	defaultSwitches = [24]int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
 
 	// Global model singleton for rapid, thread-safe access across the SDA engine.

@@ -9,7 +9,7 @@ import (
 
 	onnx "github.com/yalue/onnxruntime_go"
 
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 /**
@@ -89,7 +89,7 @@ type DeltaRKANOutput struct {
 // StateHistory represents a sequence of orbital states for maneuver detection.
 type StateHistory struct {
 	ObjectID int
-	States   []orbital.State // Must be sorted by time, ascending
+	States   []physics.State // Must be sorted by time, ascending
 }
 
 // NewDeltaRKANAttributorModel loads the Delta-rKAN model from the given ONNX path.
@@ -296,7 +296,7 @@ func (m *DeltaRKANAttributorModel) generateLaTeX(output DeltaRKANOutput) string 
 
 // ComputeRTNFrame computes the RTN frame unit vectors from a state.
 // Returns (R_hat, T_hat, N_hat) as 3-element arrays.
-func ComputeRTNFrame(state orbital.State) ([3]float64, [3]float64, [3]float64) {
+func ComputeRTNFrame(state physics.State) ([3]float64, [3]float64, [3]float64) {
 	// R: Radial (position direction)
 	r := [3]float64{state.X, state.Y, state.Z}
 	rMag := math.Sqrt(r[0]*r[0] + r[1]*r[1] + r[2]*r[2])
@@ -363,13 +363,13 @@ func (m *DeltaRKANAttributorModel) InferBatch(requests []InferenceRequest) []Inf
 	for i, req := range requests {
 		// Parse state history from request
 		history := StateHistory{ObjectID: -1}
-		if states, ok := req.Inputs["states"].([]orbital.State); ok {
+		if states, ok := req.Inputs["states"].([]physics.State); ok {
 			history.States = states
 		} else if states, ok := req.Inputs["states"].([]interface{}); ok {
 			// Convert interface slice
-			history.States = make([]orbital.State, len(states))
+			history.States = make([]physics.State, len(states))
 			for j, s := range states {
-				if state, ok := s.(orbital.State); ok {
+				if state, ok := s.(physics.State); ok {
 					history.States[j] = state
 				}
 			}

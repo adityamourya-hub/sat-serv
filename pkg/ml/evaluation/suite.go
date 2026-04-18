@@ -2,13 +2,13 @@ package evaluation
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"time"
 
-	"ssis/pkg/hypersonic"
 	"ssis/pkg/ml/hybrid"
-	"ssis/pkg/proximity"
+	"ssis/pkg/physics"
 )
 
 // ClassificationMetrics captures standard binary-classification quality metrics.
@@ -57,14 +57,14 @@ type ManeuverCase struct {
 
 // CollisionCase is one labeled sample for conjunction-risk evaluation.
 type CollisionCase struct {
-	Input       proximity.CollisionRiskInput
-	Graph       proximity.CollisionNeighborhoodGraph
+	Input       physics.CollisionRiskInput
+	Graph       physics.CollisionNeighborhoodGraph
 	IsCollision bool
 }
 
 // RapidCase is one labeled sample for rapid-threat ranking evaluation.
 type RapidCase struct {
-	Track        hypersonic.RapidTrack
+	Track        physics.RapidTrack
 	IsHighThreat bool
 }
 
@@ -91,6 +91,9 @@ func BinaryMetrics(truth, pred []bool) (ClassificationMetrics, error) {
 	}
 
 	total := float64(len(truth))
+	if total == 0 {
+		return m, nil
+	}
 	m.Accuracy = float64(m.TP+m.TN) / total
 	m.FalsePositiveRate = frac(m.FP, m.FP+m.TN)
 	m.Precision = frac(m.TP, m.TP+m.FP)
@@ -98,8 +101,14 @@ func BinaryMetrics(truth, pred []bool) (ClassificationMetrics, error) {
 	return m, nil
 }
 
-// EvaluateManeuverAccuracy computes maneuver detection metrics using the orchestrator.
+/**
+ * EvaluateManeuverAccuracy computes maneuver detection metrics using the orchestrator.
+ * Refactored to utilize the physics substrate schemas (ADITI 4.0).
+ */
 func EvaluateManeuverAccuracy(o *hybrid.Orchestrator, cases []ManeuverCase) (ClassificationMetrics, error) {
+	fmt.Printf("[TRC] Entering EvaluateManeuverAccuracy for %d cases\n", len(cases))
+	defer fmt.Printf("[TRC] Exiting EvaluateManeuverAccuracy\n")
+
 	if o == nil {
 		return ClassificationMetrics{}, errors.New("orchestrator is nil")
 	}
@@ -113,8 +122,13 @@ func EvaluateManeuverAccuracy(o *hybrid.Orchestrator, cases []ManeuverCase) (Cla
 	return BinaryMetrics(truth, pred)
 }
 
-// EvaluateCollisionAccuracy computes classification metrics from collision probabilities.
+/**
+ * EvaluateCollisionAccuracy computes classification metrics from collision probabilities.
+ */
 func EvaluateCollisionAccuracy(o *hybrid.Orchestrator, cases []CollisionCase, threshold float64) (ClassificationMetrics, error) {
+	fmt.Printf("[TRC] Entering EvaluateCollisionAccuracy for %d cases\n", len(cases))
+	defer fmt.Printf("[TRC] Exiting EvaluateCollisionAccuracy\n")
+
 	if o == nil {
 		return ClassificationMetrics{}, errors.New("orchestrator is nil")
 	}
@@ -131,8 +145,13 @@ func EvaluateCollisionAccuracy(o *hybrid.Orchestrator, cases []CollisionCase, th
 	return BinaryMetrics(truth, pred)
 }
 
-// EvaluateRapidAccuracy computes classification metrics from dynamic scores.
+/**
+ * EvaluateRapidAccuracy computes classification metrics from dynamic scores.
+ */
 func EvaluateRapidAccuracy(o *hybrid.Orchestrator, cases []RapidCase, maxDistanceKm float64, highScoreThreshold float64) (ClassificationMetrics, error) {
+	fmt.Printf("[TRC] Entering EvaluateRapidAccuracy for %d cases\n", len(cases))
+	defer fmt.Printf("[TRC] Exiting EvaluateRapidAccuracy\n")
+
 	if o == nil {
 		return ClassificationMetrics{}, errors.New("orchestrator is nil")
 	}
@@ -142,7 +161,7 @@ func EvaluateRapidAccuracy(o *hybrid.Orchestrator, cases []RapidCase, maxDistanc
 	truth := make([]bool, 0, len(cases))
 	pred := make([]bool, 0, len(cases))
 	for _, c := range cases {
-		assessments, _ := o.RankRapid([]hypersonic.RapidTrack{c.Track}, maxDistanceKm, 1)
+		assessments, _ := o.RankRapid([]physics.RapidTrack{c.Track}, maxDistanceKm, 1)
 		score := 0.0
 		if len(assessments) > 0 {
 			score = assessments[0].DynamicScore

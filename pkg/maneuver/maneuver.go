@@ -8,80 +8,22 @@ import (
 	"os/exec"
 	"time"
 
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
-type ManeuverType string
-
-const (
-	ManeuverNone       ManeuverType = "none"
-	ManeuverImpulsive  ManeuverType = "impulsive"
-	ManeuverLowThrust  ManeuverType = "low_thrust"
-	ManeuverHypersonic ManeuverType = "hypersonic_like"
-)
-
-type ManeuverEvent struct {
-	ObjectID  int
-	TimeIndex int
-	Score     float64
-	DeltaV    float64
-	Type      ManeuverType
-	// Characterization outputs (optional) appended for post-detection depth.
-	DeltaVRSW        [3]float64
-	ManeuverTimeSec  float64
-	IntentProxy      bool
-	IntentProxyScore float64
-	CoPlanarAlign    float64
-	ProximityOps     bool
-	StealthyManeuver bool
-}
-
-// ManeuverFrame is a model-ready temporal feature vector at a specific time step.
-// The minimal feature set keeps the current API lightweight while enabling ONNX models.
-type ManeuverFrame struct {
-	Residual float64
-	DeltaV   float64
-}
-
-type FeatureContribution struct {
-	Feature      string
-	Value        float64
-	Contribution float64
-}
-
-type ManeuverInference struct {
-	Probability float64
-	Type        ManeuverType
-	DeltaV      float64
-	Confidence  float64
-	SHAP        []FeatureContribution
-	// Optional ONNX-ready scalar outputs for richer characterization.
-	ManeuverDeltaVRSW [3]float64
-	ManeuverTime      float64
-}
-
-type ManeuverCharacterization struct {
-	ManeuverTimeSec  float64
-	DeltaVECI        [3]float64
-	DeltaVRSW        [3]float64
-	BurnType         ManeuverType
-	IntentProxy      bool
-	IntentProxyScore float64
-	CoPlanarAlign    float64
-	ProximityOps     bool
-	StealthyManeuver bool
-	Confidence       float64
-}
-
-// ManeuverInferenceModel is implemented by ML backends (for example ONNX Runtime).
-// Predict receives a sliding window and returns a cognitive inference payload.
+/**
+ * ManeuverInferenceModel is implemented by ML backends (for example ONNX Runtime).
+ * Predict receives a sliding window and returns a cognitive inference payload.
+ */
 type ManeuverInferenceModel interface {
 	Name() string
-	Predict(window []ManeuverFrame) (ManeuverInference, error)
+	Predict(window []physics.ManeuverFrame) (physics.ManeuverInference, error)
 }
 
-// HybridManeuverDetector orchestrates model-first detection with CUSUM fallback.
-// This preserves deterministic behavior even when the ML model is unavailable or uncertain.
+/**
+ * HybridManeuverDetector orchestrates model-first detection with CUSUM fallback.
+ * This preserves deterministic behavior even when the ML model is unavailable or uncertain.
+ */
 type HybridManeuverDetector struct {
 	Model               ManeuverInferenceModel
 	Fallback            *CUSUMDetector
@@ -91,7 +33,12 @@ type HybridManeuverDetector struct {
 	SuppressAfterDetect int
 }
 
+/**
+ * NewHybridManeuverDetector initializes a detector with a specific ML model and default fallback settings.
+ */
 func NewHybridManeuverDetector(model ManeuverInferenceModel) *HybridManeuverDetector {
+	fmt.Printf("[TRC] Entering NewHybridManeuverDetector\n")
+	defer fmt.Printf("[TRC] Exiting NewHybridManeuverDetector\n")
 	return &HybridManeuverDetector{
 		Model:               model,
 		Fallback:            NewCUSUMDetector(0.005, 0.05),
@@ -102,6 +49,9 @@ func NewHybridManeuverDetector(model ManeuverInferenceModel) *HybridManeuverDete
 	}
 }
 
+/**
+ * CUSUMDetector implements the Cumulative Sum algorithm for sequential change detection.
+ */
 type CUSUMDetector struct {
 	drift     float64
 	threshold float64
@@ -109,6 +59,9 @@ type CUSUMDetector struct {
 	negSum    float64
 }
 
+/**
+ * NewCUSUMDetector creates a statistical change detector with specified drift and threshold parameters.
+ */
 func NewCUSUMDetector(drift, threshold float64) *CUSUMDetector {
 	if drift <= 0 {
 		drift = 0.005
@@ -119,6 +72,9 @@ func NewCUSUMDetector(drift, threshold float64) *CUSUMDetector {
 	return &CUSUMDetector{drift: drift, threshold: threshold}
 }
 
+/**
+ * Update steps the CUSUM logic with a new residual measurement.
+ */
 func (d *CUSUMDetector) Update(residual float64) (float64, bool) {
 	d.posSum = math.Max(0.0, d.posSum+residual-d.drift)
 	d.negSum = math.Max(0.0, d.negSum-residual-d.drift)
@@ -126,12 +82,21 @@ func (d *CUSUMDetector) Update(residual float64) (float64, bool) {
 	return score, score >= d.threshold
 }
 
+/**
+ * Reset clears the internal sums to stop sustained firing or restart after a detection.
+ */
 func (d *CUSUMDetector) Reset() {
 	d.posSum = 0
 	d.negSum = 0
 }
 
-func DetectManeuvers(objectID int, residuals []float64, deltaVs []float64, detector *CUSUMDetector) []ManeuverEvent {
+/**
+ * DetectManeuvers performs batch CUSUM detection on a sequence of state residuals.
+ */
+func DetectManeuvers(objectID int, residuals []float64, deltaVs []float64, detector *CUSUMDetector) []physics.ManeuverEvent {
+	fmt.Printf("[TRC] Entering DetectManeuvers for object %d\n", objectID)
+	defer fmt.Printf("[TRC] Exiting DetectManeuvers\n")
+
 	if detector == nil {
 		detector = NewCUSUMDetector(0.005, 0.05)
 	}
@@ -141,14 +106,14 @@ func DetectManeuvers(objectID int, residuals []float64, deltaVs []float64, detec
 		n = len(deltaVs)
 	}
 
-	events := make([]ManeuverEvent, 0)
+	events := make([]physics.ManeuverEvent, 0)
 	for i := 0; i < n; i++ {
 		score, alarm := detector.Update(residuals[i])
 		if !alarm {
 			continue
 		}
 
-		events = append(events, ManeuverEvent{
+		events = append(events, physics.ManeuverEvent{
 			ObjectID:  objectID,
 			TimeIndex: i,
 			Score:     score,
@@ -161,9 +126,13 @@ func DetectManeuvers(objectID int, residuals []float64, deltaVs []float64, detec
 	return events
 }
 
-// DetectManeuversCovarianceAware normalizes residuals by per-step 1-sigma uncertainty
-// before passing them to CUSUM, reducing false positives from measurement-noise drift.
-func DetectManeuversCovarianceAware(objectID int, residuals []float64, residualSigma []float64, deltaVs []float64, detector *CUSUMDetector) []ManeuverEvent {
+/**
+ * DetectManeuversCovarianceAware normalizes residuals by uncertainty to reduce false-positives in high-noise regimes.
+ */
+func DetectManeuversCovarianceAware(objectID int, residuals []float64, residualSigma []float64, deltaVs []float64, detector *CUSUMDetector) []physics.ManeuverEvent {
+	fmt.Printf("[TRC] Entering DetectManeuversCovarianceAware for object %d\n", objectID)
+	defer fmt.Printf("[TRC] Exiting DetectManeuversCovarianceAware\n")
+
 	if detector == nil {
 		detector = NewCUSUMDetector(0.005, 0.05)
 	}
@@ -178,7 +147,7 @@ func DetectManeuversCovarianceAware(objectID int, residuals []float64, residualS
 		return nil
 	}
 
-	events := make([]ManeuverEvent, 0)
+	events := make([]physics.ManeuverEvent, 0)
 	for i := 0; i < n; i++ {
 		sig := residualSigma[i]
 		if sig <= 1e-6 {
@@ -186,7 +155,6 @@ func DetectManeuversCovarianceAware(objectID int, residuals []float64, residualS
 		}
 		normalizedResidual := residuals[i] / (3.0 * sig)
 		if math.Abs(normalizedResidual) < 1.0 && math.Abs(deltaVs[i]) < 0.01 {
-			// Suppress low-significance jitter so CUSUM does not drift into false alarms.
 			detector.Reset()
 			continue
 		}
@@ -199,7 +167,7 @@ func DetectManeuversCovarianceAware(objectID int, residuals []float64, residualS
 			detector.Reset()
 			continue
 		}
-		events = append(events, ManeuverEvent{
+		events = append(events, physics.ManeuverEvent{
 			ObjectID:        objectID,
 			TimeIndex:       i,
 			Score:           score,
@@ -213,7 +181,13 @@ func DetectManeuversCovarianceAware(objectID int, residuals []float64, residualS
 	return events
 }
 
-func DetectManeuversHybrid(objectID int, residuals []float64, deltaVs []float64, hybrid *HybridManeuverDetector) []ManeuverEvent {
+/**
+ * DetectManeuversHybrid dispatches to either the ML model or the statistical fallback.
+ */
+func DetectManeuversHybrid(objectID int, residuals []float64, deltaVs []float64, hybrid *HybridManeuverDetector) []physics.ManeuverEvent {
+	fmt.Printf("[TRC] Entering DetectManeuversHybrid for object %d\n", objectID)
+	defer fmt.Printf("[TRC] Exiting DetectManeuversHybrid\n")
+
 	if hybrid == nil {
 		return DetectManeuvers(objectID, residuals, deltaVs, nil)
 	}
@@ -235,19 +209,16 @@ func DetectManeuversHybrid(objectID int, residuals []float64, deltaVs []float64,
 	if hybrid.MinConfidence <= 0 {
 		hybrid.MinConfidence = 0.50
 	}
-	if hybrid.SuppressAfterDetect < 0 {
-		hybrid.SuppressAfterDetect = 0
-	}
 	if hybrid.Fallback == nil {
 		hybrid.Fallback = NewCUSUMDetector(0.005, 0.05)
 	}
 
-	frames := make([]ManeuverFrame, n)
+	frames := make([]physics.ManeuverFrame, n)
 	for i := 0; i < n; i++ {
-		frames[i] = ManeuverFrame{Residual: residuals[i], DeltaV: deltaVs[i]}
+		frames[i] = physics.ManeuverFrame{Residual: residuals[i], DeltaV: deltaVs[i]}
 	}
 
-	events := make([]ManeuverEvent, 0, n/4+1)
+	events := make([]physics.ManeuverEvent, 0, n/4+1)
 	suppressUntil := -1
 
 	for i := 0; i < n; i++ {
@@ -263,13 +234,13 @@ func DetectManeuversHybrid(objectID int, residuals []float64, deltaVs []float64,
 				start = 0
 			}
 			inf, err := hybrid.Model.Predict(frames[start : i+1])
-			if err == nil && inf.Probability >= hybrid.MinProbability && inf.Confidence >= hybrid.MinConfidence && inf.Type != ManeuverNone {
+			if err == nil && inf.Probability >= hybrid.MinProbability && inf.Confidence >= hybrid.MinConfidence && inf.Type != physics.ManeuverNone {
 				score := inf.Probability * inf.Confidence
 				deltaVRSW := inf.ManeuverDeltaVRSW
 				if deltaVRSW == [3]float64{} {
 					deltaVRSW = [3]float64{0, maxOr(inf.DeltaV, deltaVs[i]), 0}
 				}
-				events = append(events, ManeuverEvent{
+				events = append(events, physics.ManeuverEvent{
 					ObjectID:        objectID,
 					TimeIndex:       i,
 					Score:           score,
@@ -277,14 +248,7 @@ func DetectManeuversHybrid(objectID int, residuals []float64, deltaVs []float64,
 					Type:            inf.Type,
 					DeltaVRSW:       deltaVRSW,
 					ManeuverTimeSec: inf.ManeuverTime,
-					IntentProxy:     false,
 				})
-				// Strategic Hook: Symbolic Attribution (2.3)
-				if inf.Confidence >= 0.8 && (inf.Type == ManeuverImpulsive || inf.Type == ManeuverLowThrust) {
-					go func(objID int, window []ManeuverFrame) {
-						_ = InvokeSymbolicAttribution(objID, window)
-					}(objectID, frames[start:i+1])
-				}
 				hybrid.Fallback.Reset()
 				suppressUntil = i + hybrid.SuppressAfterDetect
 				usedML = true
@@ -301,8 +265,7 @@ func DetectManeuversHybrid(objectID int, residuals []float64, deltaVs []float64,
 		}
 
 		deltaV := deltaVs[i]
-
-		events = append(events, ManeuverEvent{
+		events = append(events, physics.ManeuverEvent{
 			ObjectID:        objectID,
 			TimeIndex:       i,
 			Score:           score,
@@ -318,21 +281,21 @@ func DetectManeuversHybrid(objectID int, residuals []float64, deltaVs []float64,
 	return events
 }
 
-// CharacterizeManeuverFromTracks estimates maneuver time, burn type, and delta-v vector.
-// It follows a practical variant of the PCA-style method:
-//  1. fit prior and post windows using mean state,
-//  2. find closest pair (PCA proxy),
-//  3. compute delta-v in ECI and rotate to RSW:
-//     DeltaV_RSW = R^T * (v_new - v_prior).
+/**
+ * CharacterizeManeuverFromTracks performs differential state analysis between two tracking windows.
+ */
 func CharacterizeManeuverFromTracks(
-	prior []orbital.State,
-	post []orbital.State,
+	prior []physics.State,
+	post []physics.State,
 	timesPriorSec []float64,
 	timesPostSec []float64,
-	indianAssets []orbital.State,
-) ManeuverCharacterization {
+	indianAssets []physics.State,
+) physics.ManeuverCharacterization {
+	fmt.Printf("[TRC] Entering CharacterizeManeuverFromTracks\n")
+	defer fmt.Printf("[TRC] Exiting CharacterizeManeuverFromTracks\n")
+
 	if len(prior) == 0 || len(post) == 0 {
-		return ManeuverCharacterization{}
+		return physics.ManeuverCharacterization{}
 	}
 
 	priorFit := meanState(prior)
@@ -341,50 +304,36 @@ func CharacterizeManeuverFromTracks(
 	idxPrior, idxPost := pcaIndices(prior, post)
 	maneuverTime := 0.5 * (safeTimeAt(timesPriorSec, idxPrior) + safeTimeAt(timesPostSec, idxPost))
 
-	// Propagate both states to the maneuver time using small steps for RK4 stability
 	baseJd := float64(time.Now().Unix())/86400.0 + 2440587.5
-	prop := func(s orbital.State, dt float64) orbital.State {
-		if math.Abs(dt) < 1.0 {
-			return orbital.VectorToState(orbital.PropagateCartesianState(orbital.StateToVector(s), dt, baseJd))
-		}
-		const maxStep = 30.0
-		n := int(math.Ceil(math.Abs(dt) / maxStep))
-		step := dt / float64(n)
-		v := orbital.StateToVector(s)
-		for i := 0; i < n; i++ {
-			v = orbital.PropagateCartesianState(v, step, baseJd)
-		}
-		return orbital.VectorToState(v)
+	prop := func(s physics.State, dt float64) physics.State {
+		xv := physics.StateToVector(s)
+		nextV := physics.PropagateCartesianState(xv, dt, baseJd, physics.PhysicsParams{})
+		return physics.VectorToState(nextV)
 	}
 
 	priorAtT := prop(prior[idxPrior], maneuverTime-safeTimeAt(timesPriorSec, idxPrior))
 	postAtT := prop(post[idxPost], maneuverTime-safeTimeAt(timesPostSec, idxPost))
 
-	dvECI := [3]float64{postAtT.VX - priorAtT.VX, postAtT.VY - priorAtT.VY, postAtT.VZ - priorAtT.VZ}
+	dvECI := [3]float64{postAtT.Vel[0] - priorAtT.Vel[0], postAtT.Vel[1] - priorAtT.Vel[1], postAtT.Vel[2] - priorAtT.Vel[2]}
 	dvRSW := eciDeltaVToRSW(dvECI, priorAtT)
 	burnType := classifyManeuverType(norm3(dvECI), distance3(postAtT, priorAtT))
 
 	intentScore := alignmentIntentProxy(postFit, indianAssets)
 	priorPostGap := distance3(priorFit, postFit)
 	
-	// Enhanced Intent Proxies
 	proxOps := false
 	for _, a := range indianAssets {
-		if distance3(postFit, a) < 150.0 { // 150km threshold for prox-ops suspicion
+		if distance3(postFit, a) < 150.0 {
 			proxOps = true
 			break
 		}
 	}
 	
 	dvMag := norm3(dvRSW)
-	stealthy := false
-	if dvMag > 0 && dvMag < 0.05 && priorPostGap > 5.0 {
-		stealthy = true // Small Delta-V, significant trajectory shift
-	}
+	stealthy := dvMag > 0 && dvMag < 0.05 && priorPostGap > 5.0
+	confidence := clamp01(0.50 + 0.30*clamp01(dvMag/0.1) + 0.10*intentScore + 1.0*clamp01(priorPostGap/5.0))
 
-	confidence := clamp01(0.50 + 0.30*clamp01(dvMag/0.1) + 0.10*intentScore + 0.10*clamp01(priorPostGap/5.0))
-
-	return ManeuverCharacterization{
+	return physics.ManeuverCharacterization{
 		ManeuverTimeSec:  maneuverTime,
 		DeltaVECI:        dvECI,
 		DeltaVRSW:        dvRSW,
@@ -398,7 +347,10 @@ func CharacterizeManeuverFromTracks(
 	}
 }
 
-func pcaIndices(prior []orbital.State, post []orbital.State) (int, int) {
+/**
+ * pcaIndices finds the closest pair of states in two temporal windows as a proxy for the maneuver point.
+ */
+func pcaIndices(prior []physics.State, post []physics.State) (int, int) {
 	bestI, bestJ := 0, 0
 	bestD := math.MaxFloat64
 	for i := range prior {
@@ -413,32 +365,38 @@ func pcaIndices(prior []orbital.State, post []orbital.State) (int, int) {
 	return bestI, bestJ
 }
 
-func meanState(states []orbital.State) orbital.State {
+/**
+ * meanState calculates the centroid of a state sequence in cartesian space.
+ */
+func meanState(states []physics.State) physics.State {
 	if len(states) == 0 {
-		return orbital.State{}
+		return physics.State{}
 	}
-	var s orbital.State
+	var s physics.State
 	for _, st := range states {
-		s.X += st.X
-		s.Y += st.Y
-		s.Z += st.Z
-		s.VX += st.VX
-		s.VY += st.VY
-		s.VZ += st.VZ
+		s.Pos[0] += st.Pos[0]
+		s.Pos[1] += st.Pos[1]
+		s.Pos[2] += st.Pos[2]
+		s.Vel[0] += st.Vel[0]
+		s.Vel[1] += st.Vel[1]
+		s.Vel[2] += st.Vel[2]
 	}
 	n := float64(len(states))
-	s.X /= n
-	s.Y /= n
-	s.Z /= n
-	s.VX /= n
-	s.VY /= n
-	s.VZ /= n
+	s.Pos[0] /= n
+	s.Pos[1] /= n
+	s.Pos[2] /= n
+	s.Vel[0] /= n
+	s.Vel[1] /= n
+	s.Vel[2] /= n
 	return s
 }
 
-func eciDeltaVToRSW(deltaVECI [3]float64, reference orbital.State) [3]float64 {
-	r := [3]float64{reference.X, reference.Y, reference.Z}
-	v := [3]float64{reference.VX, reference.VY, reference.VZ}
+/**
+ * eciDeltaVToRSW rotates a velocity residual from GCRF to the local Radial-South-West frame.
+ */
+func eciDeltaVToRSW(deltaVECI [3]float64, reference physics.State) [3]float64 {
+	r := [3]float64{reference.Pos[0], reference.Pos[1], reference.Pos[2]}
+	v := [3]float64{reference.Vel[0], reference.Vel[1], reference.Vel[2]}
 
 	rHat := normalize3(r)
 	h := cross3(r, v)
@@ -452,14 +410,17 @@ func eciDeltaVToRSW(deltaVECI [3]float64, reference orbital.State) [3]float64 {
 	}
 }
 
-func alignmentIntentProxy(subject orbital.State, indianAssets []orbital.State) float64 {
+/**
+ * alignmentIntentProxy scores the planar alignment of a target vs defensive assets.
+ */
+func alignmentIntentProxy(subject physics.State, indianAssets []physics.State) float64 {
 	if len(indianAssets) == 0 {
 		return 0
 	}
-	subjPlane := normalize3(cross3([3]float64{subject.X, subject.Y, subject.Z}, [3]float64{subject.VX, subject.VY, subject.VZ}))
+	subjPlane := normalize3(cross3([3]float64{subject.Pos[0], subject.Pos[1], subject.Pos[2]}, [3]float64{subject.Vel[0], subject.Vel[1], subject.Vel[2]}))
 	best := 0.0
 	for _, a := range indianAssets {
-		assetPlane := normalize3(cross3([3]float64{a.X, a.Y, a.Z}, [3]float64{a.VX, a.VY, a.VZ}))
+		assetPlane := normalize3(cross3([3]float64{a.Pos[0], a.Pos[1], a.Pos[2]}, [3]float64{a.Vel[0], a.Vel[1], a.Vel[2]}))
 		align := math.Abs(dot3(subjPlane, assetPlane))
 		if align > best {
 			best = align
@@ -475,10 +436,13 @@ func safeTimeAt(times []float64, idx int) float64 {
 	return times[idx]
 }
 
-func distance3(a, b orbital.State) float64 {
-	dx := a.X - b.X
-	dy := a.Y - b.Y
-	dz := a.Z - b.Z
+/**
+ * distance3 computes the Euclidean distance between two cartesian states.
+ */
+func distance3(a, b physics.State) float64 {
+	dx := a.Pos[0] - b.Pos[0]
+	dy := a.Pos[1] - b.Pos[1]
+	dz := a.Pos[2] - b.Pos[2]
 	return math.Sqrt(dx*dx + dy*dy + dz*dz)
 }
 
@@ -506,42 +470,17 @@ func normalize3(v [3]float64) [3]float64 {
 	return [3]float64{v[0] / n, v[1] / n, v[2] / n}
 }
 
-func HeuristicSHAP(window []ManeuverFrame) []FeatureContribution {
-	if len(window) == 0 {
-		return nil
-	}
-
-	var sumResidual float64
-	var sumDeltaV float64
-	for _, f := range window {
-		sumResidual += math.Abs(f.Residual)
-		sumDeltaV += f.DeltaV
-	}
-
-	meanResidual := sumResidual / float64(len(window))
-	meanDeltaV := sumDeltaV / float64(len(window))
-	den := meanResidual + math.Abs(meanDeltaV)
-	if den <= 1e-9 {
-		den = 1.0
-	}
-
-	return []FeatureContribution{
-		{Feature: "residual_mean_abs", Value: meanResidual, Contribution: meanResidual / den},
-		{Feature: "delta_v_mean", Value: meanDeltaV, Contribution: math.Abs(meanDeltaV) / den},
-	}
-}
-
-func classifyManeuverType(deltaV, residual float64) ManeuverType {
+func classifyManeuverType(deltaV, residual float64) physics.ManeuverType {
 	absResidual := math.Abs(residual)
 	switch {
 	case deltaV >= 0.08:
-		return ManeuverImpulsive
+		return physics.ManeuverImpulsive
 	case deltaV >= 0.015:
-		return ManeuverLowThrust
+		return physics.ManeuverLowThrust
 	case absResidual >= 0.25:
-		return ManeuverHypersonic
+		return physics.ManeuverHypersonic
 	default:
-		return ManeuverNone
+		return physics.ManeuverNone
 	}
 }
 
@@ -562,15 +501,17 @@ func maxOr(a, b float64) float64 {
 	return b
 }
 
-// InvokeSymbolicAttribution bridges the Go detection to the Python Axiom-Zero distillers.
-func InvokeSymbolicAttribution(objectID int, window []ManeuverFrame) error {
-	fmt.Printf("IAF_SDA: Triggering Symbolic Attribution for Asset %d...\n", objectID)
+/**
+ * InvokeSymbolicAttribution bridges the Go detection to the Python Axiom-Zero distillers for force-decomposition.
+ */
+func InvokeSymbolicAttribution(objectID int, window []physics.ManeuverFrame) error {
+	fmt.Printf("[TRC] Entering InvokeSymbolicAttribution for object %d\n", objectID)
+	defer fmt.Printf("[TRC] Exiting InvokeSymbolicAttribution\n")
 	
-	// 1. Prepare Data Shell
 	type Payload struct {
-		ObjectID int             `json:"object_id"`
-		Q        [][3]float64    `json:"q"`
-		Res      [][]float64     `json:"res"`
+		ObjectID int          `json:"object_id"`
+		Q        [][3]float64 `json:"q"`
+		Res      [][]float64  `json:"res"`
 	}
 
 	payload := Payload{
@@ -580,20 +521,17 @@ func InvokeSymbolicAttribution(objectID int, window []ManeuverFrame) error {
 	}
 
 	for i, f := range window {
-		payload.Q[i] = [3]float64{0, 0, float64(i) * 100.0} 
+		payload.Q[i] = [3]float64{0, 0, float64(i) * 100.0}
 		payload.Res[i] = []float64{f.Residual}
 	}
 
-	// 2. Serialize to Temporary File
 	tmpFile := fmt.Sprintf("maneuver_res_%d.json", objectID)
 	data, _ := json.Marshal(payload)
 	_ = os.WriteFile(tmpFile, data, 0644)
 	defer os.Remove(tmpFile)
 
-	// 3. Execute Axiom-Zero symbolic pipeline
-	// Standardized path for consolidated kernels (Phase 1.1)
-	cmd := exec.Command(".venv/bin/python3", "ai/v3/symbolic_attributor.py", 
-		"--residuals", tmpFile, 
+	cmd := exec.Command(".venv/bin/python3", "ai/v3/symbolic_attributor.py",
+		"--residuals", tmpFile,
 		"--out", fmt.Sprintf("attribution_%d.tex", objectID))
 	
 	cmd.Stdout = os.Stdout

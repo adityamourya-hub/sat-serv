@@ -3,7 +3,7 @@ package hypersonic
 import (
 	"math"
 	"time"
-	"ssis/pkg/orbital"
+
 	"ssis/pkg/physics"
 )
 
@@ -85,7 +85,7 @@ func DebrisFootprint(state ReentryState, bcMin, bcMax float64) FootprintEllipse 
 
 // PredictImpactFootprint implements Requirement (h) - Re-entry Analysis.
 // It uses a Jacchia-Roberts 1971 atmospheric model and an RKF45 adaptive integrator.
-func PredictImpactFootprint(initial orbital.State, ballisticCoeff float64, f107, ap float64) ImpactArea {
+func PredictImpactFootprint(initial physics.State, ballisticCoeff float64, f107, ap float64) ImpactArea {
 	if ballisticCoeff <= 0 {
 		ballisticCoeff = 0.01
 	}
@@ -104,19 +104,19 @@ func PredictImpactFootprint(initial orbital.State, ballisticCoeff float64, f107,
 	rk.MaxStep = 10.0
 
 	t, dt := 0.0, 5.0
-	y := []float64{initial.X, initial.Y, initial.Z, initial.VX, initial.VY, initial.VZ}
+	y := []float64{initial.Pos[0], initial.Pos[1], initial.Pos[2], initial.Vel[0], initial.Vel[1], initial.Vel[2]}
 	baseJd := float64(time.Now().Unix())/86400.0 + 2440587.5
 
 	// 1. Derivative including J2 + Jacchia-Roberts/MSIS-86 Drag
 	f := func(t float64, x []float64) []float64 {
 		rx, ry, rz := x[0], x[1], x[2]
 		vx, vy, vz := x[3], x[4], x[5]
-		r := math.Sqrt(rx*rx + ry*ry + rz*rz)
+		// r := math.Sqrt(rx*rx + ry*ry + rz*rz) (migrated to OrbitalAcceleration)
 		speed := math.Sqrt(vx*vx + vy*vy + vz*vz)
 		
-		ax, ay, az := orbital.OrbitalAcceleration(rx, ry, rz, vx, vy, vz, baseJd, orbital.PhysicsParams{Mass: 1000.0, Cd: 2.2, DragArea: 1000.0 / ballisticCoeff}) // BC = m/CdA
+		ax, ay, az := physics.OrbitalAcceleration(rx, ry, rz, vx, vy, vz, baseJd, physics.PhysicsParams{Mass: 1000.0, Cd: 2.2, DragArea: 1000.0 / ballisticCoeff}) // BC = m/CdA
 		
-		rho := orbital.GetDensityUnified(rx, ry, rz, baseJd)
+		rho := physics.GetDensityUnified(rx, ry, rz, baseJd)
 		// Unit conversion: rho [kg/m^3], speed [km/s], BC [kg/m^2]
 		// a [km/s^2] = 0.5 * rho * speed^2 * 1000 / BC
 		drag := 0.5 * rho * speed * speed * 1000.0 / ballisticCoeff
@@ -128,35 +128,53 @@ func PredictImpactFootprint(initial orbital.State, ballisticCoeff float64, f107,
 		return []float64{vx, vy, vz, ax, ay, az}
 	}
 
-	// 2. Propagate until impact (alt <= 0)
-	for i := 0; i < 20000; i++ {
-		r := math.Sqrt(y[0]*y[0] + y[1]*y[1] + y[2]*y[2])
-		if r-orbital.ER <= 0 {
+	// 2. Propagate until impact (WGS-84 altitude <= 0)
+	for i := 0; i < 30000; i++ {
+		_, _, alt := physics.ECIToGeodetic(y[0], y[1], y[2], baseJd+t/86400.0)
+		if alt <= 0 {
 			break
 		}
+		
+		// HGV Lift Logic (Requirement i)
+		if alt > 30.0 && alt < 90.0 {
+			vRel := math.Sqrt(y[3]*y[3] + y[4]*y[4] + y[5]*y[5])
+			if vRel > 1.0 {
+				// n = (v x (r x v)) / |v x (r x v)|
+				nx, ny, nz := physics.CalculateLiftVectorECI(y[0], y[1], y[2], y[3], y[4], y[5])
+				
+				// a_lift = 0.5 * rho * v^2 * (A/m) * CL
+				// CL = (L/D) * CD
+				rho := physics.GetDensityUnified(y[0], y[1], y[2], baseJd+t/86400.0)
+				ldRatio := 3.0 // Default for df-17 class HGV
+				cl := ldRatio * 2.2
+				
+				// Accel in km/s^2 (0.5 * rho * v^2 * Area/Mass * CL) / 1000
+				accLift := 0.5 * rho * vRel * vRel * (1.0 / ballisticCoeff) * cl * 1000.0
+				
+				y[3] += accLift * nx * dt
+				y[4] += accLift * ny * dt
+				y[5] += accLift * nz * dt
+			}
+		}
+
 		t, y, dt = rk.Step(t, dt, y, f)
 	}
 
-	rFinal := math.Sqrt(y[0]*y[0] + y[1]*y[1] + y[2]*y[2])
-	if rFinal < 1e-9 {
-		rFinal = orbital.ER
-	}
-	lat := math.Asin(y[2]/rFinal) * 180.0 / math.Pi
-	lon := math.Atan2(y[1], y[0]) * 180.0 / math.Pi
+	latFinal, lonFinal, _ := physics.ECIToGeodetic(y[0], y[1], y[2], baseJd+t/86400.0)
 
-	// 3-sigma output (Simplified dispersion)
+	// 3-sigma output (Physics-grounded terminus)
 	return ImpactArea{
-		LatDeg:      lat,
-		LonDeg:      lon,
-		MajorAxisKm: 12.0,
-		MinorAxisKm: 1.2,
-		AzimuthDeg:  0.0,
+		LatDeg:     latFinal,
+		LonDeg:     lonFinal,
+		RadiusKm:   0,
+		MajorAxisKm: 0,
+		MinorAxisKm: 0,
 	}
 }
 
 // PredictImpactDispersion performs a Monte-Carlo simulation for re-entry UQ (Requirement h).
 // It propagates initial state and ballistic coefficient uncertainties to derive a 3-σ dispersion ellipsoid.
-func PredictImpactDispersion(initial orbital.State, bc float64, f107, ap float64, stateSigma float64, bcSigma float64, samples int) ImpactArea {
+func PredictImpactDispersion(initial physics.State, bc float64, f107, ap float64, stateSigma float64, bcSigma float64, samples int) ImpactArea {
 	if samples <= 0 {
 		samples = 100
 	}
@@ -174,39 +192,31 @@ func PredictImpactDispersion(initial orbital.State, bc float64, f107, ap float64
 		z2, _ := boxMuller(u3, u4)
 
 		pState := initial
-		pState.X += z0 * stateSigma
-		pState.Y += z1 * stateSigma
+		pState.Pos[0] += z0 * stateSigma
+		pState.Pos[1] += z1 * stateSigma
 		pBC := bc + z2 * bcSigma
 		
 		res := PredictImpactFootprint(pState, pBC, f107, ap)
 		lats[i], lons[i] = res.LatDeg, res.LonDeg
 	}
 	
-	// Calculate centroid and dispersion
-	meanLat, meanLon := 0.0, 0.0
+	// Calculate centroid and dispersion via PCA (Eigen-decomposition)
+	var meanLat, meanLon float64
 	for i := 0; i < samples; i++ {
 		meanLat += lats[i]
 		meanLon += lons[i]
 	}
 	meanLat /= float64(samples)
 	meanLon /= float64(samples)
-	
-	maxDist := 0.0
-	for i := 0; i < samples; i++ {
-		dLat := (lats[i] - meanLat) * 111.0 
-		dLon := (lons[i] - meanLon) * 111.0 * math.Cos(meanLat*math.Pi/180.0)
-		dist := math.Sqrt(dLat*dLat + dLon*dLon)
-		if dist > maxDist {
-			maxDist = dist
-		}
-	}
+
+	major, minor, azimuth := physics.ComputePCADispersion(lats, lons, 3.0) // 3-sigma 99% confidence
 
 	return ImpactArea{
 		LatDeg:      meanLat,
 		LonDeg:      meanLon,
-		MajorAxisKm: maxDist * 1.5, // 3-sigma proxy
-		MinorAxisKm: maxDist / 3.0,
-		AzimuthDeg:  0.0,
+		MajorAxisKm: major,
+		MinorAxisKm: minor,
+		AzimuthDeg:  azimuth * (180.0 / math.Pi),
 	}
 }
 

@@ -6,12 +6,13 @@ import (
 	"time"
 
 	safemath "ssis/pkg/math"
+	"ssis/pkg/physics"
 )
 
 type CatalogObjectEstimate struct {
 	ObjectID   int
 	Name       string
-	State      State
+	State      physics.State
 	Covariance [][]float64
 	LastUpdate int64
 }
@@ -19,7 +20,7 @@ type CatalogObjectEstimate struct {
 type AssociationObservation struct {
 	TrackID       int
 	TimestampUnix int64
-	State         State
+	State         physics.State
 	Covariance    [][]float64
 }
 
@@ -112,8 +113,8 @@ func (m *MHTLite) Associate(obs AssociationObservation, objects []CatalogObjectE
 	return MHTDecision{TrackID: obs.TrackID, WinnerObject: w.ObjectID, WinnerVariant: w.Variant, Posterior: w.Posterior, UCT: uct, Promoted: promoted, Hypotheses: h}
 }
 
-func stateMahalanobis(obs State, obsCov [][]float64, obj State, objCov [][]float64) float64 {
-	d := []float64{obs.X - obj.X, obs.Y - obj.Y, obs.Z - obj.Z}
+func stateMahalanobis(obs physics.State, obsCov [][]float64, obj physics.State, objCov [][]float64) float64 {
+	d := []float64{obs.Pos[0] - obj.Pos[0], obs.Pos[1] - obj.Pos[1], obs.Pos[2] - obj.Pos[2]}
 	cov := safemath.ZeroMatrix(3, 3)
 	for i := 0; i < 3; i++ {
 		cov[i][i] = 2.0

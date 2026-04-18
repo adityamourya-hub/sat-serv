@@ -2,12 +2,14 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"ssis/pkg/catalog"
 	"ssis/pkg/crypto"
+	"ssis/pkg/physics"
 	"ssis/pkg/proximity"
 
 	"github.com/gin-gonic/gin"
@@ -32,6 +34,9 @@ func (s *Server) SetupRouter() *gin.Engine {
 }
 
 func (s *Server) handleVolumetricScan(c *gin.Context) {
+	fmt.Printf("[TRC] Entering handleVolumetricScan\n")
+	defer fmt.Printf("[TRC] Exiting handleVolumetricScan\n")
+
 	lat, _ := strconv.ParseFloat(c.Query("lat"), 64)
 	lon, _ := strconv.ParseFloat(c.Query("lon"), 64)
 	radius, _ := strconv.ParseFloat(c.Query("radius"), 64)
@@ -68,12 +73,15 @@ func (s *Server) handleVolumetricScan(c *gin.Context) {
 }
 
 func (s *Server) handleCollisionRisk(c *gin.Context) {
+	fmt.Printf("[TRC] Entering handleCollisionRisk\n")
+	defer fmt.Printf("[TRC] Exiting handleCollisionRisk\n")
+
 	miss, _ := strconv.ParseFloat(c.Query("miss"), 64)
 	hbr, _ := strconv.ParseFloat(c.Query("hbr"), 64)
 	sigR, _ := strconv.ParseFloat(c.Query("sigma_r"), 64)
 	sigI, _ := strconv.ParseFloat(c.Query("sigma_i"), 64)
 
-	input := proximity.CollisionRiskInput{
+	input := physics.CollisionRiskInput{
 		MissDistanceKm:   miss,
 		HardbodyRadiusKm: hbr,
 		SigmaRadialKm:    sigR,

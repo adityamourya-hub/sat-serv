@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"ssis/pkg/physics"
 
 	"github.com/yalue/onnxruntime_go"
 )
@@ -51,33 +52,40 @@ func NewPINNRefiner(modelPath string) (*PINNRefiner, error) {
 
 func (r *PINNRefiner) RefineState(state []float64, covariance [][]float64, dt float64) ([]float64, error) {
 	ctx := DefaultPINNRefineContext()
-	return r.RefineStateAdaptive(state, covariance, dt, ctx)
+	return r.RefineStateAdaptive(state, covariance, dt, ctx.LongArcThresholdSec)
 }
 
-// RefineStateAdaptive applies PINN corrections only when dynamics indicate long-arc drift,
-// high-drag regime, or covariance growth. This keeps short-arc updates stable while improving
-// physically difficult segments.
-func (r *PINNRefiner) RefineStateAdaptive(state []float64, covariance [][]float64, dt float64, ctx PINNRefineContext) ([]float64, error) {
-	if !r.enabled || r.session == nil || len(state) != 6 {
-		return state, nil
+/**
+ * RefineStateAdaptive implements physics.StateRefiner.
+ * It applies PINN residuals only when the propagation arc exceeds the threshold.
+ */
+func (r *PINNRefiner) RefineStateAdaptive(x []float64, p [][]float64, dt float64, threshold float64) ([]float64, error) {
+	if !r.enabled {
+		return x, nil
 	}
-	if !shouldApplyPINNRefinement(state, covariance, dt, ctx) {
-		return state, nil
+
+	if dt < threshold {
+		return x, nil
+	}
+
+	ctx := DefaultPINNRefineContext()
+	if !shouldApplyPINNRefinement(x, p, dt, ctx) {
+		return x, nil
 	}
 
 	// Prepare input: 6 state elements + 6 diagonal cov elements
 	inputData := make([]float32, 12)
 	for i := 0; i < 6; i++ {
-		inputData[i] = float32(state[i])
-		if i < len(covariance) && i < len(covariance[i]) {
-			inputData[6+i] = float32(covariance[i][i])
+		inputData[i] = float32(x[i])
+		if i < len(p) && i < len(p[i]) {
+			inputData[6+i] = float32(p[i][i])
 		}
 	}
 
 	inputShape := onnxruntime_go.NewShape(1, 12)
 	inputTensor, err := onnxruntime_go.NewTensor(inputShape, inputData)
 	if err != nil {
-		return state, err
+		return x, err
 	}
 	defer inputTensor.Destroy()
 
@@ -85,7 +93,7 @@ func (r *PINNRefiner) RefineStateAdaptive(state []float64, covariance [][]float6
 	outputs := []onnxruntime_go.Value{nil}
 
 	if err := r.session.Run(inputs, outputs); err != nil {
-		return state, err
+		return x, err
 	}
 	defer outputs[0].Destroy()
 
@@ -94,8 +102,8 @@ func (r *PINNRefiner) RefineStateAdaptive(state []float64, covariance [][]float6
 
 	// Apply acceleration corrections [dVX, dVY, dVZ] with context-aware scaling.
 	refined := make([]float64, 6)
-	copy(refined, state)
-	scale := refinementStrengthScale(state, covariance, dt, ctx)
+	copy(refined, x)
+	scale := refinementStrengthScale(x, p, dt, ctx)
 
 	// Velocity is indices 3, 4, 5
 	for i := 0; i < 3; i++ {
@@ -117,7 +125,7 @@ func shouldApplyPINNRefinement(state []float64, covariance [][]float64, dt float
 	}
 	r := math.Sqrt(state[0]*state[0] + state[1]*state[1] + state[2]*state[2])
 	if r > 1 {
-		altKm := r - ER
+		altKm := r - physics.EARTH_R_EQUATORIAL
 		if altKm <= ctx.HighDragAltitudeKm {
 			return true
 		}
@@ -134,9 +142,10 @@ func refinementStrengthScale(state []float64, covariance [][]float64, dt float64
 	// Drag component from altitude and density proxy.
 	r := math.Sqrt(state[0]*state[0] + state[1]*state[1] + state[2]*state[2])
 	if r > 1 {
-		altKm := r - ER
-		rho := AtmosphericDensity(altKm)
-		s += pinnClamp01(math.Log10(1.0 + 1e9*rho))
+		altKm := r - physics.WGS84_A
+		// Simple exponential proxy: rho = rho0 * exp(-h/H)
+		rho := 1.225e-9 * math.Exp(-altKm/8.5)
+		s += pinnClamp01(math.Log10(1.0 + 1e12*rho))
 	}
 
 	// Uncertainty growth component.

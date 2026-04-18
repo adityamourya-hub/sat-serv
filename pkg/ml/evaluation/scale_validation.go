@@ -11,7 +11,7 @@ import (
 	engcrypto "ssis/pkg/crypto"
 	"ssis/pkg/ml"
 	"ssis/pkg/ml/hybrid"
-	"ssis/pkg/proximity"
+	"ssis/pkg/physics"
 )
 
 type MassiveValidationConfig struct {
@@ -138,7 +138,7 @@ func RunMassiveValidation(cfg MassiveValidationConfig) (MassiveValidationReport,
 	for i := 0; i < cfg.ConjunctionSampleCount; i++ {
 		th := dataset.Threats[i%len(dataset.Threats)]
 		_, _ = orch.EvaluateCollision(
-			proximity.CollisionRiskInput{
+			physics.CollisionRiskInput{
 				MissDistanceKm:      th.MissDistanceKm,
 				HardbodyRadiusKm:    0.005,
 				RelativeVelocityKmS: th.RelativeVelocityKmS,
@@ -147,8 +147,8 @@ func RunMassiveValidation(cfg MassiveValidationConfig) (MassiveValidationReport,
 				SigmaIntrackKm:      0.03,
 				SigmaCrosstrackKm:   0.03,
 			},
-			proximity.CollisionNeighborhoodGraph{
-				Nodes: []proximity.CollisionGraphNode{{ID: th.TargetObjectID}, {ID: th.ThreatID}},
+			physics.CollisionNeighborhoodGraph{
+				Nodes: []physics.CollisionGraphNode{{ObjectID: th.TargetObjectID}, {ObjectID: th.ThreatID}},
 			},
 		)
 	}

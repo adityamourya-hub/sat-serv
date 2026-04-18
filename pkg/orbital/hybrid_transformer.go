@@ -8,19 +8,20 @@ import (
 	"github.com/yalue/onnxruntime_go"
 
 	safemath "ssis/pkg/math"
+	"ssis/pkg/physics"
 )
 
 type HybridTransformer struct {
 	session *onnxruntime_go.DynamicAdvancedSession
 	enabled bool
-	history map[int][]State
+	history map[int][]physics.State
 	mu      sync.RWMutex
 	runMu   sync.Mutex
 }
 
 func NewHybridTransformer(modelPath string) (*HybridTransformer, error) {
 	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
-		return &HybridTransformer{enabled: false, history: make(map[int][]State)}, nil
+		return &HybridTransformer{enabled: false, history: make(map[int][]physics.State)}, nil
 	}
 
 	session, err := onnxruntime_go.NewDynamicAdvancedSession(
@@ -36,11 +37,11 @@ func NewHybridTransformer(modelPath string) (*HybridTransformer, error) {
 	return &HybridTransformer{
 		session: session,
 		enabled: true,
-		history: make(map[int][]State),
+		history: make(map[int][]physics.State),
 	}, nil
 }
 
-func (t *HybridTransformer) AddHistory(objectID int, state State) {
+func (t *HybridTransformer) AddHistory(objectID int, state physics.State) {
 	if !t.enabled {
 		return
 	}
@@ -62,7 +63,7 @@ func (t *HybridTransformer) Refine(objectID int, currentState []float64, current
 	t.mu.RLock()
 	h, ok := t.history[objectID]
 	if ok {
-		h = append([]State(nil), h...)
+		h = append([]physics.State(nil), h...)
 	}
 	t.mu.RUnlock()
 	if !ok || len(h) < 4 {
@@ -85,12 +86,12 @@ func (t *HybridTransformer) Refine(objectID int, currentState []float64, current
 		}
 		s := h[srcIdx]
 		base := i * 6
-		inputData[base+0] = float32(s.X)
-		inputData[base+1] = float32(s.Y)
-		inputData[base+2] = float32(s.Z)
-		inputData[base+3] = float32(s.VX)
-		inputData[base+4] = float32(s.VY)
-		inputData[base+5] = float32(s.VZ)
+		inputData[base+0] = float32(s.Pos[0])
+		inputData[base+1] = float32(s.Pos[1])
+		inputData[base+2] = float32(s.Pos[2])
+		inputData[base+3] = float32(s.Vel[0])
+		inputData[base+4] = float32(s.Vel[1])
+		inputData[base+5] = float32(s.Vel[2])
 	}
 
 	inputShape := onnxruntime_go.NewShape(1, 16, 6)
