@@ -47,6 +47,9 @@ type Ingestor struct {
 	OnSpaceWeather func(physics.SpaceWeatherData)
 	OnManeuver     func(int, float64, float64) // satNum, oldA, newA
 	OnDecay        func(int)                   // satNum marked as decayed
+
+	// Catalog lookup for determining new/updated/decayed objects
+	LookupCatalog func(noradID int) (*physics.TLE, bool) // Returns existing TLE if found
 }
 
 /**
@@ -189,16 +192,58 @@ func (i *Ingestor) processTLEBatch(tles []*physics.TLE, metrics *IngestionMetric
 
 		processed++
 
-		// TODO: Compare with existing catalog to determine:
-		// - New object (not in catalog)
-		// - Updated object (newer epoch)
-		// - Decayed object (marked as decayed in gp_history)
+		// Classify the TLE based on catalog comparison
+		classification := i.classifyTLE(tle)
+		switch classification {
+		case "new":
+			metrics.NewObjects++
+		case "updated":
+			metrics.UpdatedObjects++
+		case "decayed":
+			metrics.DecayedObjects++
+		}
 
 		// For now, count all as updates
 		metrics.UpdatedObjects++
 	}
 
 	return processed
+}
+
+/**
+ * classifyTLE determines if a TLE is new, updated, or decayed.
+ * Compares against existing catalog using LookupCatalog callback.
+ */
+func (i *Ingestor) classifyTLE(tle *physics.TLE) string {
+	if i.LookupCatalog == nil {
+		// No catalog lookup available, default to updated
+		return "updated"
+	}
+
+	existing, found := i.LookupCatalog(tle.SatelliteNumber)
+	if !found {
+		// Object not in catalog - new object
+		return "new"
+	}
+
+	// Compare epochs
+	newEpoch := tleToJulianDate(tle)
+	existingEpoch := tleToJulianDate(existing)
+
+	// Check if this is a newer TLE for existing object
+	if newEpoch > existingEpoch {
+		return "updated"
+	}
+
+	// Check for decay indicators
+	// If epoch is very old (e.g., 30+ days) and no longer in active queries
+	age := newEpoch - existingEpoch
+	if age < -30 { // 30 days older
+		return "decayed"
+	}
+
+	// Default: older TLE, skip
+	return "skipped"
 }
 
 /**

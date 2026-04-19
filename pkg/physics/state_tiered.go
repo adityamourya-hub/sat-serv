@@ -1,6 +1,7 @@
 package physics
 
 import (
+	"time"
 	"unsafe"
 )
 
@@ -86,13 +87,19 @@ func ToMinimal(s State) StateMinimal {
 	}
 }
 
+// PromotionEntry tracks when an object was promoted for TTL-based cleanup
+type PromotionEntry struct {
+	State      *StateFullCovariance
+	PromotedAt time.Time
+}
+
 // StateTieredManager manages promotion/demotion of state tiers
 type StateTieredManager struct {
 	// Bulk catalog (100k objects)
 	MinimalStates []StateMinimal
 
 	// High-fidelity subset (conjunctions, OD candidates)
-	CovarianceStates map[int]*StateFullCovariance // Key = object ID
+	CovarianceStates map[int]*PromotionEntry // Key = object ID
 
 	// Thresholds for promotion
 	ConjunctionThresholdKm float64
@@ -102,7 +109,7 @@ type StateTieredManager struct {
 func NewStateTieredManager(numObjects int) *StateTieredManager {
 	return &StateTieredManager{
 		MinimalStates:          make([]StateMinimal, numObjects),
-		CovarianceStates:       make(map[int]*StateFullCovariance),
+		CovarianceStates:       make(map[int]*PromotionEntry),
 		ConjunctionThresholdKm: 10.0, // Promote if within 10km
 	}
 }
@@ -116,7 +123,10 @@ func (m *StateTieredManager) PromoteToCovariance(id int, initialCov [6][6]float6
 
 	minimal := m.MinimalStates[id]
 	covState := minimal.ToStateWithCovariance(initialCov)
-	m.CovarianceStates[id] = &covState
+	m.CovarianceStates[id] = &PromotionEntry{
+		State:      &covState,
+		PromotedAt: time.Now(),
+	}
 }
 
 // DemoteToMinimal demotes object to bulk tier
@@ -126,11 +136,29 @@ func (m *StateTieredManager) DemoteToMinimal(id int) {
 	// Object remains in MinimalStates array
 }
 
+// DemoteExpired removes covariance states older than maxAgeMinutes
+func (m *StateTieredManager) DemoteExpired(maxAgeMinutes int) int {
+	if maxAgeMinutes <= 0 {
+		return 0
+	}
+
+	cutoff := time.Now().Add(-time.Duration(maxAgeMinutes) * time.Minute)
+	demotedCount := 0
+
+	for id, entry := range m.CovarianceStates {
+		if entry.PromotedAt.Before(cutoff) {
+			m.DemoteToMinimal(id)
+			demotedCount++
+		}
+	}
+	return demotedCount
+}
+
 // GetState retrieves appropriate tier for object
 // Returns covariance state if available, otherwise minimal
 func (m *StateTieredManager) GetState(id int) interface{} {
-	if covState, exists := m.CovarianceStates[id]; exists {
-		return covState
+	if entry, exists := m.CovarianceStates[id]; exists {
+		return entry.State
 	}
 	if id >= 0 && id < len(m.MinimalStates) {
 		return &m.MinimalStates[id]
@@ -140,8 +168,8 @@ func (m *StateTieredManager) GetState(id int) interface{} {
 
 // GetCovariance retrieves covariance for object (nil if not promoted)
 func (m *StateTieredManager) GetCovariance(id int) *[6][6]float64 {
-	if covState, exists := m.CovarianceStates[id]; exists {
-		return &covState.Covariance
+	if entry, exists := m.CovarianceStates[id]; exists {
+		return &entry.State.Covariance
 	}
 	return nil
 }
@@ -188,14 +216,23 @@ func (m *StateTieredManager) BatchPromote(conjunctionIDs []int, defaultCov [6][6
 	}
 }
 
+// GetPromotedIDs returns list of currently promoted object IDs
+func (m *StateTieredManager) GetPromotedIDs() []int {
+	ids := make([]int, 0, len(m.CovarianceStates))
+	for id := range m.CovarianceStates {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // CleanupDemotions removes old covariance states
 // Call periodically to prevent memory leak
 func (m *StateTieredManager) CleanupDemotions(maxAgeMinutes int) {
-	// In production: Track age, demote old objects
-	// For now: Demote all (simplified)
-	for id := range m.CovarianceStates {
-		m.DemoteToMinimal(id)
+	if maxAgeMinutes <= 0 {
+		return
 	}
+	demoted := m.DemoteExpired(maxAgeMinutes)
+	_ = demoted // Log if needed: log.Printf("[TIERED] Demoted %d expired covariance states", demoted)
 }
 
 // Compile-time size assertions

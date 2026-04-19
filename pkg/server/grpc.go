@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/protobuf/ptypes/timestamp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
@@ -154,10 +155,13 @@ func convertProtoToObservation(pbObs *pb.Observation) *types.Observation {
 // convertAlertToProto converts internal Alert to protobuf
 func convertAlertToProto(alert *types.Alert) *pb.Alert {
 	return &pb.Alert{
-		AlertId:   alert.AlertID,
-		Type:      pb.AlertType(alert.Type),
-		Priority:  pb.AlertPriority(alert.Priority),
-		Timestamp: nil, // TODO: convert time
+		AlertId:  alert.AlertID,
+		Type:     pb.AlertType(alert.Type),
+		Priority: pb.AlertPriority(alert.Priority),
+		Timestamp: &timestamp.Timestamp{
+			Seconds: alert.Timestamp.Unix(),
+			Nanos:   int32(alert.Timestamp.Nanosecond()),
+		},
 	}
 }
 

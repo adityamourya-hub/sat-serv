@@ -12,6 +12,7 @@ package cryptography
 
 import (
 	"crypto/sha256"
+	"fmt"
 	"hash"
 )
 
@@ -32,11 +33,11 @@ func NewTree() *Tree {
 func (t *Tree) AddLeaf(data []byte) {
 	t.hasher.Reset()
 	t.hasher.Write(data)
-	
+
 	var leaf [32]byte
 	hash := t.hasher.Sum(nil)
 	copy(leaf[:], hash)
-	
+
 	t.leaves = append(t.leaves, leaf)
 }
 
@@ -54,7 +55,7 @@ func computeRoot(level [][32]byte) [32]byte {
 	if len(level) == 1 {
 		return level[0]
 	}
-	
+
 	var next [][32]byte
 	for i := 0; i < len(level); i += 2 {
 		if i+1 < len(level) {
@@ -66,7 +67,7 @@ func computeRoot(level [][32]byte) [32]byte {
 			next = append(next, level[i])
 		}
 	}
-	
+
 	return computeRoot(next)
 }
 
@@ -89,14 +90,65 @@ type Proof struct {
 // GenerateProof creates inclusion proof for a specific leaf
 // Allows verification without revealing all frames
 func (t *Tree) GenerateProof(index int) (Proof, error) {
-	// TODO: Implement path extraction
-	return Proof{}, nil
+	if index < 0 || index >= len(t.leaves) {
+		return Proof{}, fmt.Errorf("index %d out of range [0, %d)", index, len(t.leaves))
+	}
+
+	proof := Proof{
+		LeafIndex: index,
+		LeafHash:  t.leaves[index],
+		Siblings:  make([][32]byte, 0),
+	}
+
+	// Build sibling path
+	level := make([][32]byte, len(t.leaves))
+	copy(level, t.leaves)
+	currentIdx := index
+
+	for len(level) > 1 {
+		var next [][32]byte
+		for i := 0; i < len(level); i += 2 {
+			if i+1 < len(level) {
+				if i == currentIdx || i+1 == currentIdx {
+					// Add sibling to proof
+					if i == currentIdx {
+						proof.Siblings = append(proof.Siblings, level[i+1])
+					} else {
+						proof.Siblings = append(proof.Siblings, level[i])
+					}
+				}
+				combined := append(level[i][:], level[i+1][:]...)
+				next = append(next, hashPair(combined))
+			} else {
+				next = append(next, level[i])
+			}
+		}
+		level = next
+		currentIdx /= 2
+	}
+
+	return proof, nil
 }
 
 // VerifyProof checks if leaf exists in tree with given root
 func VerifyProof(root [32]byte, proof Proof) bool {
-	// TODO: Implement verification
-	return false
+	current := proof.LeafHash
+	idx := proof.LeafIndex
+
+	for _, sibling := range proof.Siblings {
+		var combined []byte
+		if idx%2 == 0 {
+			// Current is left, sibling is right
+			combined = append(current[:], sibling[:]...)
+		} else {
+			// Current is right, sibling is left
+			combined = append(sibling[:], current[:]...)
+		}
+		current = hashPair(combined)
+		idx /= 2
+	}
+
+	return current == root
 }
 
 // Reset clears the tree for new batch

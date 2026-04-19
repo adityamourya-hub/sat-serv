@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
+	"unicode"
 
 	// "github.com/Knetic/govaluate" // Add to go.mod: go get github.com/Knetic/govaluate
 	"ssis/pkg/physics"
@@ -214,33 +217,77 @@ func (db *SRDatabase) ListEquations() []*DiscoveredEquation {
 /**
  * EquationEvaluator executes discovered equations at runtime.
  *
- * Uses govaluate for safe expression evaluation.
- *
- * TODO: Uncomment when govaluate is added to go.mod:
- * go get github.com/Knetic/govaluate
+ * Uses a simple arithmetic parser for basic expressions.
+ * Supports: +, -, *, /, ^, parentheses, and variables.
  */
 type EquationEvaluator struct {
-	Equation *DiscoveredEquation
-	// Expr     *govaluate.EvaluableExpression // Requires govaluate
+	Equation  *DiscoveredEquation
+	variables []string // Extracted variable names
 }
 
 /**
  * NewEquationEvaluator compiles an equation for execution.
  */
 func NewEquationEvaluator(eq *DiscoveredEquation) (*EquationEvaluator, error) {
-	// Stub: Parse validation only (no execution yet)
 	if eq.Expression == "" {
 		return nil, fmt.Errorf("empty expression")
 	}
 
-	// Full implementation with govaluate:
-	// expr, err := govaluate.NewEvaluableExpression(eq.Expression)
-	// if err != nil {
-	//     return nil, fmt.Errorf("failed to parse equation '%s': %w", eq.Expression, err)
-	// }
-	// return &EquationEvaluator{Equation: eq, Expr: expr}, nil
+	// Extract variables from expression
+	vars := extractVariables(eq.Expression)
 
-	return &EquationEvaluator{Equation: eq}, nil
+	return &EquationEvaluator{
+		Equation:  eq,
+		variables: vars,
+	}, nil
+}
+
+// extractVariables pulls out variable names from expression
+func extractVariables(expr string) []string {
+	// Simple extraction: find alphabetic sequences that aren't functions
+	vars := make(map[string]bool)
+	var current strings.Builder
+
+	for i, ch := range expr {
+		if unicode.IsLetter(ch) || (current.Len() > 0 && (ch == '_' || unicode.IsDigit(ch))) {
+			current.WriteRune(ch)
+		} else {
+			if current.Len() > 0 {
+				word := current.String()
+				// Skip known functions
+				if !isFunction(word) {
+					vars[word] = true
+				}
+				current.Reset()
+			}
+		}
+		_ = i
+	}
+
+	// Don't forget last word
+	if current.Len() > 0 {
+		word := current.String()
+		if !isFunction(word) {
+			vars[word] = true
+		}
+	}
+
+	result := make([]string, 0, len(vars))
+	for v := range vars {
+		result = append(result, v)
+	}
+	return result
+}
+
+// isFunction checks if word is a known math function
+func isFunction(word string) bool {
+	functions := []string{"sin", "cos", "tan", "exp", "log", "sqrt", "abs", "pow"}
+	for _, f := range functions {
+		if word == f {
+			return true
+		}
+	}
+	return false
 }
 
 /**
@@ -250,13 +297,149 @@ func NewEquationEvaluator(eq *DiscoveredEquation) (*EquationEvaluator, error) {
  * @return: Scalar perturbation value
  */
 func (eval *EquationEvaluator) Evaluate(params map[string]interface{}) (float64, error) {
-	// TODO: Full implementation with govaluate
-	// result, err := eval.Expr.Evaluate(params)
-	// return result.(float64), err
+	return eval.evaluateExpression(eval.Equation.Expression, params)
+}
 
-	// Stub: Return 0 for now (equation not yet executable)
-	// In production, this evaluates the discovered equation
-	return 0, nil
+// evaluateExpression evaluates a simple arithmetic expression
+func (eval *EquationEvaluator) evaluateExpression(expr string, params map[string]interface{}) (float64, error) {
+	// Substitute variables with their values
+	substituted := expr
+	for name, val := range params {
+		var strVal string
+		switch v := val.(type) {
+		case float64:
+			strVal = fmt.Sprintf("%g", v)
+		case float32:
+			strVal = fmt.Sprintf("%g", float64(v))
+		case int:
+			strVal = fmt.Sprintf("%d", v)
+		default:
+			strVal = fmt.Sprintf("%v", v)
+		}
+		substituted = strings.ReplaceAll(substituted, name, strVal)
+	}
+
+	// Simple recursive descent parser
+	result, err := parseExpression(substituted)
+	if err != nil {
+		return 0, fmt.Errorf("failed to evaluate '%s': %w", expr, err)
+	}
+
+	return result, nil
+}
+
+// parseExpression parses and evaluates a mathematical expression
+func parseExpression(expr string) (float64, error) {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return 0, fmt.Errorf("empty expression")
+	}
+
+	// Handle parentheses first
+	for strings.Contains(expr, "(") {
+		start := strings.LastIndex(expr, "(")
+		end := strings.Index(expr[start:], ")")
+		if end == -1 {
+			return 0, fmt.Errorf("unmatched parenthesis")
+		}
+		end += start
+
+		inner, err := parseExpression(expr[start+1 : end])
+		if err != nil {
+			return 0, err
+		}
+		expr = expr[:start] + fmt.Sprintf("%g", inner) + expr[end+1:]
+	}
+
+	// Parse + and - (lowest precedence)
+	if idx := findOperator(expr, '+'); idx != -1 {
+		left, err := parseExpression(expr[:idx])
+		if err != nil {
+			return 0, err
+		}
+		right, err := parseExpression(expr[idx+1:])
+		if err != nil {
+			return 0, err
+		}
+		return left + right, nil
+	}
+
+	if idx := findOperator(expr, '-'); idx != -1 {
+		left, err := parseExpression(expr[:idx])
+		if err != nil {
+			return 0, err
+		}
+		right, err := parseExpression(expr[idx+1:])
+		if err != nil {
+			return 0, err
+		}
+		return left - right, nil
+	}
+
+	// Parse * and /
+	if idx := findOperator(expr, '*'); idx != -1 {
+		left, err := parseExpression(expr[:idx])
+		if err != nil {
+			return 0, err
+		}
+		right, err := parseExpression(expr[idx+1:])
+		if err != nil {
+			return 0, err
+		}
+		return left * right, nil
+	}
+
+	if idx := findOperator(expr, '/'); idx != -1 {
+		left, err := parseExpression(expr[:idx])
+		if err != nil {
+			return 0, err
+		}
+		right, err := parseExpression(expr[idx+1:])
+		if err != nil {
+			return 0, err
+		}
+		if right == 0 {
+			return 0, fmt.Errorf("division by zero")
+		}
+		return left / right, nil
+	}
+
+	// Parse ^ (exponentiation)
+	if idx := findOperator(expr, '^'); idx != -1 {
+		left, err := parseExpression(expr[:idx])
+		if err != nil {
+			return 0, err
+		}
+		right, err := parseExpression(expr[idx+1:])
+		if err != nil {
+			return 0, err
+		}
+		return math.Pow(left, right), nil
+	}
+
+	// Must be a number
+	val, err := strconv.ParseFloat(expr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid number: %s", expr)
+	}
+	return val, nil
+}
+
+// findOperator finds the operator at the current precedence level
+func findOperator(expr string, op rune) int {
+	depth := 0
+	for i, ch := range expr {
+		switch ch {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+		if depth == 0 && ch == op {
+			return i
+		}
+	}
+	return -1
 }
 
 /**

@@ -176,8 +176,36 @@ func (r *Runtime) alertDispatcher() {
 		case <-r.stop:
 			return
 		case alert := <-r.alertQueue:
+			// Count alert by priority
+			r.countAlert(alert)
 			r.bus.Publish(alert)
 		}
+	}
+}
+
+// countAlert increments the appropriate alert counter based on priority
+func (r *Runtime) countAlert(alert *types.Alert) {
+	switch alert.Priority {
+	case types.AlertPriorityCritical:
+		r.metrics.IncCriticalAlert()
+	case types.AlertPriorityHigh:
+		r.metrics.IncHighAlert()
+	case types.AlertPriorityMedium:
+		r.metrics.IncMediumAlert()
+	case types.AlertPriorityLow:
+		r.metrics.IncLowAlert()
+	}
+}
+
+// SubmitAlert submits an alert to the alert queue with counting
+func (r *Runtime) SubmitAlert(alert *types.Alert) error {
+	select {
+	case r.alertQueue <- alert:
+		return nil
+	case <-r.stop:
+		return fmt.Errorf("engine shutdown")
+	default:
+		return fmt.Errorf("alert queue full")
 	}
 }
 

@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # The Data Lake: PostgreSQL + TimescaleDB + PostGIS
+  db:
+    image: timescale/timescaledb-ha:pg16
+    container_name: ssis_datalake
+    restart: always
+    environment:
+      - POSTGRES_PASSWORD=iaf_secure_alpha
+      - POSTGRES_USER=aditya_admin
+      - POSTGRES_DB=ssis_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init-db:/docker-entrypoint-initdb.d # Auto-runs your schema
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aditya_admin -d ssis_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # The Zero-Copy Hub: Apache Arrow Plasma Store
+  plasma:
+    image: apache/arrow-dev:latest-python-3.11
+    container_name: plasma_bridge
+    command: plasma_store -m 2000000000 -s /tmp/plasma # 2GB SHM Store
+    volumes:
+      - shared_mem:/tmp
+    shm_size: '2gb' # Direct allocation of shared memory
+
+  # Analytics Template (Python/MPDAF/JAX)
+  analytics:
+    image: python:3.11-slim
+    container_name: ssis_analytics
+    volumes:
+      - ./analytics:/app
+      - shared_mem:/tmp
+    environment:
+      - PLASMA_PATH=/tmp/plasma
+      - JAX_PLATFORMS=cpu # Switch to 'metal' locally on Mac host
+    depends_on:
+      - db
+      - plasma
+    command: tail -f /dev/null # Keeps it alive for dev
+
+volumes:
+  postgres_data:
+  shared_mem:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs

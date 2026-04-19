@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -63,14 +64,21 @@ func NewPersistentStore(cfg Config, cellSize float64) (*PersistentStore, error) 
 
 	// 1. Reload latest snapshot from DB
 	records, err := backend.GetLatestSnapshot()
-	if err == nil && len(records) > 0 {
+	if err != nil {
+		log.Printf("[PERSISTENCE WARN] Failed to load snapshot from %s: %v", cfg.Backend, err)
+	} else if len(records) > 0 {
 		validRecords := []catalog.SDAObject{}
+		sigFailures := 0
 		for _, r := range records {
 			// Optional: Verify Ed25519 signature before loading
 			// payload := fmt.Sprintf("%d|%s|%f", r.ID, r.TLELine1, r.Timestamp)
-			// if cfg.Signer != nil && !cfg.Signer.Verify([]byte(payload), r.Signature) { continue }
+			// if cfg.Signer != nil && !cfg.Signer.Verify([]byte(payload), r.Signature) { sigFailures++; continue }
 			validRecords = append(validRecords, r)
 		}
+		if sigFailures > 0 {
+			log.Printf("[PERSISTENCE WARN] Signature verification failed for %d records", sigFailures)
+		}
+		log.Printf("[PERSISTENCE] Restored %d objects from %s", len(validRecords), cfg.Backend)
 		ps.Store.ApplyDeltaWithRebuild(catalog.Delta{Upserts: validRecords}, true)
 	}
 
@@ -82,11 +90,22 @@ func NewPersistentStore(cfg Config, cellSize float64) (*PersistentStore, error) 
 
 func (ps *PersistentStore) onUpdate(delta catalog.Delta) {
 	// Sync persistence: mirror memory updates to DB
+	var upsertErrors, deleteErrors int
 	for _, rec := range delta.Upserts {
-		ps.backend.UpsertObject(rec)
+		if err := ps.backend.UpsertObject(rec); err != nil {
+			upsertErrors++
+			log.Printf("[PERSISTENCE ERROR] Failed to upsert object %d: %v", rec.ID, err)
+		}
 	}
 	for _, id := range delta.Deletes {
-		ps.backend.DeleteObject(id)
+		if err := ps.backend.DeleteObject(id); err != nil {
+			deleteErrors++
+			log.Printf("[PERSISTENCE ERROR] Failed to delete object %d: %v", id, err)
+		}
+	}
+	if upsertErrors > 0 || deleteErrors > 0 {
+		log.Printf("[PERSISTENCE WARN] Persistence sync completed with %d upsert errors, %d delete errors",
+			upsertErrors, deleteErrors)
 	}
 }
 

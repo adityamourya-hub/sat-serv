@@ -1,0 +1,36 @@
+# MPDAF Analytics Bridge Dependencies
+# IAF Sovereign SSA - Python Analytics Layer
+
+# Core scientific stack
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Astronomical data processing
+astropy>=5.3.0
+mpdaf>=3.5.0
+
+# Database connectivity
+psycopg2-binary>=2.9.0
+
+# Data handling
+pandas>=2.0.0
+
+# Visualization (for analysis/debugging)
+matplotlib>=3.7.0
+
+# ML for advanced classification and BSS
+scikit-learn>=1.3.0  # PCA, ICA for RPO detection
+scikit-image>=0.21.0  # Richardson-Lucy deconvolution, super-resolution
+
+# GPU Acceleration for M2 Mac (Apple Metal)
+jax[cpu]>=0.4.20  # Use jax[metal] on Mac host for GPU acceleration
+jaxlib>=0.4.20
+
+# Zero-Copy IPC (Go-Python Bridge)
+pyzmq>=25.0.0  # ZeroMQ Python bindings for Plasma notifications
+pyarrow>=14.0.0  # Apache Arrow (optional Plasma support)
+msgpack>=1.0.8   # MessagePack serialization for RNS mesh
+
+# Optional: Deep learning for streak detection
+# torch>=2.0.0
+# torchvision>=0.15.0
