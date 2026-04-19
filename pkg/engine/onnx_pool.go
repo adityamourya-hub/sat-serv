@@ -130,7 +130,7 @@ func (m *MockInferrer) InferBatch(requests []onnx.InferenceRequest) []onnx.Infer
 			results[i] = onnx.InferenceResult{Outputs: nil}
 			continue
 		}
-		
+
 		switch m.ID {
 		case "Axiom":
 			results[i] = onnx.InferenceResult{
@@ -151,8 +151,6 @@ func (m *MockInferrer) InferBatch(requests []onnx.InferenceRequest) []onnx.Infer
 			results[i] = onnx.InferenceResult{Outputs: nil}
 		}
 	}
-	// Simulate deterministic 15ms compute time (M/D/c model)
-	time.Sleep(15 * time.Millisecond)
 	return results
 }
 

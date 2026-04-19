@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math"
 	"ssis/pkg/catalog"
-	"ssis/pkg/octree"
 	"ssis/pkg/spatial"
+	"ssis/pkg/types"
 	"time"
 )
 
@@ -68,8 +68,8 @@ func ScreenIndianAssets(store *catalog.Store, threatRadiusKm float64) []Proximit
 	// For each Indian asset, query ST-BVH for nearby threats within a temporal window
 	for _, asset := range indianAssets {
 		// Query BVH for objects within threat radius and a 1-second temporal tolerance
-		min := octree.Vector3{X: asset.Pos.X - threatRadiusKm, Y: asset.Pos.Y - threatRadiusKm, Z: asset.Pos.Z - threatRadiusKm}
-		max := octree.Vector3{X: asset.Pos.X + threatRadiusKm, Y: asset.Pos.Y + threatRadiusKm, Z: asset.Pos.Z + threatRadiusKm}
+		min := types.Vector3{X: asset.Pos.X - threatRadiusKm, Y: asset.Pos.Y - threatRadiusKm, Z: asset.Pos.Z - threatRadiusKm}
+		max := types.Vector3{X: asset.Pos.X + threatRadiusKm, Y: asset.Pos.Y + threatRadiusKm, Z: asset.Pos.Z + threatRadiusKm}
 		
 		// Use a tight temporal window around the asset's current timestamp
 		tMin := asset.EpochTT - 0.5

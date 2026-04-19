@@ -2,7 +2,8 @@ package spatial
 
 import (
 	"sort"
-	"ssis/pkg/octree"
+
+	"ssis/pkg/types"
 )
 
 /**
@@ -21,7 +22,7 @@ const (
  * This structure is essential for preventing temporal aliasing in conjunction queries.
  */
 type AABB struct {
-	Min, Max   octree.Vector3
+	Min, Max   types.Vector3
 	TMin, TMax float64
 }
 
@@ -30,7 +31,7 @@ type AABB struct {
  * Entry Point: Logs the current bounds and the new point.
  * Exit Point: Logs the updated bounds.
  */
-func (a *AABB) Expand(p octree.Vector3, t float64) {
+func (a *AABB) Expand(p types.Vector3, t float64) {
 	if p.X < a.Min.X {
 		a.Min.X = p.X
 	}
@@ -85,7 +86,7 @@ func (a AABB) Overlap(b AABB) bool {
  * Entry Point: Trace start.
  * Exit Point: Trace end.
  */
-func (a AABB) Contains(p octree.Vector3, t float64) bool {
+func (a AABB) Contains(p types.Vector3, t float64) bool {
 	spatial := p.X >= a.Min.X && p.X <= a.Max.X &&
 		p.Y >= a.Min.Y && p.Y <= a.Max.Y &&
 		p.Z >= a.Min.Z && p.Z <= a.Max.Z
@@ -99,7 +100,7 @@ func (a AABB) Contains(p octree.Vector3, t float64) bool {
  * It must provide position, an unique integer ID, and a timestamp.
  */
 type BVHObject interface {
-	GetPosition() octree.Vector3
+	GetPosition() types.Vector3
 	GetID() int
 	GetTimestamp() float64
 }
@@ -132,7 +133,7 @@ type BVH struct {
  * Entry Point: Logs input parameters.
  * Exit Point: Logs the resulting 64-bit code.
  */
-func mortonCode(pos octree.Vector3, t float64, bounds AABB) uint64 {
+func mortonCode(pos types.Vector3, t float64, bounds AABB) uint64 {
 	nx := normalizeAndQuantize(pos.X, bounds.Min.X, bounds.Max.X)
 	ny := normalizeAndQuantize(pos.Y, bounds.Min.Y, bounds.Max.Y)
 	nz := normalizeAndQuantize(pos.Z, bounds.Min.Z, bounds.Max.Z)
@@ -292,7 +293,7 @@ func buildBVHRecursive(items []mortonItem, bounds AABB) *BVHNode {
  * Entry Point: Logs spatial and temporal query parameters.
  * Exit Point: Logs result object count.
  */
-func (bvh *BVH) QueryRange(min, max octree.Vector3, tMin, tMax float64) []BVHObject {
+func (bvh *BVH) QueryRange(min, max types.Vector3, tMin, tMax float64) []BVHObject {
 	if bvh.Root == nil {
 		return nil
 	}

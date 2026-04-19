@@ -170,7 +170,10 @@ func ExecuteMonteCarloScreening(p, s CollisionObject, tcaDt float64, hbr float64
 					}
 				} else {
 					// Fallback to PRNG if QMC disabled (rare in SSIS)
-					// ... (impl simplified for briefity)
+					u = make([]float64, 12)
+					for d := 0; d < 12; d++ {
+						u[d] = rand.Float64()
+					}
 				}
 
 				// Primary Z (first 6)

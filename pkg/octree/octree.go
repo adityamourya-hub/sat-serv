@@ -1,8 +1,10 @@
 package octree
 
-type Vector3 struct {
-	X, Y, Z float64
-}
+import "ssis/pkg/types"
+
+// Vector3 is a backward compatibility alias for types.Vector3.
+// New code should use types.Vector3 directly.
+type Vector3 = types.Vector3
 
 type Bound struct {
 	Min, Max Vector3

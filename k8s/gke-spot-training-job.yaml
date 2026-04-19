@@ -1,0 +1,215 @@
+# GKE Spot Instance Training Job for SSIS
+#
+# This Job runs training on GPU spot instances with checkpoint persistence.
+# If the spot node is reclaimed, the job will restart and resume from checkpoint.
+#
+# Usage:
+#   1. Create GCS bucket: gsutil mb gs://your-ssis-checkpoints
+#   2. Create service account with GCS access
+#   3. kubectl apply -f k8s/gke-spot-training-job.yaml
+#   4. Monitor: kubectl logs -f job/ssis-collision-training
+#
+# Features:
+#   - GPU spot nodes (cost-effective)
+#   - Automatic checkpoint to GCS every 5 epochs
+#   - Resume on node reclamation
+#   - Parallel training for multiple components
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ssis-collision-training
+  namespace: default
+  labels:
+    app: ssis-training
+    component: collision
+spec:
+  # Allow 3 retries for spot preemption
+  backoffLimit: 3
+  
+  # TTL - clean up completed job after 24 hours
+  ttlSecondsAfterFinished: 86400
+  
+  template:
+    metadata:
+      labels:
+        app: ssis-training
+        component: collision
+    spec:
+      # Use spot GPU node pool
+      nodeSelector:
+        cloud.google.com/gke-spot: "true"
+        cloud.google.com/gke-accelerator: "nvidia-tesla-t4"
+      
+      # Tolerations for spot nodes
+      tolerations:
+        - key: "cloud.google.com/gke-spot"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+        - key: "nvidia.com/gpu"
+          operator: "Equal"
+          value: "present"
+          effect: "NoSchedule"
+      
+      # Container resources
+      containers:
+        - name: training
+          image: gcr.io/your-project/ssis-training:latest
+          
+          command:
+            - python3
+            - ai/collision/train_collision_surrogate_spot.py
+            - --epochs=100
+            - --checkpoint-every=5
+            - --checkpoint-minutes=30
+            - --gcs-bucket=$(GCS_BUCKET)
+            - --job-name=collision-gnn-$(JOB_ID)
+            - --auto-resume
+          
+          env:
+            - name: GCS_CHECKPOINT_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: ssis-training-config
+                  key: gcs-bucket
+            
+            - name: JOB_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /secrets/gcs/credentials.json
+            
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            
+            # CUDA settings for spot stability
+            - name: CUDA_LAUNCH_BLOCKING
+              value: "0"
+            - name: NCCL_DEBUG
+              value: "INFO"
+          
+          resources:
+            requests:
+              memory: "16Gi"
+              cpu: "4"
+              nvidia.com/gpu: "1"
+            limits:
+              memory: "32Gi"
+              cpu: "8"
+              nvidia.com/gpu: "1"
+          
+          volumeMounts:
+            # Mount GCS credentials
+            - name: gcs-credentials
+              mountPath: /secrets/gcs
+              readOnly: true
+            
+            # Local checkpoint directory (ephemeral, but fast)
+            - name: checkpoint-tmp
+              mountPath: /tmp/checkpoints
+          
+          # Liveness probe - check training is progressing
+          livenessProbe:
+            exec:
+              command:
+                - python3
+                - -c
+                - |
+                  import os, time
+                  last_ckpt = '/tmp/checkpoints/last_checkpoint.txt'
+                  if os.path.exists(last_ckpt):
+                    age = time.time() - os.path.getmtime(last_ckpt)
+                    if age > 3600:  # 1 hour without checkpoint
+                      exit(1)  # Trigger restart
+                  exit(0)
+            initialDelaySeconds: 600  # 10 min grace period
+            periodSeconds: 300  # Check every 5 minutes
+      
+      volumes:
+        - name: gcs-credentials
+          secret:
+            secretName: ssis-gcs-credentials
+        
+        - name: checkpoint-tmp
+          emptyDir:
+            medium: Memory  # Use RAM for fast checkpoints
+            sizeLimit: 2Gi
+      
+      # Restart policy for spot handling
+      restartPolicy: OnFailure
+      
+      # Don't schedule on preemptible nodes for >6 hours
+      activeDeadlineSeconds: 21600  # 6 hours max
+
+---
+# ConfigMap for training configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ssis-training-config
+data:
+  gcs-bucket: "your-ssis-checkpoints"
+  training-mode: "spot"
+  checkpoint-every: "5"
+
+---
+# CronJob for nightly checkpoint cleanup
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ssis-checkpoint-cleanup
+spec:
+  schedule: "0 2 * * *"  # 2 AM daily
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: cleanup
+              image: google/cloud-sdk:slim
+              command:
+                - gsutil
+                - -m
+                - rm
+                - -r
+                - gs://your-ssis-checkpoints/ssis-checkpoints/collision/*
+                # Keep only last 7 days
+                - gs://your-ssis-checkpoints/ssis-checkpoints/*/checkpoint_epoch_*
+          restartPolicy: OnFailure
+
+---
+# Horizontal pod autoscaler for parallel training runs
+# Use this if you want to train multiple models in parallel
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ssis-training-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: batch/v1
+    kind: Job
+    name: ssis-collision-training
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# PodDisruptionBudget to minimize spot interruptions impact
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ssis-training-pdb
+spec:
+  minAvailable: 0  # Allow all to be evicted (spot instances)
+  selector:
+    matchLabels:
+      app: ssis-training

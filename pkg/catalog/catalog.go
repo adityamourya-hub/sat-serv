@@ -1,7 +1,7 @@
 package catalog
 
 import (
-	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"sync"
@@ -9,6 +9,7 @@ import (
 
 	"ssis/pkg/octree"
 	"ssis/pkg/spatial"
+	"ssis/pkg/types"
 )
 
 type CoordinateFrame string
@@ -39,8 +40,8 @@ type SDAObject struct {
 	Status         ObjectStatus    `json:"status"`
 	
 	// State & Uncertainty
-	Pos            octree.Vector3  `json:"position"` // ECI km
-	Vel            octree.Vector3  `json:"velocity"` // ECI km/s
+	Pos            types.Vector3  `json:"position"` // ECI km
+	Vel            types.Vector3  `json:"velocity"` // ECI km/s
 	Covariance     [6][6]float64   `json:"covariance"`
 	EpochTT        float64         `json:"epoch_tt"` // Terrestrial Time Julian Date
 	Frame          CoordinateFrame `json:"frame"`
@@ -75,13 +76,13 @@ type SDAObject struct {
 // and internal structural consistency during the Phase 1.7 migration.
 type ObjectRecord = SDAObject
 
-func (r SDAObject) GetPosition() octree.Vector3 { return r.Pos }
-func (r SDAObject) GetID() int                  { return r.ID }
-func (r SDAObject) GetTimestamp() float64       { return r.EpochTT }
+func (r SDAObject) GetPosition() types.Vector3 { return r.Pos }
+func (r SDAObject) GetID() int                { return r.ID }
+func (r SDAObject) GetTimestamp() float64     { return r.EpochTT }
 
 type TrackObservation struct {
 	TrackID       int
-	Pos           octree.Vector3
+	Pos           types.Vector3
 	SigmaKm       float64
 	TimestampUnix int64
 }
@@ -96,8 +97,8 @@ type TrackAssociationCandidate struct {
 // FusedTrackObservation represents a fused multi-sensor track observation.
 type FusedTrackObservation struct {
 	TrackID          int
-	Pos              octree.Vector3
-	Vel              octree.Vector3
+	Pos              types.Vector3
+	Vel              types.Vector3
 	Covariance       [][]float64
 	TimestampUnix    int64
 	SensorIDs        []string
@@ -152,7 +153,7 @@ func NewStore(cellSize float64) *Store {
  */
 func (s *Store) ApplyDeltaWithRebuild(delta Delta, fullRebuild bool) int {
 	// Entry Point: Delta Application
-	fmt.Printf("DEBUG: Applying Delta to Store (Size=%d) at %v\n", len(delta.Upserts), time.Now())
+	slog.Debug("Applying Delta to Store", "size", len(delta.Upserts), "time", time.Now())
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -185,7 +186,7 @@ func (s *Store) ApplyDeltaWithRebuild(delta Delta, fullRebuild bool) int {
 		s.PersistFunc(delta)
 	}
 
-	fmt.Printf("DEBUG: Catalog updated to v%d\n", s.version)
+	slog.Debug("Catalog updated", "version", s.version)
 	// Exit Point: Update Complete
 	return s.version
 }
@@ -193,7 +194,7 @@ func (s *Store) ApplyDeltaWithRebuild(delta Delta, fullRebuild bool) int {
 /**
  * QueryRange performs a localized volume scan using the BVH tree.
  */
-func (s *Store) QueryRange(min, max octree.Vector3, tMin, tMax float64) []SDAObject {
+func (s *Store) QueryRange(min, max types.Vector3, tMin, tMax float64) []SDAObject {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.index.QueryRange(min, max, tMin, tMax)
@@ -246,7 +247,7 @@ func (s *Store) Correlate(obs TrackObservation, gateKm float64, maxCandidates in
 	return results
 }
 
-func sqDist(a, b octree.Vector3) float64 {
+func sqDist(a, b types.Vector3) float64 {
 	dx := a.X - b.X
 	dy := a.Y - b.Y
 	dz := a.Z - b.Z
@@ -268,4 +269,11 @@ func (s *Store) GetRecord(id int) (ObjectRecord, bool) {
 	defer s.mu.RUnlock()
 	rec, ok := s.records[id]
 	return rec, ok
+}
+
+// Version returns the current catalog version number.
+func (s *Store) Version() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.version
 }

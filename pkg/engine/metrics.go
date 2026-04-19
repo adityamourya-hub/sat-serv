@@ -105,14 +105,8 @@ func (m *EngineMetrics) GetLatencyStats() (p50, p99 float64) {
 		sorted[i] = m.latencies[(start+i)%m.maxLatencyBuf]
 	}
 
-	// Simple bubble sort (sufficient for small N)
-	for i := 0; i < len(sorted)-1; i++ {
-		for j := i + 1; j < len(sorted); j++ {
-			if sorted[i] > sorted[j] {
-				sorted[i], sorted[j] = sorted[j], sorted[i]
-			}
-		}
-	}
+	// Use efficient sort instead of bubble sort
+	sort.Float64s(sorted)
 
 	p50Idx := len(sorted) / 2
 	p99Idx := len(sorted) * 99 / 100

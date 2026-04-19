@@ -2,11 +2,14 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -134,6 +137,36 @@ func (s *SSISServer) SubscribeAlerts(req *pb.AlertSubscription, stream pb.SpaceE
 	return s.Alert.SubscribeAlerts(req, stream)
 }
 
+// QueryCatalog queries the satellite catalog with pagination support
+func (s *SSISServer) QueryCatalog(ctx context.Context, req *pb.CatalogQuery) (*pb.CatalogResponse, error) {
+	if req.Timestamp == nil {
+		req.Timestamp = timestamp.New(time.Now())
+	}
+
+	snapshot := s.Store.Snapshot()
+	objects := make([]*pb.ObjectState, 0, len(snapshot))
+
+	for _, obj := range snapshot {
+		// Apply filters if specified
+		if req.CountryCode != "" && obj.CountryCode != req.CountryCode {
+			continue
+		}
+		if req.ObjectType != "" && obj.AssetType != req.ObjectType {
+			continue
+		}
+
+		objects = append(objects, &pb.ObjectState{
+			ObjectId:   fmt.Sprintf("%d", obj.ID),
+			ObjectName: obj.Name,
+			Position:   &pb.Vector3{X: obj.Pos.X, Y: obj.Pos.Y, Z: obj.Pos.Z},
+			Velocity:   &pb.Vector3{X: obj.Vel.X, Y: obj.Vel.Y, Z: obj.Vel.Z},
+			Epoch:      timestamp.New(time.Unix(int64(obj.EpochTT*86400-2440587.5*86400), 0)),
+		})
+	}
+
+	return &pb.CatalogResponse{Objects: objects}, nil
+}
+
 // convertProtoToObservation converts protobuf Observation to internal type
 func convertProtoToObservation(pbObs *pb.Observation) *types.Observation {
 	// Extract target ID from measurement based on type
@@ -144,11 +177,17 @@ func convertProtoToObservation(pbObs *pb.Observation) *types.Observation {
 		targetID = pbObs.GetOptical().TargetId
 	}
 
+	// Use protobuf timestamp if available, otherwise use current time
+	timestamp := time.Now()
+	if pbObs.Timestamp != nil {
+		timestamp = pbObs.Timestamp.AsTime()
+	}
+
 	return &types.Observation{
 		ObservationID: pbObs.ObservationId,
 		SensorID:      pbObs.SensorId,
 		TargetID:      targetID,
-		Timestamp:     time.Now(),
+		Timestamp:     timestamp,
 	}
 }
 
@@ -230,17 +269,30 @@ func StartGRPCServer(port int, store *catalog.Store, signer *cryptography.Signer
 
 	// 1. Enforce TLS/mTLS if certificates provided
 	if certFile != "" && keyFile != "" {
-		creds, err := credentials.NewServerTLSFromFile(certFile, keyFile)
+		var tlsConfig tls.Config
+		tlsConfig.Certificates = make([]tls.Certificate, 1)
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
 			return fmt.Errorf("failed to load TLS keys: %w", err)
 		}
+		tlsConfig.Certificates[0] = cert
 
 		// If CA is provided, enable client authentication (mTLS)
 		if caFile != "" {
-			// Implementation for mTLS would involves loading CA cert pool here
+			caCert, err := os.ReadFile(caFile)
+			if err != nil {
+				return fmt.Errorf("failed to read CA cert: %w", err)
+			}
+			caCertPool := x509.NewCertPool()
+			if !caCertPool.AppendCertsFromPEM(caCert) {
+				return fmt.Errorf("failed to parse CA cert")
+			}
+			tlsConfig.ClientCAs = caCertPool
+			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 			fmt.Printf(" [SEC] mTLS enabled via CA: %s\n", caFile)
 		}
 
+		creds := credentials.NewTLS(&tlsConfig)
 		opts = append(opts, grpc.Creds(creds))
 	} else {
 		fmt.Printf(" [WRN] gRPC starting in INSECURE mode (no certs)\n")

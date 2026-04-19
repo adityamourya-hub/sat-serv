@@ -2,8 +2,8 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -224,13 +224,21 @@ func (r *Runtime) ukfWorker(id int, queue chan *types.Observation) {
 
 			start := time.Now()
 
-			r.onnxPool.Sensing.Infer(map[string]interface{}{"iq_samples": []float32{0}})
-			_, failover, _ := r.propagator.Propagate(1.0)
-			if failover {
-				r.metrics.MarkBackpressure()
+			// Guard against nil pointers
+			if r.onnxPool != nil && r.onnxPool.Sensing != nil {
+				r.onnxPool.Sensing.Infer(map[string]interface{}{"iq_samples": []float32{0}})
 			}
-			atomic.AddInt64(&r.metrics.QueueDepth, -1)
-			atomic.AddInt64(&r.metrics.ActiveWorkers, 1)
+			if r.propagator != nil {
+				_, failover, err := r.propagator.Propagate(1.0)
+				if err != nil {
+					r.metrics.MarkShedding()
+				} else if failover {
+					r.metrics.MarkBackpressure()
+				}
+			} else {
+				r.metrics.MarkShedding()
+			}
+
 			r.metrics.RecordServiceTime(time.Since(start))
 			r.metrics.IncProcessed()
 			atomic.AddInt64(&r.metrics.ActiveWorkers, -1)
@@ -243,12 +251,79 @@ func (r *Runtime) collisionWorker() {
 	defer r.wg.Done()
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
+
 	for {
 		select {
 		case <-r.stop:
 			return
 		case <-ticker.C:
-			// Broad-phase BVH query logic as implemented in Phase 1.7
+			// Broad-phase BVH query logic
+			if r.store == nil {
+				continue
+			}
+
+			snapshot := r.store.Snapshot()
+			if len(snapshot) < 2 {
+				continue
+			}
+
+			// Simple pairwise screening (in production, use BVH for O(n log n))
+			const threatRadiusKm = 500.0
+			const hardbodyRadiusKm = 0.005 // 5 meters
+
+			for i := 0; i < len(snapshot); i++ {
+				for j := i + 1; j < len(snapshot); j++ {
+					obj1 := snapshot[i]
+					obj2 := snapshot[j]
+
+					// Skip if same country code (Indian assets)
+					if obj1.CountryCode == obj2.CountryCode && obj1.CountryCode == "IND" {
+						continue
+					}
+
+					// Calculate distance
+					dx := obj1.Pos.X - obj2.Pos.X
+					dy := obj1.Pos.Y - obj2.Pos.Y
+					dz := obj1.Pos.Z - obj2.Pos.Z
+					dist := math.Sqrt(dx*dx + dy*dy + dz*dz)
+
+					if dist > threatRadiusKm {
+						continue
+					}
+
+					// Compute collision probability using Foster Pc
+					// Use TLE-derived covariance if available, otherwise use default
+					cov1 := obj1.Covariance
+					cov2 := obj2.Covariance
+
+					// Extract 2D in-track/cross-track variances (simplified)
+					sigmaR := math.Max(cov1[1][1], cov2[1][1]) // In-track variance
+					sigmaI := math.Max(cov1[2][2], cov2[2][2]) // Cross-track variance
+					sigmaRI := 0.0 // Correlation (simplified)
+
+					pc := collision.AdaptiveFosterPc(dx, dy, sigmaR, sigmaI, sigmaRI, hardbodyRadiusKm)
+
+					if pc > 1e-5 { // Alert threshold
+						alert := GetAlert()
+						alert.AlertID = fmt.Sprintf("COL-%d-%d", obj1.ID, obj2.ID)
+						alert.Type = types.AlertTypeCollisionRisk
+						alert.Priority = types.AlertPriorityHigh
+						alert.TargetID = fmt.Sprintf("%d", obj1.ID)
+						alert.SecondaryID = fmt.Sprintf("%d", obj2.ID)
+						alert.Probability = pc
+						alert.Message = fmt.Sprintf("Collision risk: %.2e between %d and %d (dist=%.2fkm)", pc, obj1.ID, obj2.ID, dist)
+						alert.Timestamp = time.Now()
+
+						if r.signer != nil {
+							sig := r.signer.Sign([]byte(alert.Message))
+							alert.Signature = []byte(sig)
+						}
+
+						r.bus.Publish(alert)
+						r.metrics.IncHighAlert()
+					}
+				}
+			}
 		}
 	}
 }

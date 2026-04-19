@@ -3,7 +3,8 @@ package collision
 import (
 	"math"
 	"sort"
-	"ssis/pkg/octree"
+
+	"ssis/pkg/types"
 )
 
 // Vector2 represents a 2D point or vector in the encounter plane.
@@ -71,7 +72,7 @@ func MinkowskiSum2D(v1, v2 []Vector2) []Vector2 {
 
 // ProjectToEncounterPlane projects 3D vertices into the 2D encounter plane.
 // vRel is the relative velocity vector defining the normal to the plane.
-func ProjectToEncounterPlane(vertices []octree.Vector3, vRel octree.Vector3) []Vector2 {
+func ProjectToEncounterPlane(vertices []types.Vector3, vRel types.Vector3) []Vector2 {
 	vMag := math.Sqrt(vRel.X*vRel.X + vRel.Y*vRel.Y + vRel.Z*vRel.Z)
 	if vMag < 1e-9 {
 		// Fallback for zero relative velocity (should not happen in TCA)
@@ -83,18 +84,18 @@ func ProjectToEncounterPlane(vertices []octree.Vector3, vRel octree.Vector3) []V
 	}
 
 	// Define orthonormal basis for the encounter plane (z-axis along vRel)
-	unitZ := octree.Vector3{X: vRel.X / vMag, Y: vRel.Y / vMag, Z: vRel.Z / vMag}
+	unitZ := types.Vector3{X: vRel.X / vMag, Y: vRel.Y / vMag, Z: vRel.Z / vMag}
 	
 	// Choose an arbitrary reference for X
-	ref := octree.Vector3{X: 1, Y: 0, Z: 0}
+	ref := types.Vector3{X: 1, Y: 0, Z: 0}
 	if math.Abs(unitZ.X) > 0.9 {
-		ref = octree.Vector3{X: 0, Y: 1, Z: 0}
+		ref = types.Vector3{X: 0, Y: 1, Z: 0}
 	}
 
 	// unitX = normalize(ref cross unitZ)
 	ux := crossProduct3D(ref, unitZ)
 	uxMag := math.Sqrt(ux.X*ux.X + ux.Y*ux.Y + ux.Z*ux.Z)
-	unitX := octree.Vector3{X: ux.X / uxMag, Y: ux.Y / uxMag, Z: ux.Z / uxMag}
+	unitX := types.Vector3{X: ux.X / uxMag, Y: ux.Y / uxMag, Z: ux.Z / uxMag}
 
 	// unitY = unitZ cross unitX
 	unitY := crossProduct3D(unitZ, unitX)
@@ -109,14 +110,14 @@ func ProjectToEncounterPlane(vertices []octree.Vector3, vRel octree.Vector3) []V
 	return res
 }
 
-func crossProduct3D(a, b octree.Vector3) octree.Vector3 {
-	return octree.Vector3{
+func crossProduct3D(a, b types.Vector3) types.Vector3 {
+	return types.Vector3{
 		X: a.Y*b.Z - a.Z*b.Y,
 		Y: a.Z*b.X - a.X*b.Z,
 		Z: a.X*b.Y - a.Y*b.X,
 	}
 }
 
-func dotProduct3D(a, b octree.Vector3) float64 {
+func dotProduct3D(a, b types.Vector3) float64 {
 	return a.X*b.X + a.Y*b.Y + a.Z*b.Z
 }

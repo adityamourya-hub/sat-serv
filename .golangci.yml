@@ -24,6 +24,19 @@ linters-settings:
       - G104 # We handle some errors with explicit logging
   staticcheck:
     checks: ["all"]
+  gocyclo:
+    min-complexity: 15
+  dupl:
+    threshold: 100
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+      - experimental
+    disabled-checks:
+      - whyNoLint
+      - commentedOutCode
 
 linters:
   enable:
@@ -35,6 +48,10 @@ linters:
     - bodyclose
     - ineffassign
     - typecheck
+    - gocyclo
+    - dupl
+    - gocritic
+    - exhaustive
 
 issues:
   exclude-use-default: false

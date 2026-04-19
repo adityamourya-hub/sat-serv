@@ -154,9 +154,6 @@ func (s *State) ToCanonical() (q, p Vector3) {
  * FromCanonical reconstructs a state from normalized units back to km and km/s.
  */
 func FromCanonical(q, p Vector3, epochJD float64) State {
-	scaleAcc := RE_KM / (TU_SEC * TU_SEC) // Not used for state, but for ref
-	_ = scaleAcc
-
 	return State{
 		Pos: Vector3{
 			q[0] * RE_KM,

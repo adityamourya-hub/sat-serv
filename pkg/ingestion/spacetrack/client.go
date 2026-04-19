@@ -49,7 +49,7 @@ func NewClient() (*Client, error) {
  * Stores authentication cookies in the client's internal jar for subsequent requests.
  */
 func (c *Client) Login(username, password string) error {
-	fmt.Printf("[TRC] Entering Client.Login for user: %s\n", username)
+	fmt.Printf("[TRC] Entering Client.Login\n")
 	defer fmt.Printf("[TRC] Exiting Client.Login\n")
 
 	loginURL := fmt.Sprintf("%s/ajaxauth/login", c.baseURL)

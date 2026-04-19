@@ -59,16 +59,44 @@ func (p *HybridPropagator) Propagate(minutesSinceEpoch float64) (physics.State, 
 	fmt.Printf("[TRC] Entering HybridPropagator.Propagate dt=%.2fm\n", minutesSinceEpoch)
 	defer fmt.Printf("[TRC] Exiting HybridPropagator.Propagate\n")
 
+	// Guard against nil propagators
+	if p.Axiom == nil && p.SGP4 == nil {
+		return physics.State{}, false, fmt.Errorf("both Axiom and SGP4 propagators are nil")
+	}
+
 	// 1. Primary Ingress: Axiom-Zero (Neural ODE)
-	axiomState, err := p.Axiom.Propagate(minutesSinceEpoch)
-	if err != nil {
-		p.Metrics.MarkShedding()
-		sgp4State, _ := p.SGP4.Propagate(minutesSinceEpoch)
-		return sgp4State, true, nil
+	var axiomState physics.State
+	var axiomErr error
+	if p.Axiom != nil {
+		axiomState, axiomErr = p.Axiom.Propagate(minutesSinceEpoch)
+		if axiomErr != nil {
+			if p.Metrics != nil {
+				p.Metrics.MarkShedding()
+			}
+			if p.SGP4 != nil {
+				sgp4State, sgp4Err := p.SGP4.Propagate(minutesSinceEpoch)
+				return sgp4State, true, sgp4Err
+			}
+			return physics.State{}, true, axiomErr
+		}
+	} else {
+		// No Axiom, use SGP4 directly
+		if p.SGP4 != nil {
+			sgp4State, sgp4Err := p.SGP4.Propagate(minutesSinceEpoch)
+			return sgp4State, true, sgp4Err
+		}
+		return physics.State{}, false, fmt.Errorf("no propagator available")
 	}
 
 	// 2. Baseline Generation: SGP4
-	sgp4State, _ := p.SGP4.Propagate(minutesSinceEpoch)
+	var sgp4State physics.State
+	if p.SGP4 != nil {
+		sgp4State, _ = p.SGP4.Propagate(minutesSinceEpoch)
+	} else {
+		// No SGP4 baseline, accept Axiom without gate checks
+		p.SignAudit(axiomState, p.AuditEnergy(axiomState))
+		return axiomState, false, nil
+	}
 
 	// 3. Gap 8: Hamiltonian Safety Gate (Physical Honesty Check)
 	// We audit the Specific Orbital Energy E_hal
@@ -78,7 +106,9 @@ func (p *HybridPropagator) Propagate(minutesSinceEpoch float64) (physics.State, 
 	relativeShift := math.Abs(ePred-eBase) / math.Abs(eBase)
 	if relativeShift > 0.001 { // 0.1% Safety Trigger
 		fmt.Printf("CRITICAL: Hamiltonian Gate Rejection. Relative Shift=%.2e exceeds 0.1%%. Failover triggered.\n", relativeShift)
-		p.Metrics.MarkShedding()
+		if p.Metrics != nil {
+			p.Metrics.MarkShedding()
+		}
 		return sgp4State, true, nil
 	}
 
@@ -86,7 +116,9 @@ func (p *HybridPropagator) Propagate(minutesSinceEpoch float64) (physics.State, 
 	dkl := p.CalculateKLDivergence(axiomState, sgp4State)
 	if dkl > p.ManeuverThreshold {
 		fmt.Printf("ALERT: Tactical Divergence D_KL=%.2f. Triggering SGP4 baseline.\n", dkl)
-		p.Metrics.MarkShedding()
+		if p.Metrics != nil {
+			p.Metrics.MarkShedding()
+		}
 		return sgp4State, true, nil
 	}
 

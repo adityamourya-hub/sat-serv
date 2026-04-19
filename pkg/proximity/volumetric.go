@@ -5,9 +5,9 @@ import (
 	"math"
 	"time"
 	"ssis/pkg/catalog"
-	"ssis/pkg/octree"
 	"ssis/pkg/orbital"
 	"ssis/pkg/physics"
+	"ssis/pkg/types"
 )
 
 type RegionOfInterest struct {
@@ -53,12 +53,12 @@ func ScanGroundRegion(roi RegionOfInterest, store *catalog.Store, epoch time.Tim
 		sideLength = maxR 
 	}
 
-	min := octree.Vector3{
+	min := types.Vector3{
 		X: siteUnit[0]*centerR - sideLength - halfDepth,
 		Y: siteUnit[1]*centerR - sideLength - halfDepth,
 		Z: siteUnit[2]*centerR - sideLength - halfDepth,
 	}
-	max := octree.Vector3{
+	max := types.Vector3{
 		X: siteUnit[0]*centerR + sideLength + halfDepth,
 		Y: siteUnit[1]*centerR + sideLength + halfDepth,
 		Z: siteUnit[2]*centerR + sideLength + halfDepth,
@@ -130,12 +130,12 @@ func ScanGroundRegionWithAxiom(roi RegionOfInterest, store *catalog.Store, kerne
 		sideLength = maxR
 	}
 
-	min := octree.Vector3{
+	min := types.Vector3{
 		X: siteUnit[0]*centerR - sideLength - halfDepth,
 		Y: siteUnit[1]*centerR - sideLength - halfDepth,
 		Z: siteUnit[2]*centerR - sideLength - halfDepth,
 	}
-	max := octree.Vector3{
+	max := types.Vector3{
 		X: siteUnit[0]*centerR + sideLength + halfDepth,
 		Y: siteUnit[1]*centerR + sideLength + halfDepth,
 		Z: siteUnit[2]*centerR + sideLength + halfDepth,

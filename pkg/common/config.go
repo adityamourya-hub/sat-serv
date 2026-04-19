@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -50,8 +51,8 @@ type Config struct {
  */
 func LoadConfig(path string) (*Config, error) {
 	// Entry Point: Config Loading
-	fmt.Printf("DEBUG: Loading SSIS Configuration from %s at %v\n", path, time.Now())
-	
+	slog.Debug("Loading SSIS Configuration", "path", path, "time", time.Now())
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
@@ -62,9 +63,8 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	fmt.Printf("DEBUG: Configuration loaded (Provider: %s, D_KL: %.2f)\n", 
-		cfg.Engine.Provider, cfg.Physics.DKLThreshold)
-	
+	slog.Debug("Configuration loaded", "provider", cfg.Engine.Provider, "d_kl_threshold", cfg.Physics.DKLThreshold)
+
 	// Exit Point: Config Ready
 	return &cfg, nil
 }

@@ -31,6 +31,13 @@ type Catalogue struct {
 	Satellites []SatelliteEntry `json:"satellites"`
 }
 
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
 /**
  * Main entry point for the SSIS Engine.
  * Finalized in Phase 1 to implement all workstreams (1.1 - 1.3).
@@ -43,14 +50,19 @@ type Catalogue struct {
  *
  * <plan_complexity>High</plan_complexity><total_lines_estimate>180</total_lines_estimate>
  */
-func main() {
+func run() error {
 	// Entry Point: SSIS Startup
 	fmt.Println("SSIS: Sovereign Space Intelligence Substrate")
 	fmt.Println("Phase 1 Final Execution — Full Tactical Deployment")
 	fmt.Println("==========================================================")
 
+	// Get configurable paths from environment or use defaults
+	configPath := getEnvOrDefault("SSIS_CONFIG_PATH", "configs/config.yaml")
+	modelDir := getEnvOrDefault("SSIS_MODEL_DIR", "pkg/ml/models")
+	cataloguePath := getEnvOrDefault("SSIS_CATALOGUE_PATH", "assets/indian_satellite_catalogue.json")
+
 	// 1. Load External Configuration
-	cfg, err := common.LoadConfig("configs/config.yaml")
+	cfg, err := common.LoadConfig(configPath)
 	if err != nil {
 		fmt.Printf("WARNING: config.yaml not found. Using internal defaults. Error: %v\n", err)
 		// Minimal fallback if config missing
@@ -62,8 +74,7 @@ func main() {
 	// 2. Initialize Crypto (load from environment)
 	signer, err := cryptography.NewSignerFromEnv("SSIS_SIGNING_KEY")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: SSIS_SIGNING_KEY not set. Aborting (fail-closed).\n")
-		os.Exit(2)
+		return fmt.Errorf("SSIS_SIGNING_KEY not set: %w", err)
 	}
 
 	// 3. Initialize Persistent Store (BoltDB)
@@ -82,8 +93,8 @@ func main() {
 
 	// 4. Initialize Inference Pool (Workstream 1.2/1.3)
 	var onnxPool *engine.ONNXPool
-	if _, err := os.Stat("pkg/ml/models"); err == nil {
-		onnxPool, err = engine.NewONNXPool("pkg/ml/models", cfg.Engine.Provider)
+	if _, err := os.Stat(modelDir); err == nil {
+		onnxPool, err = engine.NewONNXPool(modelDir, cfg.Engine.Provider)
 		if err != nil {
 			fmt.Printf("WARNING: ONNXPool initialization partial: %v\n", err)
 		}
@@ -99,7 +110,7 @@ func main() {
 	engineRuntime.Start()
 
 	// 6. Load Initial Catalogue
-	data, err := os.ReadFile("assets/indian_satellite_catalogue.json")
+	data, err := os.ReadFile(cataloguePath)
 	if err == nil {
 		var cat Catalogue
 		if err := json.Unmarshal(data, &cat); err == nil {
@@ -117,7 +128,11 @@ func main() {
 				}
 			}
 			catalogStore.Store.ApplyDeltaWithRebuild(delta, false)
+		} else {
+			fmt.Printf("WARNING: Failed to unmarshal satellite catalogue: %v\n", err)
 		}
+	} else {
+		fmt.Printf("INFO: Satellite catalogue file not found, skipping initial load\n")
 	}
 
 	// 7. Start API Servers (transport layer)
@@ -159,5 +174,12 @@ func main() {
 
 	fmt.Println("SSIS shutdown complete. Disconnecting sovereign substrate.")
 	// Exit Point: Final Cleanup
-	os.Exit(0)
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }

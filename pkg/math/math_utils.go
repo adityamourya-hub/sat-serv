@@ -44,6 +44,28 @@ func Clamp(v, min, max float64) float64 {
 	return v
 }
 
+// Clamp01 restricts a value to the [0, 1] range.
+func Clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+// ClampScore restricts a value to the [0, 100] range for score metrics.
+func ClampScore(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
+}
+
 // IsFinite returns true if v is not NaN or Inf.
 func IsFinite(v float64) bool {
 	return !stdmath.IsNaN(v) && !stdmath.IsInf(v, 0)

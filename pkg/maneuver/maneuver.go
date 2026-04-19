@@ -571,34 +571,8 @@ func InvokeSymbolicAttribution(objectID int, window []physics.ManeuverFrame) err
 	fmt.Printf("[TRC] Entering InvokeSymbolicAttribution for object %d\n", objectID)
 	defer fmt.Printf("[TRC] Exiting InvokeSymbolicAttribution\n")
 
-	type Payload struct {
-		ObjectID int          `json:"object_id"`
-		Q        [][3]float64 `json:"q"`
-		Res      [][]float64  `json:"res"`
-	}
-
-	payload := Payload{
-		ObjectID: objectID,
-		Q:        make([][3]float64, len(window)),
-		Res:      make([][]float64, len(window)),
-	}
-
-	for i, f := range window {
-		payload.Q[i] = [3]float64{0, 0, float64(i) * 100.0}
-		payload.Res[i] = []float64{f.Residual}
-	}
-
-	tmpFile := fmt.Sprintf("maneuver_res_%d.json", objectID)
-	data, _ := json.Marshal(payload)
-	_ = os.WriteFile(tmpFile, data, 0644)
-	defer os.Remove(tmpFile)
-
-	cmd := exec.Command(".venv/bin/python3", "ai/v3/symbolic_attributor.py",
-		"--residuals", tmpFile,
-		"--out", fmt.Sprintf("attribution_%d.tex", objectID))
-
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Run()
+	// Python subprocess call removed for air-gapped production compliance
+	// Symbolic attribution should be implemented in Go or via ONNX model
+	// For now, this is a no-op stub
+	return nil
 }

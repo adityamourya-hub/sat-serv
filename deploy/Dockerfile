@@ -2,14 +2,14 @@
 # <plan_complexity>Medium</plan_complexity><total_lines_estimate>120</total_lines_estimate>
 
 # Stage 1: Build
-FROM golang:1.22-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 # Install build dependencies
-RUN apt-get update && apt-get install -if \
+RUN apt-get update && apt-get install -y \
     build-essential \
     libssl-dev \
     pkg-config \
-    wget -y
+    wget
 
 # Download and install ONNX Runtime C/C++ libraries
 # Target: Version 1.17.1 (stable for CGO/oneDNN)
@@ -42,10 +42,10 @@ RUN ldconfig
 
 WORKDIR /app
 COPY --from=builder /app/ssis_engine .
-COPY --from=builder /app/pkg/ml/models ./models
+COPY --from=builder /app/pkg/ml/models ./pkg/ml/models
 
 # SSIS Operational Environment Variables
-ENV SSIS_MODEL_DIR=/app/models
+ENV SSIS_MODEL_DIR=/app/pkg/ml/models
 ENV SSIS_GRPC_PORT=50051
 ENV SSIS_REST_PORT=8080
 ENV LD_LIBRARY_PATH=/usr/local/lib

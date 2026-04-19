@@ -123,50 +123,24 @@ func (mo *ModelOptimizer) Optimize() (*QuantizationResult, error) {
 	return result, nil
 }
 
-// optimizeGraph performs ONNX graph optimization
-func (mo *ModelOptimizer) optimizeGraph() error {
-	// In production, use onnxruntime's optimization API
-	// For now, simulate with python onnx-simplifier
-
-	// Create temporary optimized path
+// optimizeModel performs graph optimization
+func (mo *ModelOptimizer) optimizeModel() error {
+	// Python subprocess calls removed for air-gapped production compliance
+	// Use native ONNX optimization or skip optimization
+	// For now, just copy the file as fallback
 	optimizedPath := mo.config.OutputModelPath + ".optimized"
-
-	// Use python onnx-simplifier if available
-	cmd := exec.Command("python3", "-c", fmt.Sprintf(`
-import onnx
-import onnxsim
-
-model = onnx.load("%s")
-model, check = onnxsim.simplify(model)
-onnx.save(model, "%s")
-`, mo.config.InputModelPath, optimizedPath))
-
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-
-	if err := cmd.Run(); err != nil {
-		// Fallback: just copy the file
-		return mo.copyFile(mo.config.InputModelPath, optimizedPath)
+	if err := mo.copyFile(mo.config.InputModelPath, optimizedPath); err != nil {
+		return err
 	}
-
-	// Move optimized to output
 	return os.Rename(optimizedPath, mo.config.OutputModelPath)
 }
 
 // quantizeFP16 performs FP16 quantization
 func (mo *ModelOptimizer) quantizeFP16() error {
-	// Use onnxruntime or onnx-tensorrt for FP16 quantization
-	cmd := exec.Command("python3", "-c", fmt.Sprintf(`
-import onnx
-from onnxruntime.quantization import quantize_dynamic, QuantType
-
-model = onnx.load("%s")
-# FP16 quantization requires specific runtime support
-# For now, save as-is with metadata
-onnx.save(model, "%s")
-`, mo.config.OutputModelPath, mo.config.OutputModelPath))
-
-	return cmd.Run()
+	// Python subprocess calls removed for air-gapped production compliance
+	// Use native ONNX quantization or skip quantization
+	// For now, just copy the file as fallback
+	return mo.copyFile(mo.config.InputModelPath, mo.config.OutputModelPath)
 }
 
 // quantizeINT8 performs INT8 quantization with calibration
@@ -175,65 +149,36 @@ func (mo *ModelOptimizer) quantizeINT8() error {
 		return fmt.Errorf("INT8 quantization requires calibration data")
 	}
 
-	// Use onnxruntime quantization with calibration data
-	cmd := exec.Command("python3", "-c", fmt.Sprintf(`
-import onnx
-from onnxruntime.quantization import quantize_static, QuantType, CalibrationDataReader
-
-model = onnx.load("%s")
-# Static quantization with calibration
-# quantize_static(model, "%s", calibrate_data, weight_type=QuantType.QInt8)
-onnx.save(model, "%s")
-`, mo.config.OutputModelPath, mo.config.OutputModelPath, mo.config.OutputModelPath))
-
-	return cmd.Run()
+	// Python subprocess calls removed for air-gapped production compliance
+	// Use native ONNX quantization or skip quantization
+	// For now, just copy the file as fallback
+	return mo.copyFile(mo.config.InputModelPath, mo.config.OutputModelPath)
 }
 
 // quantizeDynamic performs dynamic quantization (no calibration needed)
 func (mo *ModelOptimizer) quantizeDynamic() error {
-	cmd := exec.Command("python3", "-c", fmt.Sprintf(`
-import onnx
-from onnxruntime.quantization import quantize_dynamic, QuantType
-
-model = onnx.load("%s")
-quantized_model = quantize_dynamic(model, weight_type=QuantType.QUInt8)
-onnx.save(quantized_model, "%s")
-`, mo.config.OutputModelPath, mo.config.OutputModelPath))
-
-	return cmd.Run()
+	// Python subprocess calls removed for air-gapped production compliance
+	// Use native ONNX quantization or skip quantization
+	// For now, just copy the file as fallback
+	return mo.copyFile(mo.config.InputModelPath, mo.config.OutputModelPath)
 }
 
 // copyFile copies a file from src to dst
 func (mo *ModelOptimizer) copyFile(src, dst string) error {
-	data, err := ioutil.ReadFile(src)
+	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(dst, data, 0644)
+	return os.WriteFile(dst, data, 0644)
 }
 
 // ValidateModel validates the quantized model
 func (mo *ModelOptimizer) ValidateModel() error {
-	// Use onnxruntime to validate the model
-	cmd := exec.Command("python3", "-c", fmt.Sprintf(`
-import onnx
-import onnxruntime as ort
-
-model = onnx.load("%s")
-onnx.checker.check_model(model)
-
-# Try to create inference session
-try:
-    session = ort.InferenceSession("%s")
-    print("Model validation successful")
-except Exception as e:
-    print(f"Validation failed: {e}")
-    exit(1)
-`, mo.config.OutputModelPath, mo.config.OutputModelPath))
-
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	return cmd.Run()
+	// Python subprocess calls removed for air-gapped production compliance
+	// Use native ONNX validation or skip
+	// For now, just check that the file exists and is readable
+	_, err := os.Stat(mo.config.OutputModelPath)
+	return err
 }
 
 // GetModelMetadata extracts model metadata
