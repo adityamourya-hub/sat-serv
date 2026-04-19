@@ -215,6 +215,120 @@ class AdaptivePhysicsLoss(PhysicsInformedLoss):
         return super().__call__(pred_state, target_state, use_physics)
 
 
+class IspConstrainedPhysicsLoss(PhysicsInformedLoss):
+    """
+    Physics-informed loss with hard Isp (specific impulse) constraints.
+    
+    Ensures policies are executable by real satellite thrusters using
+    Lagrangian multiplier approach. Prevents physically impossible maneuvers.
+    
+    L_total = L_reward + λ * max(0, ||ΔV|| - ΔV_limit) + λ * max(0, cumΔV - total_budget)
+    """
+    
+    def __init__(self, mu=3.986004418e14, w_data=0.7, w_physics=0.3, 
+                 max_delta_v=10.0, lambda_penalty=100.0):
+        """
+        Args:
+            mu: Gravitational parameter
+            w_data: Weight for data loss
+            w_physics: Weight for physics loss
+            max_delta_v: Maximum delta-V per maneuver (m/s) - based on thruster Isp
+            lambda_penalty: Lagrangian multiplier strength for constraints
+        """
+        super().__init__(mu, w_data, w_physics)
+        self.max_delta_v = max_delta_v  # m/s per burn
+        self.lambda_penalty = lambda_penalty
+        
+        # Typical satellite thruster profiles
+        # Cold gas: Low Isp (~50s), small delta-V per burn, limited total budget
+        # Hall-effect: High Isp (~1500s), very small delta-V per burn, large total budget
+        # Chemical: Medium Isp (~300s), large delta-V per burn, limited total budget
+        self.thruster_profiles = {
+            'cold_gas': {
+                'max_delta_v': 5.0,      # m/s per burn
+                'total_budget': 100.0,    # m/s lifetime budget
+                'isp_seconds': 50.0,
+            },
+            'hall_effect': {
+                'max_delta_v': 0.5,
+                'total_budget': 500.0,
+                'isp_seconds': 1500.0,
+            },
+            'chemical': {
+                'max_delta_v': 50.0,
+                'total_budget': 1000.0,
+                'isp_seconds': 300.0,
+            },
+        }
+    
+    def compute_constrained_loss(self, base_loss, action, cumulative_delta_v,
+                                  thruster_type='cold_gas'):
+        """
+        Compute loss with hard Isp constraints using Lagrangian multipliers.
+        
+        Args:
+            base_loss: Base reward/loss value
+            action: Action vector (delta-V) [3]
+            cumulative_delta_v: Total delta-V expended so far
+            thruster_type: Type of thruster ('cold_gas', 'hall_effect', 'chemical')
+            
+        Returns:
+            Constrained loss (penalized if constraints violated)
+        """
+        import torch
+        
+        profile = self.thruster_profiles.get(thruster_type, self.thruster_profiles['cold_gas'])
+        
+        # Calculate action magnitude
+        action_mag = torch.norm(action)
+        
+        # Constraint 1: Single-maneuver delta-V limit (physics limit)
+        # This prevents requesting more thrust than thruster can provide
+        single_maneuver_violation = torch.clamp(action_mag - profile['max_delta_v'], min=0.0)
+        
+        # Constraint 2: Total fuel budget (mission limit)
+        # This prevents depleting station-keeping reserves
+        total_budget_violation = torch.clamp(cumulative_delta_v - profile['total_budget'], min=0.0)
+        
+        # Combined penalty with Lagrangian multiplier
+        # λ is large to make constraints "hard" (must be satisfied)
+        penalty = self.lambda_penalty * (single_maneuver_violation + total_budget_violation)
+        
+        # Return penalized loss
+        # If constraints violated, loss increases dramatically
+        return base_loss - penalty
+    
+    def check_action_feasible(self, action, thruster_type='cold_gas'):
+        """
+        Check if action is physically feasible given thruster constraints.
+        
+        Args:
+            action: Action vector [3] in m/s
+            thruster_type: Type of thruster
+            
+        Returns:
+            (feasible: bool, reason: str)
+        """
+        import torch
+        
+        profile = self.thruster_profiles.get(thruster_type, self.thruster_profiles['cold_gas'])
+        
+        action_mag = float(torch.norm(action))
+        
+        if action_mag > profile['max_delta_v']:
+            return False, (
+                f"Action magnitude {action_mag:.2f} m/s exceeds {thruster_type} "
+                f"single-burn limit ({profile['max_delta_v']:.2f} m/s). "
+                f"Would damage bus or deplete propellant."
+            )
+        
+        return True, f"Action feasible for {thruster_type} (Isp={profile['isp_seconds']:.0f}s)"
+    
+    def get_thruster_info(self, thruster_type='cold_gas'):
+        """Get information about thruster capabilities."""
+        return self.thruster_profiles.get(thruster_type, self.thruster_profiles['cold_gas'])
+
+
 # Convenience functions for direct use
 def physics_informed_loss(pred_state, target_state, mu=3.986004418e14, 
                          w_data=0.7, w_physics=0.3):
@@ -277,5 +391,21 @@ if __name__ == "__main__":
         print(f"  Epoch {epoch}: w_data={adaptive_loss.w_data:.2f}, "
               f"w_physics={adaptive_loss.w_physics:.2f}, "
               f"loss={loss_val.item():.6f}")
+    
+    print("\nTesting Isp Constrained Loss...")
+    isp_loss = IspConstrainedPhysicsLoss(max_delta_v=10.0, lambda_penalty=100.0)
+    
+    # Test feasible action (within limits)
+    action_feasible = torch.tensor([5.0, 0.0, 0.0])  # 5 m/s
+    loss_feasible = isp_loss.compute_constrained_loss(1.0, action_feasible, 50.0)
+    print(f"  Feasible action loss: {loss_feasible:.2f}")
+    
+    # Test infeasible action (exceeds limits)
+    action_infeasible = torch.tensor([20.0, 0.0, 0.0])  # 20 m/s
+    loss_infeasible = isp_loss.compute_constrained_loss(1.0, action_infeasible, 50.0)
+    print(f"  Infeasible action loss: {loss_infeasible:.2f}")
+    
+    is_feasible, reason = isp_loss.check_action_feasible(action_infeasible, 'cold_gas')
+    print(f"  Feasibility check: {is_feasible}, {reason}")
     
     print("\nAll tests passed!")

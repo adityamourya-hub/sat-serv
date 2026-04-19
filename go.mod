@@ -6,9 +6,11 @@ require (
 	github.com/apache/arrow/go/v15 v15.0.2
 	github.com/cprosche/tle v1.0.4
 	github.com/gin-gonic/gin v1.12.0
+	github.com/golang/geo/s2 v0.0.0-20230421005331-01d1a9eddf50
 	github.com/golang/protobuf v1.5.4
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/joshuaferrara/go-satellite v0.0.0-20220611180459-512638c64e5b
+	github.com/pebbe/zmq4 v1.2.10
 	github.com/yalue/onnxruntime_go v1.27.0
 	go.etcd.io/bbolt v1.3.11
 	go.opentelemetry.io/otel v1.39.0
