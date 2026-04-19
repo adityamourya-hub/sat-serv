@@ -63,8 +63,8 @@ func (s *SINDy) DiscoverManeuver(states [][6]float64, dt float64) (*ManeuverResu
 	// 3. Sparse Regression (STLSQ)
 	coefficients := s.stlsq(theta, xDot, s.SparsityThreshold)
 
-	// 4. Interpret results
-	result := s.interpretCoefficients(coefficients, states)
+	// 4. Interpret results (pass theta and xDot for R² calculation)
+	result := s.interpretCoefficients(coefficients, states, theta, xDot)
 
 	return result, nil
 }
@@ -237,7 +237,7 @@ func (s *SINDy) stlsq(theta, xDot *mat.Dense, threshold float64) []float64 {
 }
 
 // interpretCoefficients converts sparse coefficients to human-readable results
-func (s *SINDy) interpretCoefficients(coeffs []float64, states [][6]float64) *ManeuverResult {
+func (s *SINDy) interpretCoefficients(coeffs []float64, states [][6]float64, theta, xDot *mat.Dense) *ManeuverResult {
 	termNames := s.getTermNames()
 
 	result := &ManeuverResult{
@@ -275,8 +275,8 @@ func (s *SINDy) interpretCoefficients(coeffs []float64, states [][6]float64) *Ma
 	// Build equation string
 	result.EquationString = s.buildEquationString(coeffs, termNames)
 
-	// Compute fit quality (simplified R²)
-	result.Confidence = s.computeRSquared(coeffs, states)
+	// Compute fit quality (R² from predicted vs observed)
+	result.Confidence = s.computeRSquared(coeffs, states, theta, xDot)
 
 	return result
 }
@@ -350,8 +350,68 @@ func (s *SINDy) buildEquationString(coeffs []float64, termNames []string) string
 	return strings.Join(parts, "; ")
 }
 
-func (s *SINDy) computeRSquared(coeffs []float64, states [][6]float64) float64 {
-	// Simplified R² calculation
-	// In production, compare predicted vs actual residuals
-	return 0.95 // Placeholder
+func (s *SINDy) computeRSquared(coeffs []float64, states [][6]float64, theta, xDot *mat.Dense) float64 {
+	// Calculate R² (coefficient of determination) from predicted vs observed
+	// R² = 1 - SS_res / SS_tot
+	// where SS_res = sum of squared residuals, SS_tot = total sum of squares
+
+	nSamples, nTerms := theta.Dims()
+	_, nDims := xDot.Dims()
+
+	if nSamples == 0 || nDims == 0 {
+		return 0.0
+	}
+
+	// Reshape coefficients for matrix multiplication
+	coeffsMatrix := mat.NewDense(nTerms, nDims, coeffs)
+
+	// Predicted values: X_pred = Theta * Coeffs
+	var predicted mat.Dense
+	predicted.Mul(theta, coeffsMatrix)
+
+	// Calculate mean of observed values across all dimensions
+	meanObserved := 0.0
+	count := 0
+	for i := 0; i < nSamples; i++ {
+		for d := 0; d < nDims; d++ {
+			meanObserved += xDot.At(i, d)
+			count++
+		}
+	}
+	meanObserved /= float64(count)
+
+	// Calculate SS_res (sum of squared residuals) and SS_tot (total sum of squares)
+	ssRes := 0.0
+	ssTot := 0.0
+
+	for i := 0; i < nSamples; i++ {
+		for d := 0; d < nDims; d++ {
+			observed := xDot.At(i, d)
+			pred := predicted.At(i, d)
+
+			residual := observed - pred
+			ssRes += residual * residual
+
+			diffFromMean := observed - meanObserved
+			ssTot += diffFromMean * diffFromMean
+		}
+	}
+
+	// R² = 1 - SS_res/SS_tot
+	// If SS_tot is 0 (all observed values are identical), return 1.0 (perfect fit)
+	if ssTot < 1e-10 {
+		return 1.0
+	}
+
+	rSquared := 1.0 - (ssRes / ssTot)
+
+	// Clamp to [0, 1] range to handle numerical edge cases
+	if rSquared < 0.0 {
+		rSquared = 0.0
+	}
+	if rSquared > 1.0 {
+		rSquared = 1.0
+	}
+
+	return rSquared
 }

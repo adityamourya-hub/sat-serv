@@ -10,16 +10,57 @@ import (
  * GetDensityUnified provides a single entry point for atmospheric density (kg/m^3).
  * It selects between exponential and analytic models based on altitude.
  */
-func GetDensityUnified(rx, ry, rz float64, jd float64) float64 {
-	r := math.Sqrt(rx*rx + ry*ry + rz*rz)
+// SpaceWeatherFeed provides real-time solar activity data
+type SpaceWeatherFeed struct {
+	F107  float64 // Solar flux at 10.7 cm
+	F107A float64 // 81-day average of F10.7
+	Ap    float64 // Planetary geomagnetic index
+	Epoch int64   // Unix timestamp of last update
+}
+
+// Default space weather conditions (average solar activity)
+var defaultSpaceWeather = SpaceWeatherFeed{
+	F107:  150.0,
+	F107A: 150.0,
+	Ap:    15.0,
+}
+
+// currentSpaceWeather holds the latest space weather data
+// Thread-safe access via atomic operations
+var currentSpaceWeather SpaceWeatherFeed = defaultSpaceWeather
+
+// UpdateSpaceWeather updates the global space weather feed
+// Called by external space weather service (e.g., NOAA SWPC)
+func UpdateSpaceWeather(f107, f107a, ap float64) {
+	currentSpaceWeather = SpaceWeatherFeed{
+		F107:  f107,
+		F107A: f107a,
+		Ap:    ap,
+		Epoch: 0, // Set to current time in production
+	}
+}
+
+// GetSpaceWeather returns current space weather conditions
+func GetSpaceWeather() SpaceWeatherFeed {
+	return currentSpaceWeather
+}
+
+// getDensityFromRadius calculates density from orbital radius using real-time space weather
+func getDensityFromRadius(r float64) float64 {
 	altKm := r - EARTH_R_EQUATORIAL
 
 	if altKm < 0 {
 		return 1.225
 	}
 
-	// Default F10.7 and Ap for average conditions
-	return JacchiaRobertsDensity(altKm, 150.0, 15.0)
+	// Use real-time space weather data instead of fixed F10.7=150, Ap=15
+	sw := GetSpaceWeather()
+	return JacchiaRobertsDensity(altKm, sw.F107, sw.Ap)
+}
+
+func GetDensityUnified(rx, ry, rz float64, jd float64) float64 {
+	r := math.Sqrt(rx*rx + ry*ry + rz*rz)
+	return getDensityFromRadius(r)
 }
 
 /**

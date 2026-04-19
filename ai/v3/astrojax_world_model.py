@@ -119,27 +119,45 @@ class AstrojaxWorldModel:
         return next_state, reward, done
     
     def _mock_propagate(self, pos: jnp.ndarray, vel: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """Mock propagation using simple Keplerian + perturbations."""
-        # Simple Euler integration for testing without astrojax
+        """Mock propagation using RK4 integration (4th order Runge-Kutta)."""
         dt = self.dt
         
-        # Gravity
-        r = jnp.linalg.norm(pos)
-        acc_grav = -self.mu * pos / (r ** 3)
+        def compute_acceleration(p):
+            """Compute acceleration at given position."""
+            r = jnp.linalg.norm(p)
+            
+            # Gravity
+            acc_grav = -self.mu * p / (r ** 3)
+            
+            # J2 perturbation (simplified)
+            j2_factor = -1.5 * self.j2 * self.mu * (self.re ** 2) / (r ** 5)
+            acc_j2_x = j2_factor * p[0] * (1 - 5 * (p[2] / r) ** 2)
+            acc_j2_y = j2_factor * p[1] * (1 - 5 * (p[2] / r) ** 2)
+            acc_j2_z = j2_factor * p[2] * (3 - 5 * (p[2] / r) ** 2)
+            acc_j2 = jnp.array([acc_j2_x, acc_j2_y, acc_j2_z])
+            
+            return acc_grav + acc_j2
         
-        # J2 perturbation (simplified)
-        j2_factor = -1.5 * self.j2 * self.mu * (self.re ** 2) / (r ** 5)
-        acc_j2_x = j2_factor * pos[0] * (1 - 5 * (pos[2] / r) ** 2)
-        acc_j2_y = j2_factor * pos[1] * (1 - 5 * (pos[2] / r) ** 2)
-        acc_j2_z = j2_factor * pos[2] * (3 - 5 * (pos[2] / r) ** 2)
-        acc_j2 = jnp.array([acc_j2_x, acc_j2_y, acc_j2_z])
+        # State: [position, velocity]
+        state = jnp.concatenate([pos, vel])
         
-        # Total acceleration
-        acc = acc_grav + acc_j2
+        def dynamics(s):
+            """Return derivative [velocity, acceleration]."""
+            p = s[:3]
+            v = s[3:]
+            a = compute_acceleration(p)
+            return jnp.concatenate([v, a])
         
-        # Euler integration
-        next_vel = vel + acc * dt
-        next_pos = pos + vel * dt
+        # RK4 integration
+        k1 = dynamics(state)
+        k2 = dynamics(state + 0.5 * dt * k1)
+        k3 = dynamics(state + 0.5 * dt * k2)
+        k4 = dynamics(state + dt * k3)
+        
+        next_state = state + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
+        
+        next_pos = next_state[:3]
+        next_vel = next_state[3:]
         
         return next_pos, next_vel
     

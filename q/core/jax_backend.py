@@ -506,14 +506,6 @@ class SymplecticAuditor:
         else:
             # 2nd order (leapfrog/Verlet)
             self.coefficients = [(0.5, 1.0), (0.5, 0.0)]
-        elif order == 3:
-            # Ruth's 3rd order coefficients
-            c = [1.0, -2.0/3.0, 2.0/3.0]
-            d = [-1.0/24.0, 3.0/4.0, 7.0/24.0]
-            self.coefficients = list(zip(c, d))
-        else:
-            # 2nd order (leapfrog/Verlet)
-            self.coefficients = [(0.5, 1.0), (0.5, 0.0)]
     
     def step_symplectic(
         self,
