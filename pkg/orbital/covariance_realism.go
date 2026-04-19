@@ -176,7 +176,7 @@ func ValidateCovarianceRealism(
 
 	// Compute recommended scale factor if covariance is optimistic
 	// Scale = mean(d_M²) / 6 (expected mean for χ²(6))
-	meanMahal := mean(mahalDistances)
+	meanMahal := statsMean(mahalDistances)
 	recommendedScale := math.Sqrt(meanMahal / 6.0)
 
 	// Pass criteria (per Poore et al. 2016 and Cano et al. 2023)
@@ -252,7 +252,7 @@ func TuneConsiderParameters(
 
 		// Adjust consider parameters based on result
 		// If covariance is optimistic (mean Mahalanobis > 6), increase uncertainties
-		meanMahal := mean(result.MahalanobisDistances)
+		meanMahal := statsMean(result.MahalanobisDistances)
 		targetMean := 6.0 // Expected mean for χ²(6)
 
 		scale := math.Sqrt(meanMahal / targetMean)
@@ -341,8 +341,8 @@ func chi2Test(samples []float64, df int) (statistic, pvalue float64) {
 	// Bin the data and compare to expected χ² frequencies
 	// Simplified: use mean and variance test
 	n := float64(len(samples))
-	mean := mean(samples)
-	variance := variance(samples)
+	mean := statsMean(samples)
+	variance := statsVariance(samples)
 
 	// For χ²(df): mean = df, variance = 2*df
 	expectedMean := float64(df)
@@ -390,7 +390,7 @@ func cramerVonMisesTest(samples []float64, df int) (statistic, pvalue float64) {
 	return statistic, pvalue
 }
 
-func mean(values []float64) float64 {
+func statsMean(values []float64) float64 {
 	if len(values) == 0 {
 		return 0
 	}
@@ -401,11 +401,11 @@ func mean(values []float64) float64 {
 	return sum / float64(len(values))
 }
 
-func variance(values []float64) float64 {
+func statsVariance(values []float64) float64 {
 	if len(values) < 2 {
 		return 0
 	}
-	m := mean(values)
+	m := statsMean(values)
 	sum := 0.0
 	for _, v := range values {
 		d := v - m

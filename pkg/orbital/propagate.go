@@ -235,68 +235,24 @@ func PropagateSGP4(tleLine1, tleLine2 string, epoch time.Time) (pos, vel [3]floa
 }
 
 /**
- * PropagateCartesianState performs numerical integration of orbital states
- * using a 4th-Order Runge-Kutta (RK4) method with a fine-grained 10s step size.
- * Zero-allocation inner loop: uses stack-allocated [6]float64 scratch arrays.
+ * PropagateCartesianState performs numerical integration using adaptive RKF45.
  *
- * ADITI 4.0 Note: For high-fidelity conjunction assessment (Pc < 1e-4), use
- * PropagateCartesianStateRKF45() with 1e-9 tolerance instead. RK4 accumulates
- * ~1km/day error in GEO, unacceptable for close approach prediction.
+ * ADITI 4.0: This is now the DEFAULT propagator, replacing fixed-step RK4.
+ * Adaptive stepping with 1e-9 tolerance provides certification-grade accuracy
+ * for conjunction assessment (Pc < 1e-4) where ~1km/day RK4 error is unacceptable.
+ *
+ * For legacy compatibility, PropagateCartesianStateRK4() provides the old
+ * fixed-step implementation with 10s steps.
+ *
+ * @param x Initial state [x, y, z, vx, vy, vz] in km and km/s
+ * @param dt Time to propagate in seconds
+ * @param jd Initial Julian Date
+ * @param params Physics parameters (drag, SRP, etc.)
+ * @return Propagated state after dt seconds
  */
 func PropagateCartesianState(x []float64, dt float64, jd float64, params physics.PhysicsParams) []float64 {
-	h := 10.0 // 10 sec step for inner RK4
-	if dt < 0 {
-		h = -10.0
-	}
-	if math.Abs(dt) < math.Abs(h) {
-		h = dt
-	}
-	var curr [6]float64
-	copy(curr[:], x[:6])
-	elapsed := 0.0
-
-	// Pre-allocate scratch arrays on the stack (zero heap allocation per step)
-	var k1, k2, k3, k4, tmp [6]float64
-
-	for math.Abs(elapsed) < math.Abs(dt) {
-		step := h
-		if math.Abs(dt-elapsed) < math.Abs(h) {
-			step = dt - elapsed
-		}
-
-		// k1 = f(curr)
-		ax, ay, az := OrbitalAcceleration(curr[0], curr[1], curr[2], curr[3], curr[4], curr[5], jd, params)
-		k1 = [6]float64{curr[3], curr[4], curr[5], ax, ay, az}
-
-		// k2 = f(curr + 0.5*step*k1)
-		for i := 0; i < 6; i++ {
-			tmp[i] = curr[i] + k1[i]*step*0.5
-		}
-		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd, params)
-		k2 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
-
-		// k3 = f(curr + 0.5*step*k2)
-		for i := 0; i < 6; i++ {
-			tmp[i] = curr[i] + k2[i]*step*0.5
-		}
-		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd, params)
-		k3 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
-
-		// k4 = f(curr + step*k3)
-		for i := 0; i < 6; i++ {
-			tmp[i] = curr[i] + k3[i]*step
-		}
-		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd, params)
-		k4 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
-
-		// Update: curr += (step/6) * (k1 + 2*k2 + 2*k3 + k4)
-		s6 := step / 6.0
-		for i := 0; i < 6; i++ {
-			curr[i] += s6 * (k1[i] + 2*k2[i] + 2*k3[i] + k4[i])
-		}
-		elapsed += step
-	}
-	return curr[:]
+	// Default to RKF45 adaptive integration
+	return PropagateCartesianStateRKF45(x, dt, jd, params, 1e-9)
 }
 
 /**
@@ -380,6 +336,78 @@ func PropagateCartesianStateRKF45(x []float64, dt float64, jd float64, params ph
 	}
 
 	return state
+}
+
+/**
+ * PropagateCartesianStateRK4 performs legacy fixed-step RK4 integration.
+ *
+ * ADITI 4.0 LEGACY: This was the original default with 10s fixed steps.
+ * It accumulates ~1km/day error in GEO, making it unsuitable for conjunction
+ * assessment with Pc < 1e-4. Retained for backward compatibility and
+ * performance-critical paths where adaptive overhead is unacceptable.
+ *
+ * For all new code, use PropagateCartesianState() which now calls RKF45.
+ *
+ * @param x Initial state [x, y, z, vx, vy, vz] in km and km/s
+ * @param dt Time to propagate in seconds
+ * @param jd Initial Julian Date
+ * @param params Physics parameters
+ * @return Propagated state after dt seconds
+ */
+func PropagateCartesianStateRK4(x []float64, dt float64, jd float64, params physics.PhysicsParams) []float64 {
+	h := 10.0 // 10 sec step
+	if dt < 0 {
+		h = -10.0
+	}
+	if math.Abs(dt) < math.Abs(h) {
+		h = dt
+	}
+
+	var curr [6]float64
+	copy(curr[:], x[:6])
+	elapsed := 0.0
+
+	var k1, k2, k3, k4, tmp [6]float64
+
+	for math.Abs(elapsed) < math.Abs(dt) {
+		step := h
+		if math.Abs(dt-elapsed) < math.Abs(h) {
+			step = dt - elapsed
+		}
+
+		// k1 = f(curr)
+		ax, ay, az := OrbitalAcceleration(curr[0], curr[1], curr[2], curr[3], curr[4], curr[5], jd, params)
+		k1 = [6]float64{curr[3], curr[4], curr[5], ax, ay, az}
+
+		// k2 = f(curr + 0.5*step*k1)
+		for i := 0; i < 6; i++ {
+			tmp[i] = curr[i] + k1[i]*step*0.5
+		}
+		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd, params)
+		k2 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
+
+		// k3 = f(curr + 0.5*step*k2)
+		for i := 0; i < 6; i++ {
+			tmp[i] = curr[i] + k2[i]*step*0.5
+		}
+		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd, params)
+		k3 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
+
+		// k4 = f(curr + step*k3)
+		for i := 0; i < 6; i++ {
+			tmp[i] = curr[i] + k3[i]*step
+		}
+		ax, ay, az = OrbitalAcceleration(tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], jd, params)
+		k4 = [6]float64{tmp[3], tmp[4], tmp[5], ax, ay, az}
+
+		// Update: curr += (step/6) * (k1 + 2*k2 + 2*k3 + k4)
+		s6 := step / 6.0
+		for i := 0; i < 6; i++ {
+			curr[i] += s6 * (k1[i] + 2*k2[i] + 2*k3[i] + k4[i])
+		}
+		elapsed += step
+	}
+	return curr[:]
 }
 
 /**
@@ -495,3 +523,34 @@ func OrbitalAcceleration(x, y, z, vx, vy, vz float64, jd float64, params physics
 }
 
 // MoonPosition, GreenwichSiderealTime removed (migrated to pkg/physics)
+
+// TimeToJulianDate converts Go time.Time to Julian Date
+func TimeToJulianDate(t time.Time) float64 {
+	// Algorithm from Meeus, Astronomical Algorithms
+	year := t.Year()
+	month := int(t.Month())
+	day := t.Day()
+	hour := t.Hour()
+	minute := t.Minute()
+	second := t.Second()
+	nanosecond := t.Nanosecond()
+
+	// Fractional day
+	fracDay := (float64(hour) + float64(minute)/60.0 +
+		(float64(second)+float64(nanosecond)/1e9)/3600.0) / 24.0
+
+	// Adjust month and year for January and February
+	if month <= 2 {
+		year--
+		month += 12
+	}
+
+	A := int(float64(year) / 100.0)
+	B := 2 - A + int(float64(A)/4.0)
+
+	jd := float64(int(365.25*float64(year+4716))) +
+		float64(int(30.6001*float64(month+1))) +
+		float64(day) + fracDay + float64(B) - 1524.5
+
+	return jd
+}

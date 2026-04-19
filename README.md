@@ -1,6 +1,6 @@
+# SSIS - Sovereign Space Intelligence Substrate
 
-
- command-and-control substrate designed for the Indian Air Force. It provides sub-second volumetric surveillance, hypersonic threat detection, and symplectic orbital prediction at planetary scale.
+A command-and-control substrate designed for the Indian Air Force. It provides sub-second volumetric surveillance, hypersonic threat detection, and symplectic orbital prediction at planetary scale.
 
 # Capabilities
 
@@ -69,10 +69,11 @@ go run ./engine/main.go
 - `pkg/`: Core operational packages (orbital, ml, crypto, catalog, physics, spatial, server)
 - `ai/v3/`: **Axiom-Zero v3** — Hamiltonian-native physics substrate (rKAN, SFMN, Maneuver Distiller)
 - `ai/training/`: Air-gapped training and export pipeline
-- `internal/legacy_engine/`: Reference implementation (deprecated, kept for validation)
-- `docs/`: Technical documentation, hardening logs, and validation reports
+- `docs/`: Technical documentation, hardening logs, validation reports, and training guides
+- `docs/training/`: Training plans, execution guides, and readiness reports
 - `scripts/`: Automation for build, SBOM generation, and physics validation
 - `artifacts/`: Production model bundles and build artifacts
+- `assets/`: Static assets (images, satellite catalogues)
 
 ## Quick Start
 ### Build
@@ -96,4 +97,10 @@ go test ./...
 pytest ai/v3/test/
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system flow.
+## Development Status
+- **Phase 0**: Foundation ✅ Complete
+- **Phase 1**: Repo Unification ✅ Complete
+- **Phase 2-3**: AI Core ✅ Complete (5 neuro-symbolic models implemented)
+- **Phase 4-6**: Capability upgrades, UX, and security (In Progress)
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system flow and [docs/training/](docs/training/) for training pipeline status.
