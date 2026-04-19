@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"ssis/pkg/physics"
 	"strings"
 	"testing"
 	"time"
@@ -53,8 +54,8 @@ type RealSatellite struct {
 	NoradID  int
 	TLELine1 string
 	TLELine2 string
-	TLE      *TLE
-	State    State
+	TLE      *physics.TLE
+	State    physics.State
 	Epoch    time.Time
 }
 
@@ -169,13 +170,13 @@ func validateSGP4Propagation(t *testing.T, sats []RealSatellite) {
 		}
 
 		// Check energy conservation
-		r0 := math.Sqrt(state0.X*state0.X + state0.Y*state0.Y + state0.Z*state0.Z)
-		v0 := math.Sqrt(state0.VX*state0.VX + state0.VY*state0.VY + state0.VZ*state0.VZ)
-		e0 := v0*v0/2 - EARTH_MU/r0
+		r0 := math.Sqrt(state0.Pos[0]*state0.Pos[0] + state0.Pos[1]*state0.Pos[1] + state0.Pos[2]*state0.Pos[2])
+		v0 := math.Sqrt(state0.Vel[0]*state0.Vel[0] + state0.Vel[1]*state0.Vel[1] + state0.Vel[2]*state0.Vel[2])
+		e0 := v0*v0/2 - physics.EARTH_MU_IAU/r0
 
-		r1 := math.Sqrt(state6h.X*state6h.X + state6h.Y*state6h.Y + state6h.Z*state6h.Z)
-		v1 := math.Sqrt(state6h.VX*state6h.VX + state6h.VY*state6h.VY + state6h.VZ*state6h.VZ)
-		e1 := v1*v1/2 - EARTH_MU/r1
+		r1 := math.Sqrt(state6h.Pos[0]*state6h.Pos[0] + state6h.Pos[1]*state6h.Pos[1] + state6h.Pos[2]*state6h.Pos[2])
+		v1 := math.Sqrt(state6h.Vel[0]*state6h.Vel[0] + state6h.Vel[1]*state6h.Vel[1] + state6h.Vel[2]*state6h.Vel[2])
+		e1 := v1*v1/2 - physics.EARTH_MU_IAU/r1
 
 		energyDrift := math.Abs(e1-e0) / math.Abs(e0) * 100
 		energyDrifts = append(energyDrifts, energyDrift)
@@ -213,9 +214,9 @@ func validatePhysicsOnRealData(t *testing.T, sats []RealSatellite) {
 		state := sat.State
 
 		// Calculate orbital elements from state
-		r := math.Sqrt(state.X*state.X + state.Y*state.Y + state.Z*state.Z)
-		v := math.Sqrt(state.VX*state.VX + state.VY*state.VY + state.VZ*state.VZ)
-		altitude := r - ER
+		r := math.Sqrt(state.Pos[0]*state.Pos[0] + state.Pos[1]*state.Pos[1] + state.Pos[2]*state.Pos[2])
+		v := math.Sqrt(state.Vel[0]*state.Vel[0] + state.Vel[1]*state.Vel[1] + state.Vel[2]*state.Vel[2])
+		altitude := r - physics.EARTH_R_EQUATORIAL
 
 		// Classify orbit regime
 		if altitude < 2000 {
@@ -234,7 +235,7 @@ func validatePhysicsOnRealData(t *testing.T, sats []RealSatellite) {
 		}
 
 		// Check 2: Specific orbital energy negative (bound orbit)
-		specificEnergy := v*v/2 - EARTH_MU/r
+		specificEnergy := v*v/2 - physics.EARTH_MU_IAU/r
 		checks++
 		if specificEnergy > 0 {
 			violations++
@@ -244,7 +245,7 @@ func validatePhysicsOnRealData(t *testing.T, sats []RealSatellite) {
 
 		// Check 3: Velocity within physical bounds for altitude
 		// Circular orbit velocity: v_circ = sqrt(μ/r)
-		vCirc := math.Sqrt(EARTH_MU / r)
+		vCirc := math.Sqrt(physics.EARTH_MU_IAU / r)
 		checks++
 		if v > vCirc*2 && altitude < 50000 { // Faster than 2x circular is suspicious for bound orbits
 			// Skip for high-energy orbits
@@ -277,9 +278,9 @@ func validateConjunctionsOnRealData(t *testing.T, sats []RealSatellite) {
 			s1 := sats[i]
 			s2 := sats[j]
 
-			dx := s1.State.X - s2.State.X
-			dy := s1.State.Y - s2.State.Y
-			dz := s1.State.Z - s2.State.Z
+			dx := s1.State.Pos[0] - s2.State.Pos[0]
+			dy := s1.State.Pos[1] - s2.State.Pos[1]
+			dz := s1.State.Pos[2] - s2.State.Pos[2]
 			dist := math.Sqrt(dx*dx + dy*dy + dz*dz)
 
 			if dist < minDistance {
@@ -292,9 +293,9 @@ func validateConjunctionsOnRealData(t *testing.T, sats []RealSatellite) {
 				conjunctions++
 				if conjunctions <= 10 {
 					// Calculate relative velocity for context
-					vx := s1.State.VX - s2.State.VX
-					vy := s1.State.VY - s2.State.VY
-					vz := s1.State.VZ - s2.State.VZ
+					vx := s1.State.Vel[0] - s2.State.Vel[0]
+					vy := s1.State.Vel[1] - s2.State.Vel[1]
+					vz := s1.State.Vel[2] - s2.State.Vel[2]
 					vRel := math.Sqrt(vx*vx + vy*vy + vz*vz)
 
 					fmt.Printf("  CLOSE APPROACH #%d: %s ↔ %s at %.2f km (v_rel=%.2f km/s)\n",
@@ -323,23 +324,23 @@ func computeOrbitalStatistics(t *testing.T, sats []RealSatellite) {
 
 	for _, sat := range sats {
 		state := sat.State
-		r := math.Sqrt(state.X*state.X + state.Y*state.Y + state.Z*state.Z)
-		v := math.Sqrt(state.VX*state.VX + state.VY*state.VY + state.VZ*state.VZ)
-		altitude := r - ER
+		r := math.Sqrt(state.Pos[0]*state.Pos[0] + state.Pos[1]*state.Pos[1] + state.Pos[2]*state.Pos[2])
+		v := math.Sqrt(state.Vel[0]*state.Vel[0] + state.Vel[1]*state.Vel[1] + state.Vel[2]*state.Vel[2])
+		altitude := r - physics.EARTH_R_EQUATORIAL
 
 		altitudes = append(altitudes, altitude)
 		velocities = append(velocities, v)
 
 		// Calculate inclination from angular momentum
-		hx := state.Y*state.VZ - state.Z*state.VY
-		hy := state.Z*state.VX - state.X*state.VZ
-		hz := state.X*state.VY - state.Y*state.VX
+		hx := state.Pos[1]*state.Vel[2] - state.Pos[2]*state.Vel[1]
+		hy := state.Pos[2]*state.Vel[0] - state.Pos[0]*state.Vel[2]
+		hz := state.Pos[0]*state.Vel[1] - state.Pos[1]*state.Vel[0]
 		hMag := math.Sqrt(hx*hx + hy*hy + hz*hz)
 		inc := math.Acos(hz/hMag) * 180 / math.Pi
 		inclinations = append(inclinations, inc)
 
 		// Orbital period from semi-major axis (approximate from current radius)
-		period := 2 * math.Pi * math.Sqrt(r*r*r/EARTH_MU) / 60 // in minutes
+		period := 2 * math.Pi * math.Sqrt(r*r*r/physics.EARTH_MU_IAU) / 60 // in minutes
 		periods = append(periods, period)
 	}
 
@@ -357,8 +358,8 @@ func computeOrbitalStatistics(t *testing.T, sats []RealSatellite) {
 	fmt.Printf("\nNotable Satellites in Sample:\n")
 	for _, sat := range sats {
 		state := sat.State
-		r := math.Sqrt(state.X*state.X + state.Y*state.Y + state.Z*state.Z)
-		altitude := r - ER
+		r := math.Sqrt(state.Pos[0]*state.Pos[0] + state.Pos[1]*state.Pos[1] + state.Pos[2]*state.Pos[2])
+		altitude := r - physics.EARTH_R_EQUATORIAL
 
 		// ISS
 		if sat.NoradID == 25544 {

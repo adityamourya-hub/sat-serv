@@ -12,7 +12,7 @@ import (
 
 	"ssis/pkg/catalog"
 	"ssis/pkg/common"
-	"ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 	"ssis/pkg/engine"
 	"ssis/pkg/octree"
 	"ssis/pkg/orbital"
@@ -60,11 +60,10 @@ func main() {
 	}
 
 	// 2. Initialize Crypto (load from environment)
-	signer, err := crypto.NewSignerFromEnv("SSIS_SIGNING_KEY")
+	signer, err := cryptography.NewSignerFromEnv("SSIS_SIGNING_KEY")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "CRITICAL: No signing key found (SSIS_SIGNING_KEY env). Production deployments MUST set this. Error: %v\n", err)
-		fmt.Fprintf(os.Stderr, "CRITICAL: Falling back to deterministic key — signatures are NOT tamper-proof.\n")
-		signer = crypto.NewSigner("default-seed")
+		fmt.Fprintf(os.Stderr, "FATAL: SSIS_SIGNING_KEY not set. Aborting (fail-closed).\n")
+		os.Exit(2)
 	}
 
 	// 3. Initialize Persistent Store (BoltDB)
@@ -82,11 +81,17 @@ func main() {
 	defer catalogStore.Close()
 
 	// 4. Initialize Inference Pool (Workstream 1.2/1.3)
-	onnxPool, err := engine.NewONNXPool("pkg/ml/models", cfg.Engine.Provider)
-	if err != nil {
-		fmt.Printf("WARNING: ONNXPool initialization partial: %v\n", err)
+	var onnxPool *engine.ONNXPool
+	if _, err := os.Stat("pkg/ml/models"); err == nil {
+		onnxPool, err = engine.NewONNXPool("pkg/ml/models", cfg.Engine.Provider)
+		if err != nil {
+			fmt.Printf("WARNING: ONNXPool initialization partial: %v\n", err)
+		}
+		defer onnxPool.Close()
+	} else {
+		fmt.Printf("INFO: ONNX model directory not found, skipping ONNX pool initialization\n")
+		onnxPool = nil
 	}
-	defer onnxPool.Close()
 
 	// 5. Initialize Engine Runtime (Workstream 1.1 Logic)
 	// Capacity 1000 for obsQueue as per analysis doc.

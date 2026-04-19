@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	engcrypto "ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 )
 
 const BundleManifestFile = "bundle_manifest.sig.json"
@@ -75,7 +75,7 @@ func GenerateBundleManifest(bundleDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("marshal manifest payload: %w", err)
 	}
-	signer, err := engcrypto.NewSignerFromEnv("SSIS_SIGNING_KEY")
+	signer, err := cryptography.NewSignerFromEnv("SSIS_SIGNING_KEY")
 	if err != nil {
 		return "", fmt.Errorf("initialize signer: %w", err)
 	}

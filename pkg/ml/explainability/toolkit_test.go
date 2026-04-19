@@ -4,13 +4,11 @@ import (
 	"math"
 	"testing"
 
-	"ssis/pkg/hypersonic"
-	"ssis/pkg/maneuver"
-	"ssis/pkg/proximity"
+	"ssis/pkg/physics"
 )
 
 func TestBuildAttentionFromWindowNormalizes(t *testing.T) {
-	window := []maneuver.ManeuverFrame{
+	window := []physics.ManeuverFrame{
 		{Residual: 0.1, DeltaV: 0.0},
 		{Residual: 1.0, DeltaV: 0.2},
 		{Residual: 0.3, DeltaV: 0.0},
@@ -47,14 +45,14 @@ func TestSummarizeUncertainty(t *testing.T) {
 }
 
 func TestExplainRapid(t *testing.T) {
-	track := hypersonic.RapidTrack{
+	track := physics.RapidTrack{
 		Mach:               12,
 		AltitudeKm:         70,
 		BurnoutVelocityKmS: 6,
 		DistanceToAssetKm:  350,
 		RadarCrossSection:  0.2,
 	}
-	inf := hypersonic.RapidRankInference{
+	inf := physics.RapidRankInference{
 		Score:      82,
 		Confidence: 0.65,
 	}
@@ -69,12 +67,12 @@ func TestExplainRapid(t *testing.T) {
 }
 
 func TestExplainManeuverAndCollision(t *testing.T) {
-	window := []maneuver.ManeuverFrame{
+	window := []physics.ManeuverFrame{
 		{Residual: 0.02, DeltaV: 0.001},
 		{Residual: 0.80, DeltaV: 0.050},
 		{Residual: 0.10, DeltaV: 0.002},
 	}
-	manInf := maneuver.ManeuverInference{
+	manInf := physics.ManeuverInference{
 		Probability: 0.72,
 		Confidence:  0.63,
 	}
@@ -86,10 +84,10 @@ func TestExplainManeuverAndCollision(t *testing.T) {
 		t.Fatalf("expected SHAP fallback to be generated")
 	}
 
-	graph := proximity.CollisionNeighborhoodGraph{
-		Nodes: []proximity.CollisionGraphNode{{ID: 10}, {ID: 11}},
+	graph := physics.CollisionNeighborhoodGraph{
+		Nodes: []physics.CollisionGraphNode{{ObjectID: 10}, {ObjectID: 11}},
 	}
-	colInf := proximity.CollisionGraphInference{
+	colInf := physics.CollisionGraphInference{
 		RiskScore:        0.01,
 		UncertaintyLower: 0.008,
 		UncertaintyUpper: 0.02,

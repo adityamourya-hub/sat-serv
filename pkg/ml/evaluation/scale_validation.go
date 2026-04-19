@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"ssis/pkg/common"
-	engcrypto "ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 	"ssis/pkg/ml"
 	"ssis/pkg/ml/hybrid"
 	"ssis/pkg/physics"
@@ -166,13 +166,13 @@ func RunMassiveValidation(cfg MassiveValidationConfig) (MassiveValidationReport,
 	// Skip probability calibration for now - functionality not available in new architecture
 	pcCal := struct{}{}
 
-	signer, signErr := engcrypto.NewSignerFromEnv("SSIS_SIGNING_KEY")
+	signer, signErr := cryptography.NewSignerFromEnv("SSIS_SIGNING_KEY")
 	if signErr != nil {
 		if strict {
 			return MassiveValidationReport{}, fmt.Errorf("strict mode: signer initialization failed for scale validation: %w", signErr)
 		}
 		fmt.Fprintf(os.Stderr, "warning: signer initialization failed for scale validation: %v; using deterministic fallback signer\n", signErr)
-		signer = engcrypto.NewSigner("scale-validation-fallback-key")
+		signer = cryptography.NewSigner("scale-validation-fallback-key")
 	}
 
 	// Skip ODUKF validation for now - functionality not available in new architecture

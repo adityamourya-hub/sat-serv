@@ -5,6 +5,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"ssis/pkg/physics"
 )
 
 func TestAxiomPropagatorEnergyConservation(t *testing.T) {
@@ -15,14 +17,15 @@ func TestAxiomPropagatorEnergyConservation(t *testing.T) {
 	}
 
 	// 2. Initialize State (ISS altitude approx)
-	init := State{
-		X: ER + 400, Y: 0, Z: 0,
-		VX: 0, VY: 7.66, VZ: 0,
+	init := physics.State{
+		Pos: [3]float64{physics.EARTH_R_EQUATORIAL + 400, 0, 0},
+		Vel: [3]float64{0, 7.66, 0},
 	}
 	epoch := time.Now()
+	params := physics.PhysicsParams{Mass: 1000, DragArea: 1, SRPArea: 1, Cd: 2.2, Cr: 1.3}
 
 	// 3. Initialize Propagator
-	prop := NewAxiomPropagator(kernel, init, epoch)
+	prop := NewAxiomPropagator(kernel, init, epoch, params)
 
 	// 4. Propagate for one full orbit (approx 92 minutes)
 	fmt.Printf("Verifying Axiom-Zero (Yoshida-4) Energy Conservation over 90 mins...\n")
@@ -59,8 +62,12 @@ func TestAxiomParityWithSGP4(t *testing.T) {
 	}
 
 	// ISS-like case
-	init := State{X: ER + 400, Y: 0, Z: 0, VX: 0, VY: 7.66, VZ: 0}
-	axProp := NewAxiomPropagator(kernel, init, time.Now())
+	init := physics.State{
+		Pos: [3]float64{physics.EARTH_R_EQUATORIAL + 400, 0, 0},
+		Vel: [3]float64{0, 7.66, 0},
+	}
+	params := physics.PhysicsParams{Mass: 1000, DragArea: 1, SRPArea: 1, Cd: 2.2, Cr: 1.3}
+	axProp := NewAxiomPropagator(kernel, init, time.Now(), params)
 
 	// SGP4 Baseline (Manual state matches)
 	// For parity, we check if Axiom stays within a reasonable ballistic envelope of pure Keplerian
@@ -72,11 +79,11 @@ func TestAxiomParityWithSGP4(t *testing.T) {
 			t.Errorf("Axiom propagation failed at %v mins: %v", m, err)
 			continue
 		}
-		r := math.Sqrt(state.X*state.X + state.Y*state.Y + state.Z*state.Z)
+		r := math.Sqrt(state.Pos[0]*state.Pos[0] + state.Pos[1]*state.Pos[1] + state.Pos[2]*state.Pos[2])
 
-		fmt.Printf("  t=%02.0f min | Altitude=%.2f km\n", m, r-ER)
+		fmt.Printf("  t=%02.0f min | Altitude=%.2f km\n", m, r-physics.EARTH_R_EQUATORIAL)
 
-		if math.IsNaN(r) || r < ER-100 {
+		if math.IsNaN(r) || r < physics.EARTH_R_EQUATORIAL-100 {
 			t.Errorf("Axiom propagator diverged at %v mins", m)
 		}
 	}

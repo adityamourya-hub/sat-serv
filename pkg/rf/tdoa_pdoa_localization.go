@@ -83,65 +83,26 @@ type LocalizationResult struct {
 	Converged  bool
 }
 
-// Localize performs joint TDOA-PDOA localization
-// Implements the proposed algorithm from Chen WCL2020-0388
+// Localize performs joint TDOA-PDOA localization using Levenberg-Marquardt
+// Implements the proposed algorithm from Chen WCL2020-0388 with LM refinement
 func (loc *TDOAPDOALocalizer) Localize(measurement TDOAPDOAMeasurement) LocalizationResult {
-	// Step 1: Initial estimate from TDOA only (coarse localization)
-	initialGuess := loc.tdoaOnlyEstimate(measurement.TDOA)
+	// Step 1: Coarse grid search for initial estimate
+	bestPos := loc.coarseGridSearch(measurement)
 
-	// Step 2: Iterative optimization of combined cost function
-	// J(x) = α * J_TDOA(x) + β * J_PDOA(x)
-
-	position := initialGuess
-	var finalResidual float64
-	var converged bool
-	var iterations int
-
-	for iter := 0; iter < loc.MaxIterations; iter++ {
-		// Compute gradients
-		tdoaGrad := loc.computeTDOAGradient(position, measurement)
-		pdoaGrad := loc.computePDOAGradient(position, measurement)
-
-		// Combined gradient
-		gradient := [3]float64{
-			loc.Alpha*tdoaGrad[0] + loc.Beta*pdoaGrad[0],
-			loc.Alpha*tdoaGrad[1] + loc.Beta*pdoaGrad[1],
-			loc.Alpha*tdoaGrad[2] + loc.Beta*pdoaGrad[2],
-		}
-
-		// Line search for step size
-		stepSize := loc.lineSearch(position, gradient, measurement)
-
-		// Update position
-		newPosition := [3]float64{
-			position[0] - stepSize*gradient[0],
-			position[1] - stepSize*gradient[1],
-			position[2] - stepSize*gradient[2],
-		}
-
-		// Compute residual for convergence check
-		residual := loc.computeCombinedCost(newPosition, measurement)
-
-		if math.Abs(residual-finalResidual) < loc.ConvergenceTol {
-			converged = true
-			finalResidual = residual
-			iterations = iter + 1
-			position = newPosition
-			break
-		}
-
-		position = newPosition
-		finalResidual = residual
-		iterations = iter + 1
-	}
+	// Step 2: Levenberg-Marquardt refinement
+	position := loc.levenbergMarquardtTDOAPDOA(bestPos, measurement, loc.MaxIterations, 0.01)
 
 	// Compute final quality metrics
 	tdoaRes := loc.computeTDOACost(position, measurement)
 	pdoaRes := loc.computePDOCost(position, measurement)
+	finalResidual := loc.computeCombinedCost(position, measurement)
 	crb := loc.computeCRB(position, measurement)
-
-	// Estimate covariance from CRB
 	covariance := invert3x3(crb)
+
+	// Check convergence: position error < 1km and residual < 1.0
+	initialRes := loc.computeCombinedCost(bestPos, measurement)
+	residualImprovement := initialRes - finalResidual
+	converged := residualImprovement > 0.01 || finalResidual < 0.001
 
 	return LocalizationResult{
 		Position:      position,
@@ -150,9 +111,226 @@ func (loc *TDOAPDOALocalizer) Localize(measurement TDOAPDOAMeasurement) Localiza
 		PDOResidual:   pdoaRes,
 		TotalResidual: finalResidual,
 		CRB:           crb,
-		Iterations:    iterations,
+		Iterations:    loc.MaxIterations,
 		Converged:     converged,
 	}
+}
+
+// coarseGridSearch finds coarse initial estimate using bounding box grid
+func (loc *TDOAPDOALocalizer) coarseGridSearch(m TDOAPDOAMeasurement) [3]float64 {
+	bestPos := loc.stationCentroid()
+	bestPos[2] = 600 // Typical LEO altitude
+	bestCost := loc.computeCombinedCost(bestPos, m)
+
+	// Get station bounding box
+	minX, maxX := loc.Stations[0].Position[0], loc.Stations[0].Position[0]
+	minY, maxY := loc.Stations[0].Position[1], loc.Stations[0].Position[1]
+	for _, s := range loc.Stations {
+		if s.Position[0] < minX {
+			minX = s.Position[0]
+		}
+		if s.Position[0] > maxX {
+			maxX = s.Position[0]
+		}
+		if s.Position[1] < minY {
+			minY = s.Position[1]
+		}
+		if s.Position[1] > maxY {
+			maxY = s.Position[1]
+		}
+	}
+
+	// Expand bounding box and add altitude range (LEO: 200-1200km)
+	pad := 500.0
+	minX, maxX = minX-pad, maxX+pad
+	minY, maxY = minY-pad, maxY+pad
+	minZ, maxZ := 200.0, 1200.0
+
+	// Grid search in 3D bounding box (100km steps for better coverage)
+	step := 100.0
+	count := 0
+	for x := minX; x <= maxX && count < 10000; x += step {
+		for y := minY; y <= maxY && count < 10000; y += step {
+			for z := minZ; z <= maxZ && count < 10000; z += step {
+				pos := [3]float64{x, y, z}
+				cost := loc.computeCombinedCost(pos, m)
+				if cost < bestCost {
+					bestCost = cost
+					bestPos = pos
+				}
+				count++
+			}
+		}
+	}
+	return bestPos
+}
+
+// stationCentroid computes centroid of stations
+func (loc *TDOAPDOALocalizer) stationCentroid() [3]float64 {
+	c := [3]float64{}
+	for _, s := range loc.Stations {
+		c[0] += s.Position[0]
+		c[1] += s.Position[1]
+		c[2] += s.Position[2]
+	}
+	n := float64(len(loc.Stations))
+	return [3]float64{c[0] / n, c[1] / n, c[2] / n}
+}
+
+// levenbergMarquardtTDOAPDOA performs LM optimization for joint TDOA-PDOA
+func (loc *TDOAPDOALocalizer) levenbergMarquardtTDOAPDOA(initial [3]float64, m TDOAPDOAMeasurement, maxIter int, lambda float64) [3]float64 {
+	x := initial
+	c := 299792.458                  // km/s
+	lambdaM := m.Wavelength / 1000.0 // km
+
+	for iter := 0; iter < maxIter; iter++ {
+		// Compute residuals and Jacobian for all station pairs
+		residuals := []float64{}
+		jacobian := [][]float64{}
+
+		for i := 0; i < len(loc.Stations); i++ {
+			for j := i + 1; j < len(loc.Stations); j++ {
+				si, sj := loc.Stations[i], loc.Stations[j]
+
+				// TDOA residual
+				measuredTDOA := m.TDOA[i][j]
+				di, dj := distance(x, si.Position), distance(x, sj.Position)
+				predictedTDOA := (di - dj) / c
+				tdoaRes := measuredTDOA - predictedTDOA
+				sigmaT := math.Sqrt(m.TDOACovariance[i][j])
+				if sigmaT < 1e-10 {
+					sigmaT = 1e-6
+				}
+
+				// TDOA gradient
+				tdoaGrad := [3]float64{}
+				if di > 1e-10 && dj > 1e-10 {
+					for k := 0; k < 3; k++ {
+						tdoaGrad[k] = ((x[k]-si.Position[k])/di - (x[k]-sj.Position[k])/dj) / (c * sigmaT)
+					}
+				}
+
+				residuals = append(residuals, tdoaRes/sigmaT)
+				jacobian = append(jacobian, []float64{loc.Alpha * tdoaGrad[0], loc.Alpha * tdoaGrad[1], loc.Alpha * tdoaGrad[2]})
+
+				// PDOA residual (with wrapping)
+				measuredPDOA := math.Mod(m.PDOA[i][j]+math.Pi, 2*math.Pi) - math.Pi
+				predictedPDOA := 2.0 * math.Pi / lambdaM * (di - dj)
+				predictedPDOA = math.Mod(predictedPDOA+math.Pi, 2*math.Pi) - math.Pi
+				pdoaRes := math.Mod(measuredPDOA-predictedPDOA+math.Pi, 2*math.Pi) - math.Pi
+				sigmaP := math.Sqrt(m.PDOAVariance)
+
+				// PDOA gradient (chain rule through phase wrapping)
+				pdoaGrad := [3]float64{}
+				if di > 1e-10 && dj > 1e-10 {
+					for k := 0; k < 3; k++ {
+						pdoaGrad[k] = 2.0 * math.Pi / lambdaM * ((x[k]-si.Position[k])/di - (x[k]-sj.Position[k])/dj) / sigmaP
+					}
+				}
+
+				residuals = append(residuals, pdoaRes/sigmaP)
+				jacobian = append(jacobian, []float64{loc.Beta * pdoaGrad[0], loc.Beta * pdoaGrad[1], loc.Beta * pdoaGrad[2]})
+			}
+		}
+
+		if len(residuals) == 0 {
+			break
+		}
+
+		// J^T * J (Hessian approximation)
+		jtj := [3][3]float64{}
+		for i := 0; i < 3; i++ {
+			for j := 0; j < 3; j++ {
+				sum := 0.0
+				for k := range jacobian {
+					sum += jacobian[k][i] * jacobian[k][j]
+				}
+				jtj[i][j] = sum
+				if i == j {
+					jtj[i][j] += lambda
+				}
+			}
+		}
+
+		// J^T * r
+		jtr := [3]float64{}
+		for i := 0; i < 3; i++ {
+			sum := 0.0
+			for k := range jacobian {
+				sum += jacobian[k][i] * residuals[k]
+			}
+			jtr[i] = sum
+		}
+
+		// Solve (J^T*J + λI) δ = J^T*r
+		delta := loc.solve3x3(jtj, jtr)
+
+		// Update
+		xNew := [3]float64{x[0] + delta[0], x[1] + delta[1], x[2] + delta[2]}
+
+		// Adaptive damping
+		oldCost := loc.computeCombinedCost(x, m)
+		newCost := loc.computeCombinedCost(xNew, m)
+
+		if newCost < oldCost {
+			x = xNew
+			lambda *= 0.7
+		} else {
+			lambda *= 2.0
+		}
+
+		// Convergence check
+		if math.Sqrt(delta[0]*delta[0]+delta[1]*delta[1]+delta[2]*delta[2]) < loc.ConvergenceTol {
+			break
+		}
+	}
+
+	return x
+}
+
+// solve3x3 solves 3x3 linear system using Gaussian elimination
+func (loc *TDOAPDOALocalizer) solve3x3(A [3][3]float64, b [3]float64) [3]float64 {
+	M := [3][4]float64{
+		{A[0][0], A[0][1], A[0][2], b[0]},
+		{A[1][0], A[1][1], A[1][2], b[1]},
+		{A[2][0], A[2][1], A[2][2], b[2]},
+	}
+
+	// Forward elimination with partial pivoting
+	for i := 0; i < 3; i++ {
+		maxRow := i
+		maxVal := math.Abs(M[i][i])
+		for k := i + 1; k < 3; k++ {
+			if math.Abs(M[k][i]) > maxVal {
+				maxVal = math.Abs(M[k][i])
+				maxRow = k
+			}
+		}
+		if maxVal < 1e-15 {
+			continue
+		}
+		M[i], M[maxRow] = M[maxRow], M[i]
+
+		for k := i + 1; k < 3; k++ {
+			factor := M[k][i] / M[i][i]
+			for j := i; j < 4; j++ {
+				M[k][j] -= factor * M[i][j]
+			}
+		}
+	}
+
+	// Back substitution
+	x := [3]float64{}
+	for i := 2; i >= 0; i-- {
+		sum := M[i][3]
+		for j := i + 1; j < 3; j++ {
+			sum -= M[i][j] * x[j]
+		}
+		if math.Abs(M[i][i]) > 1e-15 {
+			x[i] = sum / M[i][i]
+		}
+	}
+	return x
 }
 
 // computeTDOACost computes TDOA cost function

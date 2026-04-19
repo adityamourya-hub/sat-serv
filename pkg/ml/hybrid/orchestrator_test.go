@@ -3,9 +3,8 @@ package hybrid
 import (
 	"testing"
 
-	"ssis/pkg/hypersonic"
 	"ssis/pkg/ml"
-	"ssis/pkg/proximity"
+	"ssis/pkg/physics"
 )
 
 func TestDetectManeuvers_ClassicalThenFallbackOrML(t *testing.T) {
@@ -43,7 +42,7 @@ func TestDetectManeuvers_ClassicalThenFallbackOrML(t *testing.T) {
 
 func TestEvaluateCollision_UsesMLOrFallback(t *testing.T) {
 	orch := NewOrchestrator(ml.NewDummyInferenceEngine())
-	input := proximity.CollisionRiskInput{
+	input := physics.CollisionRiskInput{
 		MissDistanceKm:      0.2,
 		HardbodyRadiusKm:    0.005,
 		RelativeVelocityKmS: 8.0,
@@ -52,8 +51,8 @@ func TestEvaluateCollision_UsesMLOrFallback(t *testing.T) {
 		SigmaIntrackKm:      0.03,
 		SigmaCrosstrackKm:   0.03,
 	}
-	graph := proximity.CollisionNeighborhoodGraph{
-		Nodes: []proximity.CollisionGraphNode{{ID: 1}, {ID: 2}},
+	graph := physics.CollisionNeighborhoodGraph{
+		Nodes: []physics.CollisionGraphNode{{ObjectID: 1}, {ObjectID: 2}},
 	}
 
 	res, d := orch.EvaluateCollision(input, graph)
@@ -67,7 +66,7 @@ func TestEvaluateCollision_UsesMLOrFallback(t *testing.T) {
 
 func TestRankRapid_ClassicalBaselineThenML(t *testing.T) {
 	orch := NewOrchestrator(ml.NewDummyInferenceEngine())
-	tracks := []hypersonic.RapidTrack{
+	tracks := []physics.RapidTrack{
 		{ID: 1, Mach: 12, AltitudeKm: 55, BurnoutVelocityKmS: 6, DistanceToAssetKm: 200, RadarCrossSection: 0.1},
 		{ID: 2, Mach: 3, AltitudeKm: 500, BurnoutVelocityKmS: 2, DistanceToAssetKm: 2500, RadarCrossSection: 1.2},
 	}

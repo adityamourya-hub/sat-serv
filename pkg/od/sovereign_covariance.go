@@ -397,7 +397,7 @@ func ExampleUsage() {
 	fmt.Printf("\n[Sovereign OD Result]\n")
 	fmt.Printf("  Observations: %d (24-hour window)\n", result.ObservationsUsed)
 	fmt.Printf("  Refined Position: [%.3f, %.3f, %.3f] km\n",
-		result.RefinedState.Pos.X, result.RefinedState.Pos.Y, result.RefinedState.Pos.Z)
+		result.RefinedState.Pos[0], result.RefinedState.Pos[1], result.RefinedState.Pos[2])
 	fmt.Printf("  Position Std: [%.1f, %.1f, %.1f] meters\n",
 		result.PositionStd[0], result.PositionStd[1], result.PositionStd[2])
 	fmt.Printf("  Velocity Std: [%.3f, %.3f, %.3f] m/s\n",

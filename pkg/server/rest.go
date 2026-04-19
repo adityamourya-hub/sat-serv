@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"ssis/pkg/catalog"
-	"ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 	"ssis/pkg/physics"
 	"ssis/pkg/proximity"
 
@@ -17,10 +17,10 @@ import (
 
 type Server struct {
 	Store  *catalog.Store
-	Signer *crypto.Signer
+	Signer *cryptography.Signer
 }
 
-func NewServer(store *catalog.Store, signer *crypto.Signer) *Server {
+func NewServer(store *catalog.Store, signer *cryptography.Signer) *Server {
 	return &Server{Store: store, Signer: signer}
 }
 

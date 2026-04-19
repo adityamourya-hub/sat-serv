@@ -1,14 +1,13 @@
 package report
 
 import (
+	"ssis/pkg/cryptography"
 	"strings"
 	"testing"
-
-	engcrypto "ssis/pkg/crypto"
 )
 
 func TestGenerateEnglishSignedReportFallback(t *testing.T) {
-	signer := engcrypto.NewSigner("test-key")
+	signer := cryptography.NewSigner("test-key")
 	gen := NewGenerator(signer, nil)
 
 	in := SSAReportInput{
@@ -42,7 +41,7 @@ func TestGenerateEnglishSignedReportFallback(t *testing.T) {
 }
 
 func TestGenerateEnglishSignedReportJSON(t *testing.T) {
-	signer := engcrypto.NewSigner("another-key")
+	signer := cryptography.NewSigner("another-key")
 	gen := NewGenerator(signer, NewQuantizedLLMStub("llama3-8b-4bit-stub"))
 
 	jsonOut, err := gen.GenerateEnglishSignedReportJSON(SSAReportInput{

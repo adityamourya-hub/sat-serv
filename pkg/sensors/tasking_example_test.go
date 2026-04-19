@@ -22,8 +22,8 @@ import (
  * This is the "commander's intent" layer: Active ISR, not passive catalog.
  */
 
-// ExampleAnytimeScheduler demonstrates interrupt-driven tasking
-func ExampleAnytimeGreedyScheduler() {
+// Example_anytimeScheduler demonstrates interrupt-driven tasking
+func Example_anytimeScheduler() {
 	// Create information-theoretic tasker
 	tasker := &InformationTheoreticTasker{
 		TaskQueue:    &TaskPriorityQueue{},
@@ -82,8 +82,8 @@ func ExampleAnytimeGreedyScheduler() {
 	// Interrupt processed: Sensors re-tasked for hypersonic tracking
 }
 
-// ExampleFIMTasking shows Fisher Information based prioritization
-func ExampleFIMTasking() {
+// Example_FIM_tasking shows Fisher Information based prioritization
+func Example_FIM_tasking() {
 	// Create object with growing covariance
 	obj := &TrackedObject{
 		ID:    "SAT-001",
@@ -139,8 +139,8 @@ func ExampleFIMTasking() {
 	//   Information Gain from observation: 0.00 bits
 }
 
-// ExampleAghoriVolumetricScanning demonstrates manifold gateway detection
-func ExampleAghoriVolumetricScanning() {
+// Example_aghoriVolumetricScanning demonstrates manifold gateway detection
+func Example_aghori_volumetric_scanning() {
 	// Create volumetric tasker for Cislunar gateways
 	volumetric := &VolumetricTasker{
 		ManifoldGateways: []GatewayRegion{
@@ -185,8 +185,8 @@ func ExampleAghoriVolumetricScanning() {
 	//   3: SENSOR-2 → VOLUMETRIC_unstable_manifold (priority: 85.0)
 }
 
-// ExampleSurprisalDetection shows KL-divergence based "interesting" object detection
-func ExampleSurprisalDetection() {
+// Example_surprisalDetection shows KL-divergence based "interesting" object detection
+func Example_surprisal_detection() {
 	// Predicted state (from propagation)
 	predictedMean := [6]float64{6878.0, 0.0, 0.0, 0.0, 7.5, 0.0}
 	predictedCov := [6][6]float64{

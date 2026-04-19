@@ -20,7 +20,7 @@ import (
 
 	"ssis/pkg/catalog"
 	"ssis/pkg/common"
-	"ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 	pb "ssis/pkg/proto/ssis/v1"
 	"ssis/pkg/types"
 )
@@ -30,7 +30,7 @@ type GRPCServer struct {
 	pb.UnimplementedSpaceEngineServer
 
 	runtime     *Runtime
-	signer      *crypto.Signer
+	signer      *cryptography.Signer
 	auditLog    *common.AuditLog
 	subscribers sync.Map // map[string]*AlertSubscriber
 	mu          sync.RWMutex
@@ -45,7 +45,7 @@ type AlertSubscriber struct {
 }
 
 // NewGRPCServer creates a new gRPC server with mTLS
-func NewGRPCServer(runtime *Runtime, signer *crypto.Signer, auditLog *common.AuditLog) *GRPCServer {
+func NewGRPCServer(runtime *Runtime, signer *cryptography.Signer, auditLog *common.AuditLog) *GRPCServer {
 	return &GRPCServer{
 		runtime:  runtime,
 		signer:   signer,
@@ -345,7 +345,7 @@ func (s *GRPCServer) extractClientID(ctx context.Context) (string, error) {
 }
 
 // StartGRPCServer initializes and starts the gRPC server
-func StartGRPCServer(addr string, runtime *Runtime, signer *crypto.Signer, auditLog *common.AuditLog, tlsConfig *tls.Config) (*grpc.Server, error) {
+func StartGRPCServer(addr string, runtime *Runtime, signer *cryptography.Signer, auditLog *common.AuditLog, tlsConfig *tls.Config) (*grpc.Server, error) {
 	server := NewGRPCServer(runtime, signer, auditLog)
 
 	opts := []grpc.ServerOption{

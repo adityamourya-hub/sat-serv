@@ -24,8 +24,8 @@ import (
 	"ssis/pkg/physics"
 )
 
-// ExampleHybridPropagation demonstrates the Go + 42 workflow
-func ExampleHybridPropagation() {
+// Example_hybridPropagation demonstrates the Go + 42 workflow
+func Example_hybridPropagation() {
 	// Step 1: ADITI Go layer - bulk catalog screening
 	fmt.Println("=== Step 1: ADITI Go Layer ===")
 	fmt.Println("Screening 100,000 objects...")
@@ -237,8 +237,8 @@ func BenchmarkTelemetrySerialization(b *testing.B) {
 	}
 }
 
-// ExampleKaneDynamicsAdvantage explains 42's unique physics
-func ExampleKaneDynamicsAdvantage() {
+// Example_kaneDynamicsAdvantage explains 42's unique physics
+func Example_kaneDynamicsAdvantage() {
 	fmt.Println("=== NASA 42's Kane's Equations Advantage ===")
 	fmt.Println()
 	fmt.Println("Traditional Physics:")
@@ -270,8 +270,8 @@ func ExampleKaneDynamicsAdvantage() {
 	//   // ...
 }
 
-// ExampleIPCPerformance shows latency expectations
-func ExampleIPCPerformance() {
+// Example_IPC_performance shows latency expectations
+func Example_IPC_performance() {
 	fmt.Println("=== IPC Performance: Go ↔ NASA 42 ===")
 	fmt.Println()
 	fmt.Println("Metric                    | ADITI (Go)    | NASA 42 (IPC)")

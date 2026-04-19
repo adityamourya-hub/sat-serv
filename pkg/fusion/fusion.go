@@ -5,18 +5,18 @@ import (
 	"math"
 	"time"
 
-	engcrypto "ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 	safemath "ssis/pkg/math"
 	"ssis/pkg/physics"
 )
 
 type UKFConfig struct {
-	Alpha                     float64 `json:"alpha"`
-	Beta                      float64 `json:"beta"`
-	Kappa                     float64 `json:"kappa"`
-	ProcessNoiseAccelKmSec2   float64 `json:"process_noise_accel"`
-	SNCGaussMarkovTauSec      float64 `json:"snc_tau_sec"`
-	MinNumericalJitter        float64 `json:"min_numerical_jitter"`
+	Alpha                   float64 `json:"alpha"`
+	Beta                    float64 `json:"beta"`
+	Kappa                   float64 `json:"kappa"`
+	ProcessNoiseAccelKmSec2 float64 `json:"process_noise_accel"`
+	SNCGaussMarkovTauSec    float64 `json:"snc_tau_sec"`
+	MinNumericalJitter      float64 `json:"min_numerical_jitter"`
 }
 
 func DefaultUKFConfig() UKFConfig {
@@ -31,15 +31,15 @@ func DefaultUKFConfig() UKFConfig {
 }
 
 type RadarMeasurement struct {
-	SiteID         int     `json:"site_id"`
-	TimestampUnix  int64   `json:"timestamp_unix"`
-	RangeKm        float64 `json:"range_km"`
-	RangeRateKmS   float64 `json:"range_rate_km_s"`
-	AzimuthDeg     float64 `json:"azimuth_deg"`
-	ElevationDeg   float64 `json:"elevation_deg"`
-	RangeStdKm     float64 `json:"range_std_km"`
-	RangeRateStd   float64 `json:"range_rate_std"`
-	AngleStdDeg    float64 `json:"angle_std_deg"`
+	SiteID        int     `json:"site_id"`
+	TimestampUnix int64   `json:"timestamp_unix"`
+	RangeKm       float64 `json:"range_km"`
+	RangeRateKmS  float64 `json:"range_rate_km_s"`
+	AzimuthDeg    float64 `json:"azimuth_deg"`
+	ElevationDeg  float64 `json:"elevation_deg"`
+	RangeStdKm    float64 `json:"range_std_km"`
+	RangeRateStd  float64 `json:"range_rate_std"`
+	AngleStdDeg   float64 `json:"angle_std_deg"`
 }
 
 type TLEMeasurement struct {
@@ -49,14 +49,14 @@ type TLEMeasurement struct {
 }
 
 type FusionInput struct {
-	ObjectID         int              `json:"object_id"`
-	EventType        string           `json:"event_type"`
-	PriorState       physics.State    `json:"prior_state"`
-	PriorCovariance  [][]float64       `json:"prior_covariance"`
-	DeltaTimeSec     float64          `json:"delta_time_sec"`
-	RadarMeasurement *RadarMeasurement `json:"radar_measurement,omitempty"`
-	TLEMeasurement   *TLEMeasurement   `json:"tle_measurement,omitempty"`
-	Signer           *engcrypto.Signer `json:"-"`
+	ObjectID         int                  `json:"object_id"`
+	EventType        string               `json:"event_type"`
+	PriorState       physics.State        `json:"prior_state"`
+	PriorCovariance  [][]float64          `json:"prior_covariance"`
+	DeltaTimeSec     float64              `json:"delta_time_sec"`
+	RadarMeasurement *RadarMeasurement    `json:"radar_measurement,omitempty"`
+	TLEMeasurement   *TLEMeasurement      `json:"tle_measurement,omitempty"`
+	Signer           *cryptography.Signer `json:"-"`
 }
 
 type Ellipsoid3Sigma struct {
@@ -66,11 +66,11 @@ type Ellipsoid3Sigma struct {
 }
 
 type FusionResult struct {
-	ObjectID    int              `json:"object_id"`
-	State       physics.State    `json:"state"`
-	Covariance  [][]float64      `json:"covariance"`
-	ThreeSigma  Ellipsoid3Sigma  `json:"three_sigma"`
-	SensorsUsed []string         `json:"sensors_used"`
+	ObjectID    int               `json:"object_id"`
+	State       physics.State     `json:"state"`
+	Covariance  [][]float64       `json:"covariance"`
+	ThreeSigma  Ellipsoid3Sigma   `json:"three_sigma"`
+	SensorsUsed []string          `json:"sensors_used"`
 	SignedAlert *UncertaintyAlert `json:"signed_alert,omitempty"`
 }
 
@@ -160,7 +160,7 @@ func FuseWithUKF(input FusionInput, cfg UKFConfig) (FusionResult, error) {
 	return res, nil
 }
 
-func PropagateWithUKF(initial physics.State, initialCov [][]float64, stepSec float64, steps int, cfg UKFConfig, pinn physics.StateRefiner, trans physics.HistoryRefiner, signer *engcrypto.Signer, objectID int, eventType string) ([]FusionResult, error) {
+func PropagateWithUKF(initial physics.State, initialCov [][]float64, stepSec float64, steps int, cfg UKFConfig, pinn physics.StateRefiner, trans physics.HistoryRefiner, signer *cryptography.Signer, objectID int, eventType string) ([]FusionResult, error) {
 	currState := initial
 	currCov := initialCov
 	results := make([]FusionResult, 0, steps)
@@ -187,7 +187,7 @@ func PropagateWithUKF(initial physics.State, initialCov [][]float64, stepSec flo
 	return results, nil
 }
 
-func BuildSignedUncertaintyAlert(objectID int, alertType string, state physics.State, cov [][]float64, ts Ellipsoid3Sigma, signer *engcrypto.Signer) *UncertaintyAlert {
+func BuildSignedUncertaintyAlert(objectID int, alertType string, state physics.State, cov [][]float64, ts Ellipsoid3Sigma, signer *cryptography.Signer) *UncertaintyAlert {
 	alert := &UncertaintyAlert{
 		ObjectID:     objectID,
 		AlertType:    alertType,
@@ -283,7 +283,7 @@ func RadarMeasurementFromState(x []float64, siteID int, jd float64) []float64 {
 
 	gst := physics.GreenwichSiderealTime(jd)
 	phi := site.LatDeg * physics.RAD_PER_DEG
-	lambda := site.LonDeg * physics.RAD_PER_DEG + gst
+	lambda := site.LonDeg*physics.RAD_PER_DEG + gst
 	cosPhi := math.Cos(phi)
 	sinPhi := math.Sin(phi)
 	cosLambda := math.Cos(lambda)
@@ -295,7 +295,7 @@ func RadarMeasurementFromState(x []float64, siteID int, jd float64) []float64 {
 	sz := rs * sinPhi
 
 	rx, ry, rz := px-sx, py-sy, pz-sz
-	rvx, rvy, rvz := vx, vy, vz 
+	rvx, rvy, rvz := vx, vy, vz
 
 	rng := math.Sqrt(rx*rx + ry*ry + rz*rz)
 	if rng < 1e-9 {

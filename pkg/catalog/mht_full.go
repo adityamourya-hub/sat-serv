@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 )
 
 // GlobalHypothesis represents a consistent set of track-to-measurement assignments.
@@ -41,11 +41,11 @@ type HOEngine struct {
 	pd         float64 // Detection probability
 	betaFA     float64 // False alarm density
 	betaNT     float64 // New track density
-	signer     *crypto.Signer
+	signer     *cryptography.Signer
 }
 
 // NewHOEngine creates a new Hypothesis-Oriented MHT engine.
-func NewHOEngine(signer *crypto.Signer) *HOEngine {
+func NewHOEngine(signer *cryptography.Signer) *HOEngine {
 	return &HOEngine{
 		clusters:   make(map[int]*MHTCluster),
 		nScanDepth: 3,

@@ -1,6 +1,7 @@
 package orbital
 
 import (
+	"ssis/pkg/physics"
 	"testing"
 )
 
@@ -53,16 +54,16 @@ META_STOP
 	if err != nil {
 		t.Errorf("Propagation failed: %v", err)
 	}
-	if state.X != 6800.0 {
-		t.Errorf("Expected X=6800.0 at exact point, got %f", state.X)
+	if state.Pos[0] != 6800.0 {
+		t.Errorf("Expected X=6800.0 at exact point, got %f", state.Pos[0])
 	}
 
 	// Test interpolation (1 min = 60s, mid-point between 0 and 2)
 	stateMid, _ := p.Propagate(1.0)
-	if stateMid.X <= 6800.0 || stateMid.X >= 7000.0 {
-		t.Errorf("Mid-point X %.2f outside expected linear range (6800, 7000)", stateMid.X)
+	if stateMid.Pos[0] <= 6800.0 || stateMid.Pos[0] >= 7000.0 {
+		t.Errorf("Mid-point X %.2f outside expected linear range (6800, 7000)", stateMid.Pos[0])
 	}
-	
+
 	// Test range error
 	_, err = p.Propagate(15.0)
 	if err == nil {
@@ -73,14 +74,14 @@ META_STOP
 func TestLagrangeInterpolationAccuracy(t *testing.T) {
 	// Simple linear test: y = 2x
 	points := []DataPoint{
-		{Time: 0, State: State{X: 0}},
-		{Time: 1, State: State{X: 2}},
-		{Time: 2, State: State{X: 4}},
-		{Time: 3, State: State{X: 6}},
+		{Time: 0, State: physics.State{Pos: physics.Vector3{0, 0, 0}}},
+		{Time: 1, State: physics.State{Pos: physics.Vector3{2, 0, 0}}},
+		{Time: 2, State: physics.State{Pos: physics.Vector3{4, 0, 0}}},
+		{Time: 3, State: physics.State{Pos: physics.Vector3{6, 0, 0}}},
 	}
-	
+
 	res := LagrangeInterpolate(points, 1.5)
-	if res.X != 3.0 {
-		t.Errorf("LagrangeInterpolate failed on linear data: expected 3.0, got %f", res.X)
+	if res.Pos[0] != 3.0 {
+		t.Errorf("LagrangeInterpolate failed on linear data: expected 3.0, got %f", res.Pos[0])
 	}
 }

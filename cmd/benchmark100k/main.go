@@ -287,7 +287,7 @@ func generateReport(curve PerformanceCurve) {
 
 	fmt.Fprintf(file, "\n## Performance Curve\n\n")
 	fmt.Fprintf(file, "```\n")
-	fmt.Fprintf(file, "Objects    | Time (s) | % of Target\n")
+	fmt.Fprintf(file, "Objects    | Time (s) | %% of Target\n")
 	fmt.Fprintf(file, "-----------|----------|------------\n")
 	for _, r := range curve.Results {
 		pct := float64(r.TotalTime) / float64(curve.TargetTime) * 100

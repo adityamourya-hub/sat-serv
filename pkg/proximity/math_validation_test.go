@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 func TestPrecisionOrbitalConversion(t *testing.T) {
@@ -17,26 +18,26 @@ func TestPrecisionOrbitalConversion(t *testing.T) {
 	// 2. Propagate 1 day (1440 minutes)
 	start := time.Date(2024, 4, 17, 12, 0, 0, 0, time.UTC)
 	future := start.Add(24 * time.Hour)
-	
+
 	p, v, err := orbital.PropagateSGP4(tle1, tle2, future)
 	if err != nil {
 		t.Fatalf("SGP4 propagation failed: %v", err)
 	}
 
-	stateOrig := orbital.State{
-		X: p[0], Y: p[1], Z: p[2],
-		VX: v[0], VY: v[1], VZ: v[2],
+	stateOrig := physics.State{
+		Pos: physics.Vector3{p[0], p[1], p[2]},
+		Vel: physics.Vector3{v[0], v[1], v[2]},
 	}
 
 	// 3. Round-trip: State -> Kepler -> State
-	kepler := CartesianToKepler(stateOrig, mu)
-	stateFinal := KeplerToECI(kepler, kepler.M, mu)
+	kepler := physics.CartesianToKepler(stateOrig, mu)
+	stateFinal := physics.KeplerToECI(kepler, kepler.M, mu)
 
 	// 4. Calculate error
-	dx := stateOrig.X - stateFinal[0]
-	dy := stateOrig.Y - stateFinal[1]
-	dz := stateOrig.Z - stateFinal[2]
-	errorMeters := math.Sqrt(dx*dx + dy*dy + dz*dz) * 1000.0
+	dx := stateOrig.Pos[0] - stateFinal[0]
+	dy := stateOrig.Pos[1] - stateFinal[1]
+	dz := stateOrig.Pos[2] - stateFinal[2]
+	errorMeters := math.Sqrt(dx*dx+dy*dy+dz*dz) * 1000.0
 
 	t.Logf("State: %+v", stateOrig)
 	t.Logf("Kepler: %+v", kepler)
@@ -55,24 +56,24 @@ func TestLEOPrecision(t *testing.T) {
 
 	start := time.Date(2024, 4, 17, 12, 0, 0, 0, time.UTC)
 	future := start.Add(12 * time.Hour) // 12 hours
-	
+
 	p, v, err := orbital.PropagateSGP4(tle1, tle2, future)
 	if err != nil {
 		t.Fatalf("SGP4 propagation failed: %v", err)
 	}
 
-	stateOrig := orbital.State{
-		X: p[0], Y: p[1], Z: p[2],
-		VX: v[0], VY: v[1], VZ: v[2],
+	stateOrig := physics.State{
+		Pos: physics.Vector3{p[0], p[1], p[2]},
+		Vel: physics.Vector3{v[0], v[1], v[2]},
 	}
 
-	kepler := CartesianToKepler(stateOrig, mu)
-	stateFinal := KeplerToECI(kepler, kepler.M, mu)
+	kepler := physics.CartesianToKepler(stateOrig, mu)
+	stateFinal := physics.KeplerToECI(kepler, kepler.M, mu)
 
-	dx := stateOrig.X - stateFinal[0]
-	dy := stateOrig.Y - stateFinal[1]
-	dz := stateOrig.Z - stateFinal[2]
-	errorMeters := math.Sqrt(dx*dx + dy*dy + dz*dz) * 1000.0
+	dx := stateOrig.Pos[0] - stateFinal[0]
+	dy := stateOrig.Pos[1] - stateFinal[1]
+	dz := stateOrig.Pos[2] - stateFinal[2]
+	errorMeters := math.Sqrt(dx*dx+dy*dy+dz*dz) * 1000.0
 
 	t.Logf("LEO Error: %.6f meters", errorMeters)
 	if errorMeters > 1.0 {

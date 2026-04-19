@@ -4,26 +4,24 @@ import (
 	"fmt"
 	"testing"
 
-	engcrypto "ssis/pkg/crypto"
-	"ssis/pkg/hypersonic"
-	"ssis/pkg/maneuver"
+	"ssis/pkg/cryptography"
 	"ssis/pkg/ml"
 	"ssis/pkg/ml/hybrid"
-	"ssis/pkg/proximity"
+	"ssis/pkg/physics"
 )
 
 type lowConfidenceEngine struct{}
 
-func (e lowConfidenceEngine) PredictRapidScore(track hypersonic.RapidTrack) (hypersonic.RapidRankInference, error) {
-	return hypersonic.RapidRankInference{Score: 10, Confidence: 0.1}, nil
+func (e lowConfidenceEngine) PredictRapidScore(track physics.RapidTrack) (physics.RapidRankInference, error) {
+	return physics.RapidRankInference{Score: 10, Confidence: 0.1}, nil
 }
 
-func (e lowConfidenceEngine) PredictManeuver(window []maneuver.ManeuverFrame) (maneuver.ManeuverInference, error) {
-	return maneuver.ManeuverInference{Probability: 0.2, Confidence: 0.1, Type: maneuver.ManeuverNone}, nil
+func (e lowConfidenceEngine) PredictManeuver(window []physics.ManeuverFrame) (physics.ManeuverInference, error) {
+	return physics.ManeuverInference{Probability: 0.2, Confidence: 0.1, Type: physics.ManeuverNone}, nil
 }
 
-func (e lowConfidenceEngine) PredictCollisionRisk(input proximity.CollisionRiskInput, graph proximity.CollisionNeighborhoodGraph) (proximity.CollisionGraphInference, error) {
-	return proximity.CollisionGraphInference{RiskScore: 0.5, Confidence: 0.1}, nil
+func (e lowConfidenceEngine) PredictCollisionRisk(input physics.CollisionRiskInput, graph physics.CollisionNeighborhoodGraph) (physics.CollisionGraphInference, error) {
+	return physics.CollisionGraphInference{RiskScore: 0.5, Confidence: 0.1}, nil
 }
 
 func (e lowConfidenceEngine) IsHealthy() bool { return true }
@@ -45,7 +43,7 @@ func TestOperationalScenarioDesignCoverage(t *testing.T) {
 		UncertaintyLower: 0,
 		UncertaintyUpper: 0,
 	}
-	signer := engcrypto.NewSigner("coverage-key")
+	signer := cryptography.NewSigner("coverage-key")
 	alert.Signature = signer.GenerateProof(alert.AssetID, "OPS_SCENARIO", alert.TimestampUnix)
 	alert.SignatureValid = signer.Verify([]byte(fmt.Sprintf("%d:%s:%d", alert.AssetID, "OPS_SCENARIO", alert.TimestampUnix)), alert.Signature)
 
@@ -98,7 +96,7 @@ func TestOperationalDatasetScaleProfiles(t *testing.T) {
 			t.Fatalf("expected at least one corrupted record for %d", sz)
 		}
 
-		signer := engcrypto.NewSigner("dataset-key")
+		signer := cryptography.NewSigner("dataset-key")
 		ts := int64(1712736000 + sz)
 		sig := signer.GenerateProof(43286, "DATASET_SCALE", ts)
 		if !signer.Verify([]byte(fmt.Sprintf("%d:%s:%d", 43286, "DATASET_SCALE", ts)), sig) {
@@ -153,7 +151,7 @@ func TestOperationalRunConcurrentPipeline(t *testing.T) {
 func TestOperationalFallbackWhenConfidenceDrops(t *testing.T) {
 	orch := hybrid.NewOrchestrator(lowConfidenceEngine{})
 
-	input := proximity.CollisionRiskInput{
+	input := physics.CollisionRiskInput{
 		MissDistanceKm:      0.04,
 		HardbodyRadiusKm:    0.005,
 		RelativeVelocityKmS: 6,
@@ -162,12 +160,12 @@ func TestOperationalFallbackWhenConfidenceDrops(t *testing.T) {
 		SigmaIntrackKm:      0.02,
 		SigmaCrosstrackKm:   0.02,
 	}
-	_, cDecision := orch.EvaluateCollision(input, proximity.CollisionNeighborhoodGraph{Nodes: []proximity.CollisionGraphNode{{ID: 1}, {ID: 2}}})
+	_, cDecision := orch.EvaluateCollision(input, physics.CollisionNeighborhoodGraph{Nodes: []physics.CollisionGraphNode{{ObjectID: 1}, {ObjectID: 2}}})
 	if cDecision.Source != "fallback" {
 		t.Fatalf("expected fallback for low confidence collision model")
 	}
 
-	_, rDecisions := orch.RankRapid([]hypersonic.RapidTrack{{ID: 11, Mach: 8, AltitudeKm: 55, BurnoutVelocityKmS: 4.1, DistanceToAssetKm: 400, RadarCrossSection: 0.3}}, 3000, 1)
+	_, rDecisions := orch.RankRapid([]physics.RapidTrack{{ID: 11, Mach: 8, AltitudeKm: 55, BurnoutVelocityKmS: 4.1, DistanceToAssetKm: 400, RadarCrossSection: 0.3}}, 3000, 1)
 	if len(rDecisions) == 0 || rDecisions[0].Source != "fallback" {
 		t.Fatalf("expected rapid fallback")
 	}
@@ -187,7 +185,7 @@ func TestOperationalFallbackWhenConfidenceDrops(t *testing.T) {
 		t.Fatalf("expected maneuver fallback with low confidence model")
 	}
 
-	signer := engcrypto.NewSigner("fallback-key")
+	signer := cryptography.NewSigner("fallback-key")
 	ts := int64(1712737000)
 	sig := signer.GenerateProof(77, "FALLBACK_EVENT", ts)
 	if !signer.Verify([]byte(fmt.Sprintf("%d:%s:%d", 77, "FALLBACK_EVENT", ts)), sig) {
@@ -195,7 +193,7 @@ func TestOperationalFallbackWhenConfidenceDrops(t *testing.T) {
 	}
 
 	lat := MeasureLatency(10, func() {
-		_, _ = orch.EvaluateCollision(input, proximity.CollisionNeighborhoodGraph{Nodes: []proximity.CollisionGraphNode{{ID: 1}}})
+		_, _ = orch.EvaluateCollision(input, physics.CollisionNeighborhoodGraph{Nodes: []physics.CollisionGraphNode{{ObjectID: 1}}})
 	})
 	t.Logf("signed alert example: asset=77 event=FALLBACK_EVENT sig=%s", sig)
 	t.Logf("performance numbers: p50=%.2fms p95=%.2fms p99=%.2fms", lat.P50Ms, lat.P95Ms, lat.P99Ms)
@@ -209,7 +207,7 @@ func TestOperationalInferenceAccuracyVsClassicalBaseline(t *testing.T) {
 	for i := 0; i < 300 && i < len(data.Threats); i++ {
 		th := data.Threats[i]
 		cases = append(cases, CollisionCase{
-			Input: proximity.CollisionRiskInput{
+			Input: physics.CollisionRiskInput{
 				MissDistanceKm:      th.MissDistanceKm,
 				HardbodyRadiusKm:    0.005,
 				RelativeVelocityKmS: th.RelativeVelocityKmS,
@@ -218,7 +216,7 @@ func TestOperationalInferenceAccuracyVsClassicalBaseline(t *testing.T) {
 				SigmaIntrackKm:      0.03,
 				SigmaCrosstrackKm:   0.03,
 			},
-			Graph:       proximity.CollisionNeighborhoodGraph{Nodes: []proximity.CollisionGraphNode{{ID: th.TargetObjectID}}},
+			Graph:       physics.CollisionNeighborhoodGraph{Nodes: []physics.CollisionGraphNode{{ObjectID: th.TargetObjectID}}},
 			IsCollision: th.RiskLabel >= 0.2,
 		})
 	}
@@ -231,7 +229,7 @@ func TestOperationalInferenceAccuracyVsClassicalBaseline(t *testing.T) {
 		t.Fatalf("invalid accuracy metrics")
 	}
 
-	signer := engcrypto.NewSigner("accuracy-key")
+	signer := cryptography.NewSigner("accuracy-key")
 	ts := int64(1712737200)
 	sig := signer.GenerateProof(43286, "ACCURACY_EVENT", ts)
 	if !signer.Verify([]byte(fmt.Sprintf("%d:%s:%d", 43286, "ACCURACY_EVENT", ts)), sig) {

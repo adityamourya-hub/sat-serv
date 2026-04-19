@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	engcrypto "ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 	safemath "ssis/pkg/math"
 	"ssis/pkg/physics"
 
@@ -66,7 +66,7 @@ type ODResult struct {
 }
 
 // RunSequentialODUKF performs sequential orbit determination using UKF.
-func RunSequentialODUKF(initial physics.State, initialCov [][]float64, measurements []ODMeasurement, ukfCfg UKFConfig, sncCfg SNCConfig, pinn physics.StateRefiner, trans physics.HistoryRefiner, signer *engcrypto.Signer, objectID int) (ODResult, error) {
+func RunSequentialODUKF(initial physics.State, initialCov [][]float64, measurements []ODMeasurement, ukfCfg UKFConfig, sncCfg SNCConfig, pinn physics.StateRefiner, trans physics.HistoryRefiner, signer *cryptography.Signer, objectID int) (ODResult, error) {
 	if len(measurements) == 0 {
 		return ODResult{}, fmt.Errorf("no measurements provided")
 	}

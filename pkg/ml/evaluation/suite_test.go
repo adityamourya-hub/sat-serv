@@ -3,10 +3,9 @@ package evaluation
 import (
 	"testing"
 
-	"ssis/pkg/hypersonic"
 	"ssis/pkg/ml"
 	"ssis/pkg/ml/hybrid"
-	"ssis/pkg/proximity"
+	"ssis/pkg/physics"
 )
 
 func TestBinaryMetrics(t *testing.T) {
@@ -52,8 +51,8 @@ func TestEvaluateSuiteWithHybridOrchestrator(t *testing.T) {
 	}
 
 	collisionCases := []CollisionCase{
-		{Input: proximity.CollisionRiskInput{MissDistanceKm: 0.01, HardbodyRadiusKm: 0.005, RelativeVelocityKmS: 8, SigmaRadialKm: 0.01, SigmaIntrackKm: 0.01, SigmaCrosstrackKm: 0.01}, Graph: proximity.CollisionNeighborhoodGraph{Nodes: []proximity.CollisionGraphNode{{ID: 1}}}, IsCollision: true},
-		{Input: proximity.CollisionRiskInput{MissDistanceKm: 10, HardbodyRadiusKm: 0.005, RelativeVelocityKmS: 5, SigmaRadialKm: 0.05, SigmaIntrackKm: 0.05, SigmaCrosstrackKm: 0.05}, Graph: proximity.CollisionNeighborhoodGraph{Nodes: []proximity.CollisionGraphNode{{ID: 2}}}, IsCollision: false},
+		{Input: physics.CollisionRiskInput{MissDistanceKm: 0.01, HardbodyRadiusKm: 0.005, RelativeVelocityKmS: 8, SigmaRadialKm: 0.01, SigmaIntrackKm: 0.01, SigmaCrosstrackKm: 0.01}, Graph: physics.CollisionNeighborhoodGraph{Nodes: []physics.CollisionGraphNode{{ObjectID: 1}}}, IsCollision: true},
+		{Input: physics.CollisionRiskInput{MissDistanceKm: 10, HardbodyRadiusKm: 0.005, RelativeVelocityKmS: 5, SigmaRadialKm: 0.05, SigmaIntrackKm: 0.05, SigmaCrosstrackKm: 0.05}, Graph: physics.CollisionNeighborhoodGraph{Nodes: []physics.CollisionGraphNode{{ObjectID: 2}}}, IsCollision: false},
 	}
 	cMet, err := EvaluateCollisionAccuracy(orch, collisionCases, 1e-4)
 	if err != nil {
@@ -64,8 +63,8 @@ func TestEvaluateSuiteWithHybridOrchestrator(t *testing.T) {
 	}
 
 	rapidCases := []RapidCase{
-		{Track: hypersonic.RapidTrack{ID: 11, Mach: 12, AltitudeKm: 60, BurnoutVelocityKmS: 6, DistanceToAssetKm: 200, RadarCrossSection: 0.1}, IsHighThreat: true},
-		{Track: hypersonic.RapidTrack{ID: 12, Mach: 2, AltitudeKm: 500, BurnoutVelocityKmS: 2, DistanceToAssetKm: 2500, RadarCrossSection: 1.0}, IsHighThreat: false},
+		{Track: physics.RapidTrack{ID: 11, Mach: 12, AltitudeKm: 60, BurnoutVelocityKmS: 6, DistanceToAssetKm: 200, RadarCrossSection: 0.1}, IsHighThreat: true},
+		{Track: physics.RapidTrack{ID: 12, Mach: 2, AltitudeKm: 500, BurnoutVelocityKmS: 2, DistanceToAssetKm: 2500, RadarCrossSection: 1.0}, IsHighThreat: false},
 	}
 	rMet, err := EvaluateRapidAccuracy(orch, rapidCases, 3000, 100)
 	if err != nil {

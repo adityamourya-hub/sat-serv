@@ -5,7 +5,7 @@ import (
 	"math"
 	"sync"
 
-	engcrypto "ssis/pkg/crypto"
+	engcrypto "ssis/pkg/cryptography"
 	"ssis/pkg/octree"
 )
 

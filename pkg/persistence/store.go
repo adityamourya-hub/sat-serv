@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"ssis/pkg/catalog"
-	"ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 )
 
 // PersistenceBackend defines the interface for database implementations.
@@ -26,7 +26,7 @@ type Config struct {
 	Path         string
 	SyncInterval time.Duration
 	MaxHistory   int
-	Signer       *crypto.Signer
+	Signer       *cryptography.Signer
 }
 
 // PersistentStore wraps the in-memory store with a persistence backend.

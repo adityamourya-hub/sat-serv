@@ -1,9 +1,9 @@
 SHELL := /bin/bash
 
 GO ?= go
-PKG := ./cmd/ssa_ops_runner
+PKG := ./engine
 OUT_DIR := build
-BIN := $(OUT_DIR)/ssa_ops_runner
+BIN := $(OUT_DIR)/ssis_engine
 DIST_DIR := dist
 
 GOFLAGS ?= -trimpath

@@ -3,10 +3,9 @@ package evaluation
 import (
 	"testing"
 
-	"ssis/pkg/hypersonic"
 	"ssis/pkg/ml"
 	"ssis/pkg/ml/hybrid"
-	"ssis/pkg/proximity"
+	"ssis/pkg/physics"
 )
 
 func BenchmarkDetectManeuversLatency(b *testing.B) {
@@ -26,7 +25,7 @@ func BenchmarkDetectManeuversLatency(b *testing.B) {
 
 func BenchmarkEvaluateCollisionLatency(b *testing.B) {
 	orch := hybrid.NewOrchestrator(ml.NewDummyInferenceEngine())
-	input := proximity.CollisionRiskInput{
+	input := physics.CollisionRiskInput{
 		MissDistanceKm:      0.08,
 		HardbodyRadiusKm:    0.005,
 		RelativeVelocityKmS: 9,
@@ -35,8 +34,8 @@ func BenchmarkEvaluateCollisionLatency(b *testing.B) {
 		SigmaIntrackKm:      0.03,
 		SigmaCrosstrackKm:   0.03,
 	}
-	graph := proximity.CollisionNeighborhoodGraph{
-		Nodes: []proximity.CollisionGraphNode{{ID: 1}, {ID: 2}, {ID: 3}},
+	graph := physics.CollisionNeighborhoodGraph{
+		Nodes: []physics.CollisionGraphNode{{ObjectID: 1}, {ObjectID: 2}, {ObjectID: 3}},
 	}
 
 	b.ResetTimer()
@@ -47,7 +46,7 @@ func BenchmarkEvaluateCollisionLatency(b *testing.B) {
 
 func BenchmarkRankRapidLatency(b *testing.B) {
 	orch := hybrid.NewOrchestrator(ml.NewDummyInferenceEngine())
-	tracks := []hypersonic.RapidTrack{
+	tracks := []physics.RapidTrack{
 		{ID: 1, Mach: 12, AltitudeKm: 55, BurnoutVelocityKmS: 6, DistanceToAssetKm: 200, RadarCrossSection: 0.1},
 		{ID: 2, Mach: 7, AltitudeKm: 85, BurnoutVelocityKmS: 4, DistanceToAssetKm: 500, RadarCrossSection: 0.3},
 		{ID: 3, Mach: 3, AltitudeKm: 450, BurnoutVelocityKmS: 2, DistanceToAssetKm: 2500, RadarCrossSection: 1.2},

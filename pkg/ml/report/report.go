@@ -3,10 +3,9 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"ssis/pkg/cryptography"
 	"strings"
 	"time"
-
-	engcrypto "ssis/pkg/crypto"
 )
 
 type AlertSeverity string
@@ -54,11 +53,11 @@ type NarrativeModel interface {
 }
 
 type Generator struct {
-	Signer *engcrypto.Signer
+	Signer *cryptography.Signer
 	Model  NarrativeModel
 }
 
-func NewGenerator(signer *engcrypto.Signer, model NarrativeModel) *Generator {
+func NewGenerator(signer *cryptography.Signer, model NarrativeModel) *Generator {
 	return &Generator{Signer: signer, Model: model}
 }
 

@@ -3,9 +3,7 @@ package ml
 import (
 	"testing"
 
-	"ssis/pkg/hypersonic"
-	"ssis/pkg/maneuver"
-	"ssis/pkg/proximity"
+	"ssis/pkg/physics"
 )
 
 // ============================================================================
@@ -23,7 +21,7 @@ func TestDummyInferenceEngine_PredictRapidScore(t *testing.T) {
 	engine := NewDummyInferenceEngine()
 
 	// Test case 1: High-threat track (reachable, close, fast)
-	track1 := hypersonic.RapidTrack{
+	track1 := physics.RapidTrack{
 		Mach:               15.0,
 		AltitudeKm:         50.0,
 		BurnoutVelocityKmS: 6.0,
@@ -54,7 +52,7 @@ func TestDummyInferenceEngine_PredictRapidScore(t *testing.T) {
 	t.Logf("[High-threat track] Score: %.2f, Confidence: %.2f", inf1.Score, inf1.Confidence)
 
 	// Test case 2: Low-threat track (far, slow, unreachable)
-	track2 := hypersonic.RapidTrack{
+	track2 := physics.RapidTrack{
 		Mach:               2.0,
 		AltitudeKm:         500.0,
 		BurnoutVelocityKmS: 2.0,
@@ -81,14 +79,14 @@ func TestDummyInferenceEngine_PredictManeuver(t *testing.T) {
 	engine := NewDummyInferenceEngine()
 
 	// Test case 1: Clean window (no maneuver)
-	window1 := []maneuver.ManeuverFrame{
+	window := []physics.ManeuverFrame{
 		{Residual: 0.1, DeltaV: 0.01},
 		{Residual: 0.05, DeltaV: 0.01},
 		{Residual: 0.08, DeltaV: 0.01},
 		{Residual: 0.12, DeltaV: 0.01},
 	}
 
-	inf1, err := engine.PredictManeuver(window1)
+	inf1, err := engine.PredictManeuver(window)
 	if err != nil {
 		t.Fatalf("PredictManeuver failed: %v", err)
 	}
@@ -100,7 +98,7 @@ func TestDummyInferenceEngine_PredictManeuver(t *testing.T) {
 	t.Logf("[Clean window] Probability: %.2f, Type: %s", inf1.Probability, inf1.Type)
 
 	// Test case 2: High-variance window (likely maneuver)
-	window2 := []maneuver.ManeuverFrame{
+	window2 := []physics.ManeuverFrame{
 		{Residual: 0.1, DeltaV: 0.01},
 		{Residual: 2.5, DeltaV: 0.5},
 		{Residual: 2.3, DeltaV: 0.5},
@@ -116,7 +114,7 @@ func TestDummyInferenceEngine_PredictManeuver(t *testing.T) {
 		t.Logf("[High-variance window] EXPECTED high probability, got %.2f", inf2.Probability)
 	}
 
-	if inf2.Type == maneuver.ManeuverNone {
+	if inf2.Type != physics.ManeuverNone {
 		t.Logf("[High-variance window] EXPECTED non-none type, got %s", inf2.Type)
 	}
 
@@ -127,7 +125,7 @@ func TestDummyInferenceEngine_PredictCollisionRisk(t *testing.T) {
 	engine := NewDummyInferenceEngine()
 
 	// Test case 1: Safe conjunction (large miss distance)
-	input1 := proximity.CollisionRiskInput{
+	input1 := physics.CollisionRiskInput{
 		MissDistanceKm:      10.0,
 		HardbodyRadiusKm:    0.005,
 		RelativeVelocityKmS: 5.0,
@@ -137,9 +135,9 @@ func TestDummyInferenceEngine_PredictCollisionRisk(t *testing.T) {
 		SigmaCrosstrackKm:   0.05,
 	}
 
-	graph := proximity.CollisionNeighborhoodGraph{
-		Nodes: []proximity.CollisionGraphNode{
-			{ID: 1, Features: []float64{10.0, 5.0}},
+	graph := physics.CollisionNeighborhoodGraph{
+		Nodes: []physics.CollisionGraphNode{
+			{ObjectID: 1, Features: []float64{10.0, 5.0}},
 		},
 	}
 
@@ -156,7 +154,7 @@ func TestDummyInferenceEngine_PredictCollisionRisk(t *testing.T) {
 		inf1.RiskScore, inf1.UncertaintyLower, inf1.UncertaintyUpper)
 
 	// Test case 2: Dangerous conjunction (small miss distance)
-	input2 := proximity.CollisionRiskInput{
+	input2 := physics.CollisionRiskInput{
 		MissDistanceKm:      0.01,
 		HardbodyRadiusKm:    0.005,
 		RelativeVelocityKmS: 15.0,
@@ -197,7 +195,7 @@ func TestBenchmarkLatency(t *testing.T) {
 	engine := NewDummyInferenceEngine()
 
 	// Rapid score prediction
-	track := hypersonic.RapidTrack{
+	track := physics.RapidTrack{
 		Mach:               10.0,
 		AltitudeKm:         75.0,
 		BurnoutVelocityKmS: 6.0,
@@ -235,7 +233,7 @@ func (m *DummyManeuverModel) Name() string {
 	return "DummyManeuverModel"
 }
 
-func (m *DummyManeuverModel) Predict(window []maneuver.ManeuverFrame) (maneuver.ManeuverInference, error) {
+func (m *DummyManeuverModel) Predict(window []physics.ManeuverFrame) (physics.ManeuverInference, error) {
 	return m.engine.PredictManeuver(window)
 }
 
@@ -247,8 +245,8 @@ func (m *DummyCollisionModel) Name() string {
 	return "DummyCollisionModel"
 }
 
-func (m *DummyCollisionModel) PredictRisk(input proximity.CollisionRiskInput,
-	graph proximity.CollisionNeighborhoodGraph) (proximity.CollisionGraphInference, error) {
+func (m *DummyCollisionModel) PredictRisk(input physics.CollisionRiskInput,
+	graph physics.CollisionNeighborhoodGraph) (physics.CollisionGraphInference, error) {
 	return m.engine.PredictCollisionRisk(input, graph)
 }
 

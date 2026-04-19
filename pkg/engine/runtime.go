@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"ssis/pkg/catalog"
-	"ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 	"ssis/pkg/types"
 )
 
@@ -64,7 +64,7 @@ type Runtime struct {
 
 	bus        *types.EventBus
 	store      *catalog.Store
-	signer     *crypto.Signer
+	signer     *cryptography.Signer
 	metrics    *EngineMetrics
 	tasker     *Tasker
 	onnxPool   *ONNXPool
@@ -89,7 +89,7 @@ func (r *Runtime) GetEventBus() *types.EventBus {
 /**
  * NewRuntime initializes the SSIS orchestrator.
  */
-func NewRuntime(capacity int, store *catalog.Store, signer *crypto.Signer, pool *ONNXPool) *Runtime {
+func NewRuntime(capacity int, store *catalog.Store, signer *cryptography.Signer, pool *ONNXPool) *Runtime {
 	numUKF := 75
 	r := &Runtime{
 		ukfQueues:  make([]chan *types.Observation, numUKF),

@@ -3,13 +3,13 @@ package fusion
 import (
 	"testing"
 
-	engcrypto "ssis/pkg/crypto"
-	"ssis/pkg/orbital"
+	engcrypto "ssis/pkg/cryptography"
+	"ssis/pkg/physics"
 )
 
 func TestFuseWithUKFRadarAndTLE(t *testing.T) {
 	// Prior state: LEO object at 7000km, moving primarily in Y direction
-	prior := orbital.State{X: 7000, Y: 0, Z: 10, VX: 0, VY: 7.5, VZ: 0.01}
+	prior := physics.State{Pos: physics.Vector3{7000, 0, 10}, Vel: physics.Vector3{0, 7.5, 0.01}}
 	cov := [][]float64{
 		{10, 0, 0, 0, 0, 0},
 		{0, 10, 0, 0, 0, 0},
@@ -34,7 +34,7 @@ func TestFuseWithUKFRadarAndTLE(t *testing.T) {
 
 	// TLE measurement consistent with propagated state (larger covariance to pass gate)
 	tlem := &TLEMeasurement{
-		State:         orbital.State{X: 7000.1, Y: 225.0, Z: 10.3, VX: 0.01, VY: 7.48, VZ: 0.01},
+		State:         physics.State{Pos: physics.Vector3{7000.1, 225.0, 10.3}, Vel: physics.Vector3{0.01, 7.48, 0.01}},
 		PositionStdKm: 5.0,
 		VelocityStdKm: 0.5,
 	}
@@ -69,7 +69,7 @@ func TestFuseWithUKFRadarAndTLE(t *testing.T) {
 
 func TestBuildSignedUncertaintyAlert(t *testing.T) {
 	signer := engcrypto.NewSigner("ukf-alert-test-key")
-	state := orbital.State{X: 1000, Y: 2000, Z: 3000, VX: 1, VY: 2, VZ: 3}
+	state := physics.State{Pos: physics.Vector3{1000, 2000, 3000}, Vel: physics.Vector3{1, 2, 3}}
 	cov := [][]float64{
 		{1, 0, 0, 0, 0, 0},
 		{0, 1, 0, 0, 0, 0},
@@ -89,7 +89,7 @@ func TestBuildSignedUncertaintyAlert(t *testing.T) {
 
 func TestPropagateWithUKFProducesCovarianceEachStep(t *testing.T) {
 	signer := engcrypto.NewSigner("prop-test-key")
-	initial := orbital.State{X: 7000, Y: 0, Z: 0, VX: 0, VY: 7.5, VZ: 0}
+	initial := physics.State{Pos: physics.Vector3{7000, 0, 0}, Vel: physics.Vector3{0, 7.5, 0}}
 	cov := [][]float64{
 		{1, 0, 0, 0, 0, 0},
 		{0, 1, 0, 0, 0, 0},

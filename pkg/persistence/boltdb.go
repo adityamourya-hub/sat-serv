@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"ssis/pkg/catalog"
+
 	"go.etcd.io/bbolt"
 )
 
@@ -65,8 +66,13 @@ func (b *BoltDBBackend) UpsertObject(record catalog.SDAObject) error {
 			return err
 		}
 
-		// Historical entry: ID:EpochTT
-		histKey := []byte(fmt.Sprintf("%d:%.6f", record.ID, record.EpochTT))
+		// Historical entry: ID:Timestamp (Unix time for query compatibility)
+		timestamp := record.Timestamp
+		if timestamp == 0 && record.EpochTT != 0 {
+			// Convert EpochTT (Julian Date) to Unix time if Timestamp not set
+			timestamp = (record.EpochTT - 2440587.5) * 86400.0
+		}
+		histKey := []byte(fmt.Sprintf("%d:%d", record.ID, int64(timestamp)))
 		return histBucket.Put(histKey, buf.Bytes())
 	})
 }
@@ -95,7 +101,7 @@ func (b *BoltDBBackend) GetLatestSnapshot() ([]catalog.SDAObject, error) {
 func (b *BoltDBBackend) GetObjectAtTime(id int, t time.Time) (catalog.SDAObject, error) {
 	var rec catalog.SDAObject
 	targetTS := t.Unix()
-	
+
 	err := b.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte("history"))
 		prefix := []byte(fmt.Sprintf("%d:", id))
@@ -117,10 +123,10 @@ func (b *BoltDBBackend) GetObjectAtTime(id int, t time.Time) (catalog.SDAObject,
 		if bestVal != nil {
 			return gob.NewDecoder(bytes.NewReader(bestVal)).Decode(&rec)
 		}
-		
+
 		return fmt.Errorf("no historical record found for ID %d at time %v", id, t)
 	})
-	
+
 	return rec, err
 }
 
@@ -141,7 +147,7 @@ func (b *BoltDBBackend) QueryObjectsInWindow(start, end time.Time) ([]catalog.SD
 	err := b.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte("history"))
 		c := bucket.Cursor()
-		
+
 		for k, v := c.First(); k != nil; k, v = c.Next() {
 			var rec catalog.SDAObject
 			if err := gob.NewDecoder(bytes.NewReader(v)).Decode(&rec); err == nil {

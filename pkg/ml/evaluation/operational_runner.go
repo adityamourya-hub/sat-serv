@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"ssis/pkg/common"
-	engcrypto "ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 	"ssis/pkg/ml"
 	"ssis/pkg/ml/explainability"
 	"ssis/pkg/ml/hybrid"
@@ -127,17 +127,17 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 		engine = ml.NewDummyInferenceEngine()
 	}
 	orch := hybrid.NewOrchestrator(engine)
-	signer, signErr := engcrypto.NewSignerFromEnv("SSIS_SIGNING_KEY")
+	signer, signErr := cryptography.NewSignerFromEnv("SSIS_SIGNING_KEY")
 	if signErr != nil {
 		common.EmitFallbackEvent("crypto", "operational_runner", "signer_init_failed", "use_deterministic_signer", 0.0, strict, map[string]interface{}{"error": signErr.Error()})
 		if strict {
 			return OperationalRunMetrics{}, fmt.Errorf("strict mode: signer init failed: %w", signErr)
 		}
 		fmt.Fprintf(os.Stderr, "warning: signer init failed: %v; using deterministic fallback signer\n", signErr)
-		signer = engcrypto.NewSigner("operational-sim-fallback")
+		signer = cryptography.NewSigner("operational-sim-fallback")
 	}
 
-	cycleSteps := cfg.WatchHours * 12 
+	cycleSteps := cfg.WatchHours * 12
 	if cycleSteps < 24 {
 		cycleSteps = 24
 	}
@@ -215,7 +215,7 @@ func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, 
 				case 3:
 					asset := generatePhysicsState(threat.TargetObjectID)
 					intruder := generatePhysicsState(threat.ThreatID)
-					reach, err := orch.EvaluateReachability(asset, intruder, 0.05, 7200.0) 
+					reach, err := orch.EvaluateReachability(asset, intruder, 0.05, 7200.0)
 					if err == nil && reach.IsThreat {
 						countMu.Lock()
 						reachabilityAlerts++

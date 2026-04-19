@@ -7,7 +7,7 @@ import (
 	"math"
 	"time"
 
-	"ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 	"ssis/pkg/orbital"
 	"ssis/pkg/physics"
 )
@@ -27,7 +27,7 @@ type HybridPropagator struct {
 	Axiom   *orbital.AxiomPropagator
 	SGP4    *orbital.SGP4Propagator
 	Metrics *EngineMetrics
-	Signer  crypto.Signer
+	Signer  cryptography.Signer
 
 	ManeuverThreshold float64
 	EnergyEpsilon     float64
@@ -36,7 +36,7 @@ type HybridPropagator struct {
 /**
  * NewHybridPropagator initializes the physics-gated orchestrator.
  */
-func NewHybridPropagator(axiom *orbital.AxiomPropagator, sgp4 *orbital.SGP4Propagator, metrics *EngineMetrics, signer crypto.Signer) *HybridPropagator {
+func NewHybridPropagator(axiom *orbital.AxiomPropagator, sgp4 *orbital.SGP4Propagator, metrics *EngineMetrics, signer cryptography.Signer) *HybridPropagator {
 	fmt.Printf("[TRC] Entering NewHybridPropagator\n")
 	defer fmt.Printf("[TRC] Exiting NewHybridPropagator\n")
 	return &HybridPropagator{

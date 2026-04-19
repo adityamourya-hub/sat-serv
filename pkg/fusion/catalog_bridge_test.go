@@ -4,11 +4,11 @@ import (
 	"testing"
 
 	"ssis/pkg/catalog"
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 func TestBuildCatalogRecordFromFusion(t *testing.T) {
-	state := orbital.State{X: 10, Y: 20, Z: 30}
+	state := physics.State{Pos: physics.Vector3{10, 20, 30}}
 	cov := [][]float64{
 		{1, 0, 0, 0, 0, 0},
 		{0, 4, 0, 0, 0, 0},
@@ -30,7 +30,7 @@ func TestRapidRecatalogFromFusion(t *testing.T) {
 	store := catalog.NewStore(10)
 	store.ApplyDeltaWithRebuild(catalog.Delta{Upserts: []catalog.ObjectRecord{{ID: 7, Name: "A", PosSigmaKm: 1.2}}}, false)
 	fusionRes := FusionResult{
-		State: orbital.State{X: 11, Y: 12, Z: 13},
+		State: physics.State{Pos: physics.Vector3{11, 12, 13}},
 		Covariance: [][]float64{
 			{1, 0, 0, 0, 0, 0},
 			{0, 1, 0, 0, 0, 0},

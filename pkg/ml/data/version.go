@@ -97,19 +97,33 @@ type Sample struct {
 	PropagateMins float64 `json:"propagate_mins"`
 
 	// True (noiseless) state
-	TrueX, TrueY, TrueZ    float64 `json:"true_x,true_y,true_z"`
-	TrueVX, TrueVY, TrueVZ float64 `json:"true_vx,true_vy,true_vz"`
+	TrueX  float64 `json:"true_x"`
+	TrueY  float64 `json:"true_y"`
+	TrueZ  float64 `json:"true_z"`
+	TrueVX float64 `json:"true_vx"`
+	TrueVY float64 `json:"true_vy"`
+	TrueVZ float64 `json:"true_vz"`
 
 	// Noisy observations
-	ObsX, ObsY, ObsZ    float64 `json:"obs_x,obs_y,obs_z"`
-	ObsVX, ObsVY, ObsVZ float64 `json:"obs_vx,obs_vy,obs_vz"`
+	ObsX  float64 `json:"obs_x"`
+	ObsY  float64 `json:"obs_y"`
+	ObsZ  float64 `json:"obs_z"`
+	ObsVX float64 `json:"obs_vx"`
+	ObsVY float64 `json:"obs_vy"`
+	ObsVZ float64 `json:"obs_vz"`
 
 	// Residuals (for maneuver detection training)
-	ResidualX, ResidualY, ResidualZ float64 `json:"residual_x,residual_y,residual_z"`
+	ResidualX float64 `json:"residual_x"`
+	ResidualY float64 `json:"residual_y"`
+	ResidualZ float64 `json:"residual_z"`
 
 	// Uncertainty (covariance diagonal)
-	CovX, CovY, CovZ    float64 `json:"cov_x,cov_y,cov_z"`
-	CovVX, CovVY, CovVZ float64 `json:"cov_vx,cov_vy,cov_vz"`
+	CovX  float64 `json:"cov_x"`
+	CovY  float64 `json:"cov_y"`
+	CovZ  float64 `json:"cov_z"`
+	CovVX float64 `json:"cov_vx"`
+	CovVY float64 `json:"cov_vy"`
+	CovVZ float64 `json:"cov_vz"`
 
 	// Metadata
 	Split       string  `json:"split"` // "train", "val", "test"

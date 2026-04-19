@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"ssis/pkg/catalog"
-	"ssis/pkg/crypto"
+	"ssis/pkg/cryptography"
 	"ssis/pkg/engine"
 	"ssis/pkg/orbital"
 	pb "ssis/pkg/proto/ssis/v1"
@@ -61,7 +61,7 @@ func (s *IngestionServer) IngestObservation(ctx context.Context, obs *pb.Observa
 type AlertServer struct {
 	pb.UnimplementedSpaceEngineServer
 	Engine *engine.Runtime
-	Signer *crypto.Signer
+	Signer *cryptography.Signer
 }
 
 func (s *AlertServer) SubscribeAlerts(req *pb.AlertSubscription, stream pb.SpaceEngine_SubscribeAlertsServer) error {
@@ -214,7 +214,7 @@ func (g *RESTGateway) handleScan(w http.ResponseWriter, r *http.Request) {
  *
  * <plan_complexity>High</plan_complexity><total_lines_estimate>600</total_lines_estimate>
  */
-func StartGRPCServer(port int, store *catalog.Store, signer *crypto.Signer, axiom *orbital.RKANKernel, engineRuntime *engine.Runtime, certFile, keyFile, caFile string) error {
+func StartGRPCServer(port int, store *catalog.Store, signer *cryptography.Signer, axiom *orbital.RKANKernel, engineRuntime *engine.Runtime, certFile, keyFile, caFile string) error {
 	fmt.Printf("DEBUG: Starting gRPC Server v1.7 on port %d (mTLS enabled: %v)\n", port, caFile != "")
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))

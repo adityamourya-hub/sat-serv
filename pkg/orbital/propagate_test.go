@@ -4,6 +4,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"ssis/pkg/physics"
 )
 
 func TestPropagateSGP4(t *testing.T) {
@@ -20,10 +22,11 @@ func TestPropagateSGP4(t *testing.T) {
 	}
 
 	r := math.Sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2])
-	if r < ER+350 || r > ER+450 {
-		t.Errorf("ISS altitude %.2f out of bounds (approx 400km)", r-ER)
+	earthRadius := physics.EARTH_R_EQUATORIAL
+	if r < earthRadius+350 || r > earthRadius+450 {
+		t.Errorf("ISS altitude %.2f out of bounds (approx 400km)", r-earthRadius)
 	}
-	
+
 	v := math.Sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2])
 	if v < 7.0 || v > 8.0 {
 		t.Errorf("ISS velocity %.2f km/s out of bounds", v)
@@ -31,9 +34,10 @@ func TestPropagateSGP4(t *testing.T) {
 }
 
 func TestFusionDragAndJ3(t *testing.T) {
-	// Baseline
-	ax1, ay1, az1 := OrbitalAcceleration(ER+400, 0, 0, 0, 7.6, 0, 0.0)
-	
+	// Baseline - test with simplified parameters
+	params := physics.PhysicsParams{Mass: 1000, Cd: 2.2, Cr: 1.0, DragArea: 1.0, SRPArea: 1.0}
+	ax1, ay1, az1 := OrbitalAcceleration(physics.EARTH_R_EQUATORIAL+400, 0, 0, 0, 7.6, 0, 0.0, params)
+
 	if ax1 == 0 && ay1 == 0 && az1 == 0 {
 		t.Error("orbitalAcceleration is 0")
 	}

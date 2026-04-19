@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"ssis/pkg/hypersonic"
-	"ssis/pkg/maneuver"
 	"ssis/pkg/ml/hybrid"
+	"ssis/pkg/physics"
 	"ssis/pkg/proximity"
 )
 
@@ -20,15 +19,15 @@ type mockCollisionModel struct {
 
 func (m mockCollisionModel) Name() string { return "mock_gatv2_surrogate" }
 
-func (m mockCollisionModel) PredictCollisionRisk(input proximity.CollisionRiskInput, graph proximity.CollisionNeighborhoodGraph) (proximity.CollisionGraphInference, error) {
+func (m mockCollisionModel) PredictCollisionRisk(input physics.CollisionRiskInput, graph physics.CollisionNeighborhoodGraph) (physics.CollisionGraphInference, error) {
 	if m.err != nil {
-		return proximity.CollisionGraphInference{}, m.err
+		return physics.CollisionGraphInference{}, m.err
 	}
 	attn := map[int]float64{}
 	for _, n := range graph.Nodes {
-		attn[n.ID] = 0.5
+		attn[n.ObjectID] = 0.5
 	}
-	return proximity.CollisionGraphInference{
+	return physics.CollisionGraphInference{
 		RiskScore:        m.risk,
 		UncertaintyLower: m.low,
 		UncertaintyUpper: m.high,
@@ -37,18 +36,18 @@ func (m mockCollisionModel) PredictCollisionRisk(input proximity.CollisionRiskIn
 	}, nil
 }
 
-func (m mockCollisionModel) PredictRapidScore(track hypersonic.RapidTrack) (hypersonic.RapidRankInference, error) {
-	return hypersonic.RapidRankInference{}, nil
+func (m mockCollisionModel) PredictRapidScore(track physics.RapidTrack) (physics.RapidRankInference, error) {
+	return physics.RapidRankInference{}, nil
 }
 
-func (m mockCollisionModel) PredictManeuver(window []maneuver.ManeuverFrame) (maneuver.ManeuverInference, error) {
-	return maneuver.ManeuverInference{}, nil
+func (m mockCollisionModel) PredictManeuver(window []physics.ManeuverFrame) (physics.ManeuverInference, error) {
+	return physics.ManeuverInference{}, nil
 }
 
 func (m mockCollisionModel) IsHealthy() bool { return true }
 
 func TestEvaluateCollisionRiskStages(t *testing.T) {
-	lowRisk := proximity.EvaluateCollisionRisk(proximity.CollisionRiskInput{
+	lowRisk := proximity.EvaluateCollisionRisk(physics.CollisionRiskInput{
 		MissDistanceKm:      200,
 		HardbodyRadiusKm:    0.01,
 		SigmaRadialKm:       0.1,
@@ -62,7 +61,7 @@ func TestEvaluateCollisionRiskStages(t *testing.T) {
 		t.Fatalf("Expected low risk to short-circuit at alfano bound, got %s", lowRisk.Stage)
 	}
 
-	highRisk := proximity.EvaluateCollisionRisk(proximity.CollisionRiskInput{
+	highRisk := proximity.EvaluateCollisionRisk(physics.CollisionRiskInput{
 		MissDistanceKm:      0.01,
 		HardbodyRadiusKm:    0.01,
 		SigmaRadialKm:       0.005,
@@ -78,7 +77,7 @@ func TestEvaluateCollisionRiskStages(t *testing.T) {
 }
 
 func TestEvaluateCollisionRiskDeterministic(t *testing.T) {
-	input := proximity.CollisionRiskInput{
+	input := physics.CollisionRiskInput{
 		MissDistanceKm:      0.03,
 		HardbodyRadiusKm:    0.01,
 		SigmaRadialKm:       0.01,
@@ -96,7 +95,7 @@ func TestEvaluateCollisionRiskDeterministic(t *testing.T) {
 }
 
 func TestEvaluateCollisionRiskHybridFallback(t *testing.T) {
-	input := proximity.CollisionRiskInput{
+	input := physics.CollisionRiskInput{
 		MissDistanceKm:      0.05,
 		HardbodyRadiusKm:    0.01,
 		SigmaRadialKm:       0.01,
@@ -106,8 +105,8 @@ func TestEvaluateCollisionRiskHybridFallback(t *testing.T) {
 		TimeToTCASeconds:    120,
 	}
 
-	graph := proximity.CollisionNeighborhoodGraph{
-		Nodes: []proximity.CollisionGraphNode{{ID: 1, Features: []float64{0.05, 2.0}}},
+	graph := physics.CollisionNeighborhoodGraph{
+		Nodes: []physics.CollisionGraphNode{{ObjectID: 1, Features: []float64{0.05, 2.0}}},
 	}
 
 	orch := hybrid.NewOrchestrator(nil)
@@ -121,7 +120,7 @@ func TestEvaluateCollisionRiskHybridFallback(t *testing.T) {
 }
 
 func TestEvaluateCollisionRiskHybridModelBlend(t *testing.T) {
-	input := proximity.CollisionRiskInput{
+	input := physics.CollisionRiskInput{
 		MissDistanceKm:      0.03,
 		HardbodyRadiusKm:    0.01,
 		SigmaRadialKm:       0.008,
@@ -131,12 +130,12 @@ func TestEvaluateCollisionRiskHybridModelBlend(t *testing.T) {
 		TimeToTCASeconds:    240,
 	}
 
-	graph := proximity.CollisionNeighborhoodGraph{
-		Nodes: []proximity.CollisionGraphNode{
-			{ID: 10, Features: []float64{0.03, 1.3, 0.008}},
-			{ID: 11, Features: []float64{0.04, 1.0, 0.009}},
+	graph := physics.CollisionNeighborhoodGraph{
+		Nodes: []physics.CollisionGraphNode{
+			{ObjectID: 10, Features: []float64{0.03, 1.3, 0.008}},
+			{ObjectID: 11, Features: []float64{0.04, 1.0, 0.009}},
 		},
-		Edges: []proximity.CollisionGraphEdge{{From: 10, To: 11, Weight: 0.7}},
+		Edges: []physics.CollisionGraphEdge{{SourceID: 10, TargetID: 11, Weight: 0.7}},
 	}
 
 	model := mockCollisionModel{
@@ -145,7 +144,7 @@ func TestEvaluateCollisionRiskHybridModelBlend(t *testing.T) {
 		high: 0.006,
 		conf: 0.9,
 	}
-	
+
 	orch := hybrid.NewOrchestrator(model)
 	orch.Thresholds.CollisionConfidence = 0.5
 	orch.Thresholds.MaxCollisionDeviation = 2.0
@@ -165,4 +164,3 @@ func TestEvaluateCollisionRiskHybridModelBlend(t *testing.T) {
 		t.Fatalf("Expected heatmap for all graph nodes")
 	}
 }
-

@@ -1,3 +1,5 @@
+//go:build darwin && cgo && metal
+
 package metal
 
 /**
@@ -45,30 +47,30 @@ type ObjectState struct {
 	RadiusM  float32
 }
 
-// SensorState for Metal kernel  
+// SensorState for Metal kernel
 type SensorState struct {
-	Position      [3]float32 // ECI km
-	Boresight     [3]float32 // Unit vector
-	FovHalfAngle  float32    // Radians
-	RangeLimitKm  float32
-	MinElevation  float32    // Radians
-	SensorID      uint32
-	SensorType    uint32     // 0=optical, 1=radar, 2=rf
+	Position     [3]float32 // ECI km
+	Boresight    [3]float32 // Unit vector
+	FovHalfAngle float32    // Radians
+	RangeLimitKm float32
+	MinElevation float32 // Radians
+	SensorID     uint32
+	SensorType   uint32 // 0=optical, 1=radar, 2=rf
 }
 
 // MetalVisibilityEngine manages GPU resources
 type MetalVisibilityEngine struct {
-	device        unsafe.Pointer // MTLDevice
-	commandQueue  unsafe.Pointer // MTLCommandQueue
-	
+	device       unsafe.Pointer // MTLDevice
+	commandQueue unsafe.Pointer // MTLCommandQueue
+
 	// Pre-allocated buffers (max capacity)
-	maxObjects    int
-	maxSensors    int
-	
-	objectBuffer  unsafe.Pointer // MTLBuffer
-	sensorBuffer  unsafe.Pointer // MTLBuffer
-	resultBuffer  unsafe.Pointer // MTLBuffer
-	
+	maxObjects int
+	maxSensors int
+
+	objectBuffer unsafe.Pointer // MTLBuffer
+	sensorBuffer unsafe.Pointer // MTLBuffer
+	resultBuffer unsafe.Pointer // MTLBuffer
+
 	// Pipelines
 	visibilityPipeline unsafe.Pointer // MTLComputePipelineState
 	compactPipeline    unsafe.Pointer
@@ -81,38 +83,38 @@ func NewMetalVisibilityEngine(maxObjects, maxSensors int) (*MetalVisibilityEngin
 		maxObjects: maxObjects,
 		maxSensors: maxSensors,
 	}
-	
+
 	// Initialize Metal device
 	engine.device = C.createMetalDevice()
 	if engine.device == nil {
 		return nil, fmt.Errorf("failed to create Metal device")
 	}
-	
+
 	engine.commandQueue = C.createCommandQueue(engine.device)
 	if engine.commandQueue == nil {
 		return nil, fmt.Errorf("failed to create command queue")
 	}
-	
+
 	// Allocate shared memory buffers
 	// MTLResourceStorageModeShared allows CPU/GPU zero-copy
 	objectBufferSize := C.int(maxObjects * int(unsafe.Sizeof(ObjectState{})))
 	sensorBufferSize := C.int(maxSensors * int(unsafe.Sizeof(SensorState{})))
 	resultBufferSize := C.int(maxObjects * maxSensors * int(unsafe.Sizeof(VisibilityResult{})))
-	
+
 	engine.objectBuffer = C.createSharedBuffer(engine.device, objectBufferSize)
 	engine.sensorBuffer = C.createSharedBuffer(engine.device, sensorBufferSize)
 	engine.resultBuffer = C.createSharedBuffer(engine.device, resultBufferSize)
-	
+
 	// Load compute pipelines
-	engine.visibilityPipeline = C.loadVisibilityKernel(engine.device, 
+	engine.visibilityPipeline = C.loadVisibilityKernel(engine.device,
 		C.CString("visibilityCheckKernel"))
 	engine.compactPipeline = C.loadVisibilityKernel(engine.device,
 		C.CString("compactVisiblePairs"))
 	engine.priorityPipeline = C.loadVisibilityKernel(engine.device,
 		C.CString("computeTaskingPriority"))
-	
+
 	runtime.SetFinalizer(engine, (*MetalVisibilityEngine).Release)
-	
+
 	return engine, nil
 }
 
@@ -122,58 +124,58 @@ func (e *MetalVisibilityEngine) ComputeVisibilityBatch(
 	sensors []SensorState,
 	sunDirection [3]float32,
 ) ([]VisibilityResult, error) {
-	
+
 	numObjects := len(objects)
 	numSensors := len(sensors)
-	
+
 	if numObjects > e.maxObjects || numSensors > e.maxSensors {
 		return nil, fmt.Errorf("batch size exceeds capacity: %d×%d > %d×%d",
 			numObjects, numSensors, e.maxObjects, e.maxSensors)
 	}
-	
+
 	// Copy data to shared buffers (zero-copy on Apple Silicon)
-	C.copyToBuffer(e.objectBuffer, unsafe.Pointer(&objects[0]), 
+	C.copyToBuffer(e.objectBuffer, unsafe.Pointer(&objects[0]),
 		C.int(numObjects*int(unsafe.Sizeof(ObjectState{}))))
 	C.copyToBuffer(e.sensorBuffer, unsafe.Pointer(&sensors[0]),
 		C.int(numSensors*int(unsafe.Sizeof(SensorState{}))))
-	
+
 	// Encode visibility kernel
 	commandBuffer := C.createCommandBuffer(e.commandQueue)
 	computeEncoder := C.createComputeEncoder(commandBuffer)
-	
+
 	C.setComputePipeline(computeEncoder, e.visibilityPipeline)
 	C.setBuffer(computeEncoder, e.objectBuffer, 0, 0)
 	C.setBuffer(computeEncoder, e.sensorBuffer, 0, 1)
 	C.setBuffer(computeEncoder, e.resultBuffer, 0, 2)
-	
+
 	// Set constants
 	numObjectsC := C.uint(numObjects)
 	numSensorsC := C.uint(numSensors)
 	C.setBytes(computeEncoder, unsafe.Pointer(&numObjectsC), C.int(unsafe.Sizeof(numObjectsC)), 3)
 	C.setBytes(computeEncoder, unsafe.Pointer(&numSensorsC), C.int(unsafe.Sizeof(numSensorsC)), 4)
 	C.setBytes(computeEncoder, unsafe.Pointer(&sunDirection), C.int(unsafe.Sizeof(sunDirection)), 5)
-	
+
 	// Dispatch: 1 thread per object-sensor pair
 	threadgroupSize := C.uint(16) // 16×16 = 256 threads per group
 	gridSizeX := C.uint((numObjects + 15) / 16 * 16)
 	gridSizeY := C.uint((numSensors + 15) / 16 * 16)
-	
+
 	C.dispatchThreadgroups2D(computeEncoder, gridSizeX, gridSizeY, threadgroupSize, threadgroupSize)
-	
+
 	C.endEncoding(computeEncoder)
 	C.commitCommandBuffer(commandBuffer)
 	C.waitForCompletion(commandBuffer)
-	
+
 	// Compact visible pairs (optional optimization)
 	// ... stream compaction kernel ...
-	
+
 	// Read back visible results
 	totalPairs := numObjects * numSensors
 	results := make([]VisibilityResult, 0, totalPairs)
-	
+
 	// Access shared buffer directly (zero-copy)
 	resultPtr := (*[1 << 30]VisibilityResult)(C.getBufferPointer(e.resultBuffer))
-	
+
 	visibleCount := 0
 	for i := 0; i < totalPairs; i++ {
 		if resultPtr[i].IsVisible {
@@ -181,10 +183,10 @@ func (e *MetalVisibilityEngine) ComputeVisibilityBatch(
 			visibleCount++
 		}
 	}
-	
+
 	// Shrink slice to actual size
 	results = results[:visibleCount]
-	
+
 	return results, nil
 }
 
@@ -194,56 +196,56 @@ func (e *MetalVisibilityEngine) ComputeTaskingPriorities(
 	objects []ObjectState,
 	currentTime float32,
 ) []float32 {
-	
+
 	numVisible := len(visibleResults)
-	
+
 	// Allocate priority buffer
 	priorityBufferSize := C.int(numVisible * 4) // float32 per pair
 	priorityBuffer := C.createSharedBuffer(e.device, priorityBufferSize)
 	defer C.releaseBuffer(priorityBuffer)
-	
+
 	// Encode priority kernel
 	commandBuffer := C.createCommandBuffer(e.commandQueue)
 	computeEncoder := C.createComputeEncoder(commandBuffer)
-	
+
 	C.setComputePipeline(computeEncoder, e.priorityPipeline)
-	
+
 	// Set buffers
-	visibleBuffer := C.createSharedBuffer(e.device, 
+	visibleBuffer := C.createSharedBuffer(e.device,
 		C.int(numVisible*int(unsafe.Sizeof(VisibilityResult{}))))
 	defer C.releaseBuffer(visibleBuffer)
-	
+
 	objectBuffer := C.createSharedBuffer(e.device,
 		C.int(len(objects)*int(unsafe.Sizeof(ObjectState{}))))
 	defer C.releaseBuffer(objectBuffer)
-	
+
 	C.copyToBuffer(visibleBuffer, unsafe.Pointer(&visibleResults[0]),
 		C.int(numVisible*int(unsafe.Sizeof(VisibilityResult{}))))
 	C.copyToBuffer(objectBuffer, unsafe.Pointer(&objects[0]),
 		C.int(len(objects)*int(unsafe.Sizeof(ObjectState{}))))
-	
+
 	C.setBuffer(computeEncoder, visibleBuffer, 0, 0)
 	C.setBuffer(computeEncoder, objectBuffer, 0, 1)
 	C.setBuffer(computeEncoder, priorityBuffer, 0, 2)
-	
+
 	numVisibleC := C.uint(numVisible)
 	C.setBytes(computeEncoder, unsafe.Pointer(&numVisibleC), 4, 3)
 	C.setBytes(computeEncoder, unsafe.Pointer(&currentTime), 4, 4)
-	
+
 	// Dispatch
 	threadsPerGroup := C.uint(256)
 	numGroups := C.uint((numVisible + 255) / 256)
 	C.dispatchThreadgroups1D(computeEncoder, numGroups, threadsPerGroup)
-	
+
 	C.endEncoding(computeEncoder)
 	C.commitCommandBuffer(commandBuffer)
 	C.waitForCompletion(commandBuffer)
-	
+
 	// Read priorities
 	priorities := make([]float32, numVisible)
 	priorityPtr := (*[1 << 30]float32)(C.getBufferPointer(priorityBuffer))
 	copy(priorities, priorityPtr[:numVisible])
-	
+
 	return priorities
 }
 
@@ -261,9 +263,9 @@ func (e *MetalVisibilityEngine) Release() {
 
 // PerformanceMetrics for benchmarking
 type PerformanceMetrics struct {
-	TotalPairs     int
-	VisiblePairs   int
-	ComputeTimeMs  float64
+	TotalPairs            int
+	VisiblePairs          int
+	ComputeTimeMs         float64
 	ThroughputPairsPerSec float64
 }
 
@@ -272,7 +274,7 @@ func (e *MetalVisibilityEngine) Benchmark(numObjects, numSensors int) Performanc
 	// Generate random test data
 	objects := make([]ObjectState, numObjects)
 	sensors := make([]SensorState, numSensors)
-	
+
 	for i := range objects {
 		objects[i] = ObjectState{
 			Position: [3]float32{
@@ -284,40 +286,40 @@ func (e *MetalVisibilityEngine) Benchmark(numObjects, numSensors int) Performanc
 			RadiusM:  1.0,
 		}
 	}
-	
+
 	for i := range sensors {
 		sensors[i] = SensorState{
-			Position: [3]float32{0, 0, 0}, // Ground stations
-			FovHalfAngle:   1.0, // ~57 degrees
-			RangeLimitKm:   5000.0,
-			MinElevation:   0.1745, // 10 degrees
-			SensorID:       uint32(i),
+			Position:     [3]float32{0, 0, 0}, // Ground stations
+			FovHalfAngle: 1.0,                 // ~57 degrees
+			RangeLimitKm: 5000.0,
+			MinElevation: 0.1745, // 10 degrees
+			SensorID:     uint32(i),
 		}
 	}
-	
+
 	sunDirection := [3]float32{1, 0, 0}
-	
+
 	// Warmup
 	e.ComputeVisibilityBatch(objects, sensors, sunDirection)
-	
+
 	// Benchmark
 	start := C.getTimeMs()
 	results, _ := e.ComputeVisibilityBatch(objects, sensors, sunDirection)
 	elapsed := C.getTimeMs() - start
-	
+
 	visibleCount := 0
 	for _, r := range results {
 		if r.IsVisible {
 			visibleCount++
 		}
 	}
-	
+
 	totalPairs := numObjects * numSensors
-	
+
 	return PerformanceMetrics{
-		TotalPairs:     totalPairs,
-		VisiblePairs:   visibleCount,
-		ComputeTimeMs:  float64(elapsed),
+		TotalPairs:            totalPairs,
+		VisiblePairs:          visibleCount,
+		ComputeTimeMs:         float64(elapsed),
 		ThroughputPairsPerSec: float64(totalPairs) / (float64(elapsed) / 1000.0),
 	}
 }
@@ -363,7 +365,7 @@ func NewVisibilityTasking(maxObjects, maxSensors int) (*VisibilityTasking, error
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &VisibilityTasking{metalEngine: engine}, nil
 }
 
@@ -374,13 +376,13 @@ func (vt *VisibilityTasking) GetTaskingRecommendations(
 	sunDirection [3]float32,
 	currentTime float32,
 ) ([]VisibilityResult, []float32) {
-	
+
 	// Step 1: Compute visibility (GPU-accelerated)
 	visible, _ := vt.metalEngine.ComputeVisibilityBatch(objects, sensors, sunDirection)
-	
+
 	// Step 2: Compute tasking priorities (GPU-accelerated)
 	priorities := vt.metalEngine.ComputeTaskingPriorities(visible, objects, currentTime)
-	
+
 	return visible, priorities
 }
 
