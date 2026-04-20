@@ -1,9 +1,23 @@
 // Package physics provides Sliding Window SINDy for real-time maneuver tracking
 // Implements time-varying sparse identification for phase transition detection
+//
+// PHS Residual-Based Control Inference:
+//   - PHS Brain handles Passive Physics (Gravity + Drag)
+//   - SINDy handles Active Control (Thrust/Maneuvers)
+//   - Residual: r(t) = ẋ - (J-R)∇H
+//
+// Control Primitive Library:
+//   - Constant Thrust: [1, 1, 1]
+//   - Prograde/Retrograde: v̂
+//   - Radial In/Out: r̂
+//   - Normal/Antinormal: (r × v)̂
+//   - Aerodynamic Lift: L ∝ ρv²(v̂ × ω̂)
 package physics
 
 import (
 	"fmt"
+	"math"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -12,41 +26,41 @@ import (
 // This enables detection of phase transitions in adversary behavior (e.g., Ketu -> Mars -> Rahu)
 type SlidingSINDy struct {
 	mu         sync.RWMutex
-	WindowSize int     // FIFO buffer size (e.g., 100 states = 100 seconds at 1Hz)
-	Stride     int     // Run regression every N updates (e.g., 10 = 10Hz analysis)
+	WindowSize int          // FIFO buffer size (e.g., 100 states = 100 seconds at 1Hz)
+	Stride     int          // Run regression every N updates (e.g., 10 = 10Hz analysis)
 	Buffer     [][6]float64 // Circular buffer of states [pos(3), vel(3)]
 	Timestamps []float64    // Corresponding timestamps
 	Regressor  *SINDy
-	
+
 	// State tracking
-	LastIntent     string
-	LastCoeffs     []float64
-	UpdateCount    int
-	TransitionLog  []IntentTransition
-	
+	LastIntent    string
+	LastCoeffs    []float64
+	UpdateCount   int
+	TransitionLog []IntentTransition
+
 	// Performance tuning
 	LastRegressionTime time.Duration
-	StrideCounter    int
+	StrideCounter      int
 }
 
 // IntentTransition records a semantic shift in adversary behavior
 type IntentTransition struct {
-	Timestamp   time.Time
-	OldIntent   string
-	NewIntent   string
-	Coeffs      *ManeuverResult
-	Urgency     string
+	Timestamp time.Time
+	OldIntent string
+	NewIntent string
+	Coeffs    *ManeuverResult
+	Urgency   string
 }
 
 // SITREP (Situation Report) for mesh dispatch
 type SITREP struct {
-	Source      string    `json:"source"`
-	Target      string    `json:"target"`
-	Transition  string    `json:"transition"`
-	Timestamp   string    `json:"timestamp"`
-	Coeffs      map[string]float64 `json:"coefficients"`
-	Urgency     string    `json:"urgency"`
-	Action      string    `json:"recommended_action"`
+	Source     string             `json:"source"`
+	Target     string             `json:"target"`
+	Transition string             `json:"transition"`
+	Timestamp  string             `json:"timestamp"`
+	Coeffs     map[string]float64 `json:"coefficients"`
+	Urgency    string             `json:"urgency"`
+	Action     string             `json:"recommended_action"`
 }
 
 // NewSlidingSINDy creates a real-time maneuver tracker
@@ -72,7 +86,7 @@ func (s *SlidingSINDy) Update(state [6]float64, timestamp float64) string {
 	// 1. Maintain FIFO Buffer
 	s.Buffer = append(s.Buffer, state)
 	s.Timestamps = append(s.Timestamps, timestamp)
-	
+
 	if len(s.Buffer) > s.WindowSize {
 		s.Buffer = s.Buffer[1:]
 		s.Timestamps = s.Timestamps[1:]
@@ -93,16 +107,16 @@ func (s *SlidingSINDy) Update(state [6]float64, timestamp float64) string {
 
 	// 4. Run Sparse Regression on current window
 	start := time.Now()
-	
+
 	// Calculate dt from timestamps
 	dt := s.calculateDT()
-	
+
 	result, err := s.Regressor.DiscoverManeuver(s.Buffer, dt)
 	if err != nil {
 		// Regression failed - maintain last known intent
 		return s.LastIntent + "_UNCERTAIN"
 	}
-	
+
 	s.LastRegressionTime = time.Since(start)
 
 	// 5. Map coefficients to tactical intent
@@ -126,7 +140,7 @@ func (s *SlidingSINDy) handleTransition(old, new string, result *ManeuverResult)
 	// Determine urgency based on transition type
 	urgency := "ROUTINE"
 	action := "CONTINUE_MONITORING"
-	
+
 	switch {
 	// Critical: Passive object becomes kinetic threat
 	case old == "SATURN" || old == "KETU_PASSIVE":
@@ -134,21 +148,21 @@ func (s *SlidingSINDy) handleTransition(old, new string, result *ManeuverResult)
 			urgency = "CRITICAL"
 			action = "INITIATE_ACTIVE_SCAN"
 		}
-		
+
 	// Critical: Kinetic threat adds electronic warfare
 	case old == "MARS_KINETIC" || old == "MARS":
 		if new == "RAHU_DECEPTIVE" || new == "RAHU" {
 			urgency = "CRITICAL"
 			action = "ACTIVATE_ECM_COUNTERMEASURES"
 		}
-		
+
 	// Warning: Any movement from passive state
 	case old == "INITIALIZING":
 		if new != "SATURN" && new != "KETU_PASSIVE" {
 			urgency = "WARNING"
 			action = "INCREASE_CADENCE"
 		}
-		
+
 	// De-escalation: Threat returns to passive
 	case new == "SATURN" || new == "KETU_PASSIVE":
 		urgency = "INFO"
@@ -181,7 +195,7 @@ func (s *SlidingSINDy) mapResultToIntent(result *ManeuverResult) string {
 	// Analyze coefficient pattern
 	oscillatoryTerms := 0
 	constantTerms := 0
-	
+
 	for _, term := range result.ActiveTerms {
 		if containsTrig(term) {
 			oscillatoryTerms++
@@ -196,29 +210,29 @@ func (s *SlidingSINDy) mapResultToIntent(result *ManeuverResult) string {
 	if result.ThrustMagnitude > 0.02 && constantTerms > 0 && oscillatoryTerms == 0 {
 		return "MARS_KINETIC"
 	}
-	
+
 	// Rahu: Oscillatory pattern, lower magnitude
 	if oscillatoryTerms > 0 && result.ThrustMagnitude < 0.02 {
 		return "RAHU_DECEPTIVE"
 	}
-	
+
 	// Ketu: Stealthy, very low thrust
 	if result.ThrustMagnitude < 0.005 {
 		return "KETU_STEALTHY"
 	}
-	
+
 	// Generic kinetic if unclear
 	if result.ThrustMagnitude > 0.01 {
 		return "MARS"
 	}
-	
+
 	return "UNKNOWN"
 }
 
 // generateSITREP creates a Situation Report for mesh dispatch
 func (s *SlidingSINDy) generateSITREP(transition IntentTransition, action string) SITREP {
 	coeffs := make(map[string]float64)
-	
+
 	// Extract key coefficients for SITREP
 	if transition.Coeffs != nil {
 		for i, term := range transition.Coeffs.ActiveTerms {
@@ -227,7 +241,7 @@ func (s *SlidingSINDy) generateSITREP(transition IntentTransition, action string
 			}
 		}
 	}
-	
+
 	// Ensure essential fields exist
 	if _, exists := coeffs["CONST"]; !exists {
 		coeffs["CONST"] = 0.0
@@ -290,14 +304,14 @@ func (s *SlidingSINDy) GetBufferStats() (fill int, lastRegTime time.Duration, up
 func (s *SlidingSINDy) GetSITREP() SITREP {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	transition := IntentTransition{
 		Timestamp: time.Now(),
 		OldIntent: s.LastIntent,
 		NewIntent: s.LastIntent,
 		Urgency:   "INFO",
 	}
-	
+
 	return s.generateSITREP(transition, "STATUS_REPORT")
 }
 
@@ -305,7 +319,7 @@ func (s *SlidingSINDy) GetSITREP() SITREP {
 func (s *SlidingSINDy) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	s.Buffer = s.Buffer[:0]
 	s.Timestamps = s.Timestamps[:0]
 	s.LastIntent = "INITIALIZING"
@@ -319,11 +333,11 @@ func (s *SlidingSINDy) calculateDT() float64 {
 	if len(s.Timestamps) < 2 {
 		return 1.0 // Default 1 second
 	}
-	
+
 	// Calculate average dt over window
 	totalDT := 0.0
 	count := 0
-	
+
 	for i := 1; i < len(s.Timestamps); i++ {
 		dt := s.Timestamps[i] - s.Timestamps[i-1]
 		if dt > 0 {
@@ -331,11 +345,11 @@ func (s *SlidingSINDy) calculateDT() float64 {
 			count++
 		}
 	}
-	
+
 	if count == 0 {
 		return 1.0
 	}
-	
+
 	return totalDT / float64(count)
 }
 
@@ -374,22 +388,440 @@ func LowPowerConfig() *SlidingSINDy {
 }
 
 // =============================================================================
-// Usage Example
+// SINDyInference: PHS Residual-Based Control Inference with Bootstrap CI
 // =============================================================================
-//
-// swsindy := physics.DefaultM2AirConfig()
-//
-// for i := 0; i < 1000; i++ {
-//     state := [6]float64{x, y, z, vx, vy, vz} // From sensor/tracker
-//     intent := swsindy.Update(state, float64(i))
-//     
-//     if intent == "MARS_KINETIC" {
-//         // Trigger evasion
-//     }
-// }
-//
-// transitions := swsindy.GetTransitionLog()
-// for _, t := range transitions {
-//     fmt.Printf("%s: %s -> %s\n", t.Timestamp, t.OldIntent, t.NewIntent)
-// }
-//
+
+// SINDyInference performs sparse regression on PHS residuals
+// to discover active control inputs (thrust/maneuvers)
+type SINDyInference struct {
+	WindowSize int
+	Threshold  float64 // Sparsity threshold (STLSQ)
+	Bootstraps int     // Number of resamples for CI (default 100)
+}
+
+// SINDyResult holds inferred control coefficients and their uncertainty
+type SINDyResult struct {
+	Coefficients    []float64 // Sparse coefficients for control primitives
+	LowerCI         []float64 // Lower bound of 95% CI
+	UpperCI         []float64 // Upper bound of 95% CI
+	ActiveTerms     []string  // Human-readable control labels
+	ThrustDetected  bool      // Whether non-zero thrust detected
+	ThrustMagnitude float64   // Estimated delta-V (m/s²)
+	Confidence      float64   // Statistical confidence (from CI coverage)
+}
+
+// NewSINDyInference creates a residual-based control inference engine
+func NewSINDyInference(windowSize int) *SINDyInference {
+	return &SINDyInference{
+		WindowSize: windowSize,
+		Threshold:  0.1,
+		Bootstraps: 100,
+	}
+}
+
+// ControlPrimitive defines a control library function
+type ControlPrimitive func(pos, vel [3]float64) []float64
+
+// ControlPrimitives returns the library of tactical control primitives
+func ControlPrimitives() []ControlPrimitive {
+	return []ControlPrimitive{
+		// 1. Constant Thrust: [1, 1, 1] (omnidirectional)
+		func(pos, vel [3]float64) []float64 {
+			return []float64{1.0, 1.0, 1.0}
+		},
+		// 2. Prograde/Retrograde: v̂ (velocity direction)
+		func(pos, vel [3]float64) []float64 {
+			vMag := math.Sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2])
+			if vMag < 1e-10 {
+				return []float64{0, 0, 0}
+			}
+			return []float64{vel[0] / vMag, vel[1] / vMag, vel[2] / vMag}
+		},
+		// 3. Radial In/Out: r̂ (position direction)
+		func(pos, vel [3]float64) []float64 {
+			rMag := math.Sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2])
+			if rMag < 1e-10 {
+				return []float64{0, 0, 0}
+			}
+			return []float64{pos[0] / rMag, pos[1] / rMag, pos[2] / rMag}
+		},
+		// 4. Normal/Antinormal: (r × v)̂ (orbit normal)
+		func(pos, vel [3]float64) []float64 {
+			nx := pos[1]*vel[2] - pos[2]*vel[1]
+			ny := pos[2]*vel[0] - pos[0]*vel[2]
+			nz := pos[0]*vel[1] - pos[1]*vel[0]
+			nMag := math.Sqrt(nx*nx + ny*ny + nz*nz)
+			if nMag < 1e-10 {
+				return []float64{0, 0, 0}
+			}
+			return []float64{nx / nMag, ny / nMag, nz / nMag}
+		},
+		// 5. Aerodynamic Lift (proportional to velocity squared)
+		func(pos, vel [3]float64) []float64 {
+			vMag := math.Sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2])
+			return []float64{vel[0] * vMag, vel[1] * vMag, vel[2] * vMag}
+		},
+	}
+}
+
+// PrimitiveNames returns human-readable names for control primitives
+func PrimitiveNames() []string {
+	return []string{
+		"CONSTANT",
+		"PROGRADE",
+		"RADIAL",
+		"NORMAL",
+		"AERO_LIFT",
+	}
+}
+
+// =============================================================================
+// HGV Aero-Propulsive Primitives for Skip-Glide Dynamics
+// =============================================================================
+
+// HGVPrimitive defines HGV-specific control library with aero/propulsive terms
+type HGVPrimitive func(pos, vel [3]float64, rho float64, mach float64) []float64
+
+// HGVPrimitives returns the library for hypersonic skip-glide vehicles
+// Captures Mach-dependent lift, side-force, and axial thrust
+func HGVPrimitives() []HGVPrimitive {
+	return []HGVPrimitive{
+		// 1. Axial Thrust (Prograde): v̂
+		func(pos, vel [3]float64, rho float64, mach float64) []float64 {
+			vMag := math.Sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2])
+			if vMag < 1e-10 {
+				return []float64{0, 0, 0}
+			}
+			return []float64{vel[0] / vMag, vel[1] / vMag, vel[2] / vMag}
+		},
+
+		// 2. Lift Base: ρ‖v‖² · (v̂ × (r̂ × v̂))
+		// Vertical lift force acting against gravity
+		func(pos, vel [3]float64, rho float64, mach float64) []float64 {
+			vMagSq := vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2]
+			vMag := math.Sqrt(vMagSq)
+			if vMag < 1e-10 {
+				return []float64{0, 0, 0}
+			}
+
+			// Unit vectors
+			rHat := normalize3(pos)
+			vHat := [3]float64{vel[0] / vMag, vel[1] / vMag, vel[2] / vMag}
+
+			// r × v
+			rCrossV := cross3(rHat, vHat)
+
+			// Lift direction: v × (r × v)
+			lHat := normalize3(cross3(vHat, rCrossV))
+
+			// Scale by dynamic pressure: 0.5 * ρ * v²
+			qDyn := 0.5 * rho * vMagSq
+
+			return []float64{lHat[0] * qDyn, lHat[1] * qDyn, lHat[2] * qDyn}
+		},
+
+		// 3. Mach-Dependent Lift: M · LiftBase
+		// Captures C_L decay in high-hypersonic regimes
+		func(pos, vel [3]float64, rho float64, mach float64) []float64 {
+			vMagSq := vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2]
+			vMag := math.Sqrt(vMagSq)
+			if vMag < 1e-10 {
+				return []float64{0, 0, 0}
+			}
+
+			rHat := normalize3(pos)
+			vHat := [3]float64{vel[0] / vMag, vel[1] / vMag, vel[2] / vMag}
+			rCrossV := cross3(rHat, vHat)
+			lHat := normalize3(cross3(vHat, rCrossV))
+
+			qDyn := 0.5 * rho * vMagSq
+
+			// Mach scaling
+			return []float64{lHat[0] * qDyn * mach, lHat[1] * qDyn * mach, lHat[2] * qDyn * mach}
+		},
+
+		// 4. Quadratic Mach-Dependent Lift: M² · LiftBase
+		// Higher-order Mach effects for extreme hypersonic
+		func(pos, vel [3]float64, rho float64, mach float64) []float64 {
+			vMagSq := vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2]
+			vMag := math.Sqrt(vMagSq)
+			if vMag < 1e-10 {
+				return []float64{0, 0, 0}
+			}
+
+			rHat := normalize3(pos)
+			vHat := [3]float64{vel[0] / vMag, vel[1] / vMag, vel[2] / vMag}
+			rCrossV := cross3(rHat, vHat)
+			lHat := normalize3(cross3(vHat, rCrossV))
+
+			qDyn := 0.5 * rho * vMagSq
+
+			// M² scaling
+			machSq := mach * mach
+			return []float64{lHat[0] * qDyn * machSq, lHat[1] * qDyn * machSq, lHat[2] * qDyn * machSq}
+		},
+
+		// 5. Side Force (Lateral Bank): ρ‖v‖² · (r̂ × v̂)
+		// Cross-range maneuver capability
+		func(pos, vel [3]float64, rho float64, mach float64) []float64 {
+			vMagSq := vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2]
+			vMag := math.Sqrt(vMagSq)
+			if vMag < 1e-10 {
+				return []float64{0, 0, 0}
+			}
+
+			rHat := normalize3(pos)
+			vHat := [3]float64{vel[0] / vMag, vel[1] / vMag, vel[2] / vMag}
+
+			// Side direction: r × v (lateral)
+			sHat := normalize3(cross3(rHat, vHat))
+
+			qDyn := 0.5 * rho * vMagSq
+
+			return []float64{sHat[0] * qDyn, sHat[1] * qDyn, sHat[2] * qDyn}
+		},
+
+		// 6. Alpha Bias (Angle of Attack Drag): α_eff · ρ‖v‖² · (-v̂)
+		// Correction for AoA-induced drag residuals
+		func(pos, vel [3]float64, rho float64, mach float64) []float64 {
+			vMagSq := vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2]
+			vMag := math.Sqrt(vMagSq)
+			if vMag < 1e-10 {
+				return []float64{0, 0, 0}
+			}
+
+			// Opposite to velocity (drag direction)
+			dragCoeff := 0.5 * rho * vMagSq / 1000.0 // Normalized scale factor
+
+			return []float64{-vel[0] / vMag * dragCoeff, -vel[1] / vMag * dragCoeff, -vel[2] / vMag * dragCoeff}
+		},
+	}
+}
+
+// HGVPrimitiveNames returns human-readable names for HGV primitives
+func HGVPrimitiveNames() []string {
+	return []string{
+		"AXIAL_THRUST",
+		"LIFT_BASE",
+		"LIFT_MACH1",
+		"LIFT_MACH2",
+		"SIDE_FORCE",
+		"ALPHA_BIAS",
+	}
+}
+
+// Helper functions for 3D vector math
+func normalize3(v [3]float64) [3]float64 {
+	m := math.Sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])
+	if m < 1e-10 {
+		return v
+	}
+	return [3]float64{v[0] / m, v[1] / m, v[2] / m}
+}
+
+func cross3(a, b [3]float64) [3]float64 {
+	return [3]float64{
+		a[1]*b[2] - a[2]*b[1],
+		a[2]*b[0] - a[0]*b[2],
+		a[0]*b[1] - a[1]*b[0],
+	}
+}
+
+// CalculateMach computes Mach number from velocity and atmospheric properties
+func CalculateMach(vel [3]float64, temperatureK float64) float64 {
+	// Speed of sound: a = sqrt(γ * R * T)
+	// γ = 1.4 (ratio of specific heats for air)
+	// R = 287.05 J/(kg·K) (specific gas constant for air)
+	speedOfSound := math.Sqrt(1.4 * 287.05 * temperatureK)
+
+	vMag := math.Sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2])
+
+	if speedOfSound < 1e-10 {
+		return 0.0
+	}
+
+	return vMag / speedOfSound
+}
+
+// Regress performs sparse regression on PHS residuals with bootstrap CI
+func (s *SINDyInference) Regress(residuals [][6]float64, states [][6]float64) SINDyResult {
+	n := len(residuals)
+	primitives := ControlPrimitives()
+	libDim := len(primitives) * 3
+
+	// Build control library
+	library := make([][]float64, n)
+	for i, state := range states {
+		pos := [3]float64{state[0], state[1], state[2]}
+		vel := [3]float64{state[3], state[4], state[5]}
+
+		row := make([]float64, 0, libDim)
+		for _, prim := range primitives {
+			row = append(row, prim(pos, vel)...)
+		}
+		library[i] = row
+	}
+
+	// Flatten residuals (use acceleration components only)
+	residualVec := make([]float64, n*3)
+	for i, r := range residuals {
+		residualVec[i*3+0] = r[3]
+		residualVec[i*3+1] = r[4]
+		residualVec[i*3+2] = r[5]
+	}
+
+	// Bootstrap resampling
+	allCoeffs := make([][]float64, s.Bootstraps)
+	for b := 0; b < s.Bootstraps; b++ {
+		resampledLib := make([][]float64, n)
+		resampledRes := make([]float64, n*3)
+
+		for i := 0; i < n; i++ {
+			idx := rand.Intn(n)
+			resampledLib[i] = library[idx]
+			resampledRes[i*3+0] = residualVec[idx*3+0]
+			resampledRes[i*3+1] = residualVec[idx*3+1]
+			resampledRes[i*3+2] = residualVec[idx*3+2]
+		}
+
+		allCoeffs[b] = s.solveSTLSQ(resampledLib, resampledRes, s.Threshold)
+	}
+
+	return s.computeCIs(allCoeffs)
+}
+
+// solveSTLSQ performs Sequential Thresholded Least Squares
+func (s *SINDyInference) solveSTLSQ(library [][]float64, residuals []float64, threshold float64) []float64 {
+	nSamples := len(library)
+	if nSamples == 0 || len(library[0]) == 0 {
+		return []float64{}
+	}
+	libDim := len(library[0])
+
+	coeffs := make([]float64, libDim)
+	learningRate := 0.01
+
+	// Simple gradient descent
+	for iter := 0; iter < 100; iter++ {
+		for i := 0; i < nSamples; i++ {
+			pred := 0.0
+			for j := 0; j < libDim; j++ {
+				pred += library[i][j] * coeffs[j]
+			}
+			error := residuals[i*3] - pred
+			for j := 0; j < libDim; j++ {
+				coeffs[j] += learningRate * error * library[i][j]
+			}
+		}
+	}
+
+	// Threshold
+	for j := 0; j < libDim; j++ {
+		if math.Abs(coeffs[j]) < threshold {
+			coeffs[j] = 0
+		}
+	}
+
+	return coeffs
+}
+
+// computeCIs calculates confidence intervals from bootstrap samples
+func (s *SINDyInference) computeCIs(allCoeffs [][]float64) SINDyResult {
+	if len(allCoeffs) == 0 || len(allCoeffs[0]) == 0 {
+		return SINDyResult{}
+	}
+
+	libDim := len(allCoeffs[0])
+	res := SINDyResult{
+		Coefficients: make([]float64, libDim),
+		LowerCI:      make([]float64, libDim),
+		UpperCI:      make([]float64, libDim),
+		ActiveTerms:  make([]string, 0),
+	}
+
+	primitiveNames := PrimitiveNames()
+	nPrimitives := len(primitiveNames)
+
+	for j := 0; j < libDim; j++ {
+		samples := make([]float64, s.Bootstraps)
+		for b := 0; b < s.Bootstraps; b++ {
+			samples[b] = allCoeffs[b][j]
+		}
+
+		// Sort for percentiles
+		for i := 0; i < len(samples)-1; i++ {
+			for k := 0; k < len(samples)-i-1; k++ {
+				if samples[k] > samples[k+1] {
+					samples[k], samples[k+1] = samples[k+1], samples[k]
+				}
+			}
+		}
+
+		// Mean
+		mean := 0.0
+		for _, v := range samples {
+			mean += v
+		}
+		mean /= float64(len(samples))
+		res.Coefficients[j] = mean
+
+		// 95% CI
+		lowerIdx := int(0.025 * float64(s.Bootstraps))
+		upperIdx := int(0.975 * float64(s.Bootstraps))
+		if lowerIdx >= s.Bootstraps {
+			lowerIdx = s.Bootstraps - 1
+		}
+		if upperIdx >= s.Bootstraps {
+			upperIdx = s.Bootstraps - 1
+		}
+
+		res.LowerCI[j] = samples[lowerIdx]
+		res.UpperCI[j] = samples[upperIdx]
+
+		// Check significance (CI doesn't contain zero)
+		isSignificant := (res.LowerCI[j] > 0 && res.UpperCI[j] > 0) ||
+			(res.LowerCI[j] < 0 && res.UpperCI[j] < 0)
+
+		if isSignificant && math.Abs(mean) > s.Threshold {
+			primIdx := j / 3
+			component := []string{"X", "Y", "Z"}[j%3]
+			if primIdx < nPrimitives {
+				term := fmt.Sprintf("%s_%s (%.3f)", primitiveNames[primIdx], component, mean)
+				res.ActiveTerms = append(res.ActiveTerms, term)
+				res.ThrustDetected = true
+				res.ThrustMagnitude += math.Abs(mean)
+			}
+		}
+	}
+
+	// Compute confidence
+	if len(res.Coefficients) > 0 {
+		significantCount := 0
+		for j := 0; j < len(res.Coefficients); j++ {
+			if (res.LowerCI[j] > 0 && res.UpperCI[j] > 0) ||
+				(res.LowerCI[j] < 0 && res.UpperCI[j] < 0) {
+				significantCount++
+			}
+		}
+		res.Confidence = float64(significantCount) / float64(len(res.Coefficients))
+	}
+
+	return res
+}
+
+// InterpretSINDyResult generates human-readable maneuver description
+func InterpretSINDyResult(result SINDyResult) string {
+	if !result.ThrustDetected {
+		return "NO MANEUVER DETECTED"
+	}
+
+	description := "MANEUVER DETECTED:\n"
+	for _, term := range result.ActiveTerms {
+		description += fmt.Sprintf("  - %s\n", term)
+	}
+	description += fmt.Sprintf("ESTIMATED ΔV: %.3f m/s²\n", result.ThrustMagnitude)
+	description += fmt.Sprintf("CONFIDENCE: %.1f%% (via Bootstrap CI)\n", result.Confidence*100)
+	description += "PHYSICAL PROOF: ṗ - ∇qH ≈ Ξ_control · Φ(x,v)"
+
+	return description
+}

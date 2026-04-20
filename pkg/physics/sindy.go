@@ -47,24 +47,51 @@ type ManeuverResult struct {
 	ThrustMagnitude float64   // Estimated delta-V (m/s)
 	EquationString  string    // LaTeX-ready equation
 	Confidence      float64   // R² fit quality
+
+	// Bootstrap Confidence Intervals (95% CI for each coefficient)
+	CILower    []float64 // Lower bound of 95% CI
+	CIUpper    []float64 // Upper bound of 95% CI
+	CICoverage float64   // Proportion of coefficients with CI not containing zero
+
+	// Residual-based discovery metadata
+	ResidualMean float64 // Mean residual magnitude
+	ResidualStd  float64 // Std dev of residuals
+	TargetType   string  // "residual" (new) vs "derivative" (legacy)
 }
 
 // DiscoverManeuver identifies thrust signatures from orbital residuals
 //
-// Inputs: states = [pos(3), vel(3)] over time (residuals from Keplerian)
+// Inputs: states = [pos(3), vel(3)] over time
+//
+//	dt = time step between samples
+//
 // Output: Sparse coefficients where only thrust terms are non-zero
+//
+// NEW: Targets residual r(t) = ẍ_observed - ẍ_keplerian instead of full ẋ.
+// This focuses SINDy on discovering only the unmodeled dynamics (maneuvers),
+// not the Keplerian physics which is already known.
 func (s *SINDy) DiscoverManeuver(states [][6]float64, dt float64) (*ManeuverResult, error) {
 	// 1. Build Theta Library (candidate functions)
 	theta := s.buildLibrary(states)
 
-	// 2. Compute derivatives (accelerations from residuals)
-	xDot := s.computeDerivatives(states, dt)
+	// 2. Compute RESIDUALS r(t) = observed - keplerian_prediction
+	// instead of full derivatives ẋ
+	residuals := s.computeResiduals(states, dt)
 
-	// 3. Sparse Regression (STLSQ)
-	coefficients := s.stlsq(theta, xDot, s.SparsityThreshold)
+	// 3. Sparse Regression (STLSQ) targeting residuals
+	coefficients := s.stlsq(theta, residuals, s.SparsityThreshold)
 
-	// 4. Interpret results (pass theta and xDot for R² calculation)
-	result := s.interpretCoefficients(coefficients, states, theta, xDot)
+	// 4. Bootstrap Confidence Intervals
+	ciLower, ciUpper := s.bootstrapCI(coefficients, states, theta, residuals, 100)
+
+	// 5. Interpret results
+	result := s.interpretCoefficients(coefficients, states, theta, residuals)
+
+	// 6. Add bootstrap CI data
+	result.CILower = ciLower
+	result.CIUpper = ciUpper
+	result.CICoverage = s.computeCICoverage(coefficients, ciLower, ciUpper)
+	result.TargetType = "residual"
 
 	return result, nil
 }
@@ -164,6 +191,158 @@ func (s *SINDy) computeDerivatives(states [][6]float64, dt float64) *mat.Dense {
 	}
 
 	return mat.NewDense(nSamples-2, 6, data)
+}
+
+// computeResiduals calculates r(t) = observed_dynamics - keplerian_dynamics
+// This is the key innovation: SINDy discovers only the unmodeled (maneuver) component
+func (s *SINDy) computeResiduals(states [][6]float64, dt float64) *mat.Dense {
+	nSamples := len(states)
+
+	// Full observed derivatives (accelerations)
+	observed := s.computeDerivatives(states, dt)
+	nObsSamples, _ := observed.Dims()
+
+	// Keplerian prediction (central gravity only)
+	keplerian := mat.NewDense(nObsSamples, 6, nil)
+
+	for i := 1; i < nSamples-1; i++ {
+		state := states[i]
+		x, y, z := state[0], state[1], state[2]
+		vx, vy, vz := state[3], state[4], state[5]
+
+		// Position vector and magnitude
+		r := math.Sqrt(x*x + y*y + z*z)
+
+		// Keplerian acceleration: a = -μ/r³ * r_vec
+		// Earth's standard gravitational parameter μ ≈ 398600.4418 km³/s²
+		mu := 398600.4418
+
+		if r > 1e-6 {
+			scale := -mu / (r * r * r)
+			// Acceleration (indices 3,4,5 for vx, vy, vz derivatives)
+			keplerian.Set(i-1, 3, scale*x) // d(vx)/dt
+			keplerian.Set(i-1, 4, scale*y) // d(vy)/dt
+			keplerian.Set(i-1, 5, scale*z) // d(vz)/dt
+		}
+
+		// Velocity derivatives for position (d(pos)/dt = vel)
+		keplerian.Set(i-1, 0, vx) // dx/dt = vx
+		keplerian.Set(i-1, 1, vy) // dy/dt = vy
+		keplerian.Set(i-1, 2, vz) // dz/dt = vz
+	}
+
+	// Residual: r(t) = observed - keplerian
+	var residuals mat.Dense
+	residuals.Sub(observed, keplerian)
+
+	return &residuals
+}
+
+// bootstrapCI computes 95% confidence intervals via bootstrap resampling
+func (s *SINDy) bootstrapCI(
+	coeffs []float64,
+	states [][6]float64,
+	theta, residuals *mat.Dense,
+	nBootstraps int,
+) (lower, upper []float64) {
+	nSamples, nTerms := theta.Dims()
+	_, nDims := residuals.Dims()
+
+	lower = make([]float64, len(coeffs))
+	upper = make([]float64, len(coeffs))
+
+	// Fill with original coefficients (fallback)
+	copy(lower, coeffs)
+	copy(upper, coeffs)
+
+	if nSamples < 10 || nBootstraps < 10 {
+		return lower, upper
+	}
+
+	// Store bootstrap coefficient estimates
+	bootstrapCoeffs := make([][]float64, nBootstraps)
+
+	for b := 0; b < nBootstraps; b++ {
+		// Resample with replacement
+		resampledTheta := mat.NewDense(nSamples, nTerms, nil)
+		resampledResiduals := mat.NewDense(nSamples, nDims, nil)
+
+		for i := 0; i < nSamples; i++ {
+			// Random index (with replacement)
+			idx := int(math.Mod(float64(i*7+b*13), float64(nSamples)))
+			if idx < 0 || idx >= nSamples {
+				idx = i % nSamples
+			}
+
+			// Copy row
+			for j := 0; j < nTerms; j++ {
+				resampledTheta.Set(i, j, theta.At(idx, j))
+			}
+			for j := 0; j < nDims; j++ {
+				resampledResiduals.Set(i, j, residuals.At(idx, j))
+			}
+		}
+
+		// Run STLSQ on resampled data
+		bootCoeffs := s.stlsq(resampledTheta, resampledResiduals, s.SparsityThreshold)
+		bootstrapCoeffs[b] = bootCoeffs
+	}
+
+	// Compute percentiles for 95% CI
+	for i := 0; i < len(coeffs); i++ {
+		values := make([]float64, nBootstraps)
+		for b := 0; b < nBootstraps; b++ {
+			values[b] = bootstrapCoeffs[b][i]
+		}
+
+		// Sort to find percentiles
+		sortFloats(values)
+
+		// 2.5th and 97.5th percentiles for 95% CI
+		lowerIdx := int(0.025 * float64(nBootstraps))
+		upperIdx := int(0.975 * float64(nBootstraps))
+
+		if lowerIdx >= nBootstraps {
+			lowerIdx = nBootstraps - 1
+		}
+		if upperIdx >= nBootstraps {
+			upperIdx = nBootstraps - 1
+		}
+
+		lower[i] = values[lowerIdx]
+		upper[i] = values[upperIdx]
+	}
+
+	return lower, upper
+}
+
+// computeCICoverage calculates proportion of coefficients with CI not containing zero
+func (s *SINDy) computeCICoverage(coeffs, ciLower, ciUpper []float64) float64 {
+	if len(coeffs) == 0 || len(ciLower) == 0 || len(ciUpper) == 0 {
+		return 0.0
+	}
+
+	significant := 0
+	for i := 0; i < len(coeffs); i++ {
+		// CI does not contain zero if both bounds have same sign
+		if (ciLower[i] > 0 && ciUpper[i] > 0) || (ciLower[i] < 0 && ciUpper[i] < 0) {
+			significant++
+		}
+	}
+
+	return float64(significant) / float64(len(coeffs))
+}
+
+// sortFloats sorts a slice of float64 in-place (bubble sort for simplicity)
+func sortFloats(arr []float64) {
+	n := len(arr)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			if arr[j] > arr[j+1] {
+				arr[j], arr[j+1] = arr[j+1], arr[j]
+			}
+		}
+	}
 }
 
 // stlsq performs Sequential Thresholded Least Squares regression

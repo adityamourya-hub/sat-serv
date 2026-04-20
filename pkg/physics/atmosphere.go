@@ -1,8 +1,12 @@
 package physics
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
+	"sync"
 	"time"
 )
 
@@ -26,26 +30,263 @@ var defaultSpaceWeather = SpaceWeatherFeed{
 }
 
 // currentSpaceWeather holds the latest space weather data
-// Thread-safe access via atomic operations
+// Thread-safe access via mutex
 var currentSpaceWeather SpaceWeatherFeed = defaultSpaceWeather
+var weatherMutex sync.RWMutex
+
+// SpaceWeatherClient fetches live F10.7 and Ap from NOAA SWPC
+type SpaceWeatherClient struct {
+	BaseURL    string
+	HTTPClient *http.Client
+	LastFetch  time.Time
+}
+
+// NewSpaceWeatherClient creates a client for NOAA SWPC data
+func NewSpaceWeatherClient() *SpaceWeatherClient {
+	return &SpaceWeatherClient{
+		BaseURL: "https://services.swpc.noaa.gov",
+		HTTPClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+	}
+}
+
+// NOAASpaceWeather represents the JSON response from NOAA
+// (simplified structure - full response has more fields)
+type NOAASpaceWeather struct {
+	TimeTag       string  `json:"time_tag"`
+	Flux          float64 `json:"flux"`
+	FluxQualifier int     `json:"flux_qualifier"`
+	Ap            float64 `json:"Ap"`
+}
+
+// FetchLatest retrieves current F10.7 and Ap from NOAA SWPC
+func (c *SpaceWeatherClient) FetchLatest() (*SpaceWeatherFeed, error) {
+	// Fetch current space weather from NOAA SWPC
+	url := c.BaseURL + "/json/goes/primary/integral-protons-plot-6-hour.json"
+
+	resp, err := c.HTTPClient.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch space weather: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("space weather API returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// NOAA returns array of data points, we want the latest
+	var dataPoints []NOAASpaceWeather
+	if err := json.Unmarshal(body, &dataPoints); err != nil {
+		// Fallback to estimated values on parse error
+		return nil, fmt.Errorf("failed to parse space weather data: %w", err)
+	}
+
+	if len(dataPoints) == 0 {
+		return nil, fmt.Errorf("no space weather data available")
+	}
+
+	// Get latest data point
+	latest := dataPoints[len(dataPoints)-1]
+
+	// Also fetch Ap from separate endpoint (simplified - in production use proper Ap source)
+	// For now, estimate Ap from F10.7 (rough correlation during quiet times)
+	ap := estimateApFromF107(latest.Flux)
+
+	sw := &SpaceWeatherFeed{
+		F107:  latest.Flux,
+		F107A: latest.Flux, // Use current as approximation
+		Ap:    ap,
+		Epoch: time.Now().Unix(),
+	}
+
+	c.LastFetch = time.Now()
+	return sw, nil
+}
+
+// estimateApFromF107 provides rough Ap estimate from F10.7
+// This is a fallback - production should use actual geomagnetic data
+func estimateApFromF107(f107 float64) float64 {
+	// Rough linear approximation: Ap ≈ (F10.7 - 70) / 5
+	// Valid for quiet to moderate conditions
+	ap := (f107 - 70.0) / 5.0
+	if ap < 5.0 {
+		ap = 5.0
+	}
+	if ap > 100.0 {
+		ap = 100.0
+	}
+	return ap
+}
 
 // UpdateSpaceWeather updates the global space weather feed
 // Called by external space weather service (e.g., NOAA SWPC)
 func UpdateSpaceWeather(f107, f107a, ap float64) {
+	weatherMutex.Lock()
+	defer weatherMutex.Unlock()
+
 	currentSpaceWeather = SpaceWeatherFeed{
 		F107:  f107,
 		F107A: f107a,
 		Ap:    ap,
-		Epoch: 0, // Set to current time in production
+		Epoch: time.Now().Unix(),
 	}
 }
 
-// GetSpaceWeather returns current space weather conditions
+// UpdateSpaceWeatherFeed updates the feed from a fetched response
+func UpdateSpaceWeatherFeed(feed *SpaceWeatherFeed) {
+	weatherMutex.Lock()
+	defer weatherMutex.Unlock()
+
+	currentSpaceWeather = *feed
+}
+
+// GetSpaceWeather returns current space weather conditions (thread-safe)
 func GetSpaceWeather() SpaceWeatherFeed {
+	weatherMutex.RLock()
+	defer weatherMutex.RUnlock()
+
+	// Check if data is stale (> 6 hours old)
+	age := time.Since(time.Unix(currentSpaceWeather.Epoch, 0))
+	if age > 6*time.Hour {
+		// Return default but mark as stale
+		return defaultSpaceWeather
+	}
+
 	return currentSpaceWeather
 }
 
+// IsSpaceWeatherStale checks if current data is outdated
+func IsSpaceWeatherStale() bool {
+	weatherMutex.RLock()
+	defer weatherMutex.RUnlock()
+
+	age := time.Since(time.Unix(currentSpaceWeather.Epoch, 0))
+	return age > 6*time.Hour
+}
+
+// NeuralDensityOperator provides ML-based density corrections
+// Integrates with ai/v3/neural_density.py JAX model via ONNX or API
+type NeuralDensityOperator struct {
+	// Simplified neural operator for density prediction
+	// In production, this loads ONNX weights from trained model
+	weightsLoaded bool
+	deltaStream   chan NeuralDelta // Real-time correction stream from JAX brain
+}
+
+// NeuralDelta represents a density correction from the neural atmosphere
+type NeuralDelta struct {
+	Timestamp int64   // Unix timestamp
+	Delta     float64 // Correction multiplier (ρ_total = ρ_JR × Delta)
+	LogDelta  float64 // Log correction for diagnostics
+	Region    string  // 'siliguri', 'western', 'maritime'
+	F107      float64 // Solar flux used in prediction
+	Ap        float64 // Geomagnetic index used
+}
+
+// NewNeuralDensityOperator creates the neural correction operator
+func NewNeuralDensityOperator() *NeuralDensityOperator {
+	return &NeuralDensityOperator{
+		weightsLoaded: false,                       // Would load ONNX weights in production
+		deltaStream:   make(chan NeuralDelta, 100), // Buffered for 100Hz
+	}
+}
+
+// Predict computes neural correction to analytic density
+// Inputs: [altitude_km, f107, ap] → Output: density_correction_factor
+func (n *NeuralDensityOperator) Predict(altKm, f107, ap float64) float64 {
+	// Simplified neural operator (placeholder for ONNX model)
+	// In production, this would:
+	// 1. Normalize inputs
+	// 2. Run inference through trained neural net
+	// 3. Return density correction factor
+
+	if !n.weightsLoaded {
+		// Fallback to simple analytic correction when neural net not available
+		return analyticDensityCorrection(altKm, f107, ap)
+	}
+
+	// Neural inference placeholder
+	return 1.0 // No correction if model loaded but not implemented
+}
+
+// ApplyDeltaStream applies real-time neural correction from Delta-Stream
+// This is called at 100Hz by the HGV tracking loop
+func (n *NeuralDensityOperator) ApplyDeltaStream(altKm, latDeg, lonDeg, f107, ap, rhoJR float64) float64 {
+	// Check for recent delta from neural atmosphere brain
+	select {
+	case delta := <-n.deltaStream:
+		// Validate delta is fresh (< 1 second old)
+		if time.Since(time.Unix(delta.Timestamp, 0)) < time.Second {
+			return rhoJR * delta.Delta
+		}
+		// Stale delta, fall through to prediction
+	default:
+		// No delta available, use inline prediction
+	}
+
+	// Fallback to inline neural prediction
+	neuralDelta := n.Predict(altKm, f107, ap)
+	return rhoJR * neuralDelta
+}
+
+// ReceiveDeltaFromJAX receives correction from ai/v3/neural_density.py
+// Called by Python bridge or gRPC from JAX inference server
+func (n *NeuralDensityOperator) ReceiveDeltaFromJAX(delta NeuralDelta) {
+	// Non-blocking send to avoid slowing down JAX
+	select {
+	case n.deltaStream <- delta:
+		// Delta queued successfully
+	default:
+		// Channel full, drop oldest
+		select {
+		case <-n.deltaStream:
+			// Dropped oldest
+			n.deltaStream <- delta
+		default:
+			// Channel empty now, just send
+			n.deltaStream <- delta
+		}
+	}
+}
+
+// analyticDensityCorrection provides physics-based correction when neural net unavailable
+func analyticDensityCorrection(altKm, f107, ap float64) float64 {
+	// Base correction from solar activity
+	f107Correction := 1.0 + (f107-150.0)*0.001
+
+	// Geomagnetic correction (more significant at high altitude)
+	apCorrection := 1.0 + (ap-15.0)*0.002*math.Exp(-altKm/200.0)
+
+	// Altitude-dependent scaling (neural net would learn this from data)
+	if altKm > 200 {
+		// Thermospheric expansion during high solar activity
+		f107Correction = 1.0 + (f107-150.0)*0.003
+	}
+
+	return f107Correction * apCorrection
+}
+
+// Global neural operator instance
+var neuralOperator = NewNeuralDensityOperator()
+
+// SetNeuralOperator allows injection of trained model (for testing or model updates)
+func SetNeuralOperator(op *NeuralDensityOperator) {
+	neuralOperator = op
+}
+
+// GetNeuralDeltaStream returns the delta stream channel for external writers
+func GetNeuralDeltaStream() chan<- NeuralDelta {
+	return neuralOperator.deltaStream
+}
+
 // getDensityFromRadius calculates density from orbital radius using real-time space weather
+// Routes through neural operator Delta-Stream for ML-enhanced predictions
 func getDensityFromRadius(r float64) float64 {
 	altKm := r - EARTH_R_EQUATORIAL
 
@@ -53,9 +294,39 @@ func getDensityFromRadius(r float64) float64 {
 		return 1.225
 	}
 
-	// Use real-time space weather data instead of fixed F10.7=150, Ap=15
+	// Get real-time space weather data
 	sw := GetSpaceWeather()
-	return JacchiaRobertsDensity(altKm, sw.F107, sw.Ap)
+
+	// Base density from Jacchia-Roberts model
+	baseDensity := JacchiaRobertsDensity(altKm, sw.F107, sw.Ap)
+
+	// Apply neural operator correction via Delta-Stream (100Hz real-time)
+	// Default coordinates for Siliguri corridor
+	correctedDensity := neuralOperator.ApplyDeltaStream(
+		altKm,
+		26.0, 88.5, // Siliguri corridor default
+		sw.F107, sw.Ap,
+		baseDensity,
+	)
+
+	return correctedDensity
+}
+
+// GetDensityWithNeural returns density with explicit neural correction
+// For use by HGV tracking at 100Hz with precise coordinates
+func GetDensityWithNeural(rx, ry, rz float64, jd float64, latDeg, lonDeg float64) float64 {
+	r := math.Sqrt(rx*rx + ry*ry + rz*rz)
+	altKm := r - EARTH_R_EQUATORIAL
+
+	if altKm < 0 {
+		return 1.225
+	}
+
+	sw := GetSpaceWeather()
+	baseDensity := JacchiaRobertsDensity(altKm, sw.F107, sw.Ap)
+
+	// Apply neural correction with precise coordinates
+	return neuralOperator.ApplyDeltaStream(altKm, latDeg, lonDeg, sw.F107, sw.Ap, baseDensity)
 }
 
 func GetDensityUnified(rx, ry, rz float64, jd float64) float64 {

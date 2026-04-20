@@ -3,6 +3,7 @@
 package orbital
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -322,6 +323,157 @@ func (h *HPOP) rk4Integrate(y0 []float64, dt float64, deriv func(float64, []floa
 	}
 
 	return y
+}
+
+// rkf45Integrate performs adaptive Runge-Kutta-Fehlberg integration
+// RKF45 uses 6 function evaluations to compute both 4th and 5th order solutions
+// allowing for error estimation and adaptive step size control.
+func (h *HPOP) rkf45Integrate(
+	y0 []float64,
+	t0 float64,
+	tf float64,
+	deriv func(float64, []float64) []float64,
+	absTol float64,
+	relTol float64,
+) ([]float64, []float64, error) {
+	n := len(y0)
+	y := make([]float64, n)
+	copy(y, y0)
+	t := t0
+
+	// RKF45 coefficients (Cash-Karp parameters)
+	// These give 5th order accuracy with embedded 4th order for error estimation
+	c := []float64{0.0, 1.0 / 5.0, 3.0 / 10.0, 3.0 / 5.0, 1.0, 7.0 / 8.0}
+
+	a := [][]float64{
+		{}, // a[0] not used
+		{1.0 / 5.0},
+		{3.0 / 40.0, 9.0 / 40.0},
+		{3.0 / 10.0, -9.0 / 10.0, 6.0 / 5.0},
+		{-11.0 / 54.0, 5.0 / 2.0, -70.0 / 27.0, 35.0 / 27.0},
+		{1631.0 / 55296.0, 175.0 / 512.0, 575.0 / 13824.0, 44275.0 / 110592.0, 253.0 / 4096.0},
+	}
+
+	// 5th order weights (b)
+	b5 := []float64{37.0 / 378.0, 0.0, 250.0 / 621.0, 125.0 / 594.0, 0.0, 512.0 / 1771.0}
+
+	// 4th order weights (b*)
+	b4 := []float64{2825.0 / 27648.0, 0.0, 18575.0 / 48384.0, 13525.0 / 55296.0, 277.0 / 14336.0, 1.0 / 4.0}
+
+	// Time history for output
+	tHistory := []float64{t}
+	yHistory := make([][]float64, 1)
+	yHistory[0] = make([]float64, n)
+	copy(yHistory[0], y)
+
+	// Initial step size (will be adapted)
+	dt := (tf - t0) / 100.0
+	if dt == 0 {
+		dt = 1.0
+	}
+
+	maxSteps := 10000
+	stepCount := 0
+
+	for t < tf && stepCount < maxSteps {
+		stepCount++
+
+		// Ensure we don't overshoot tf
+		if t+dt > tf {
+			dt = tf - t
+		}
+
+		// Compute k values (6 stages)
+		k := make([][]float64, 6)
+
+		// k1
+		k[0] = deriv(t, y)
+
+		// k2
+		yTemp := make([]float64, n)
+		for i := 0; i < n; i++ {
+			yTemp[i] = y[i] + dt*a[1][0]*k[0][i]
+		}
+		k[1] = deriv(t+c[1]*dt, yTemp)
+
+		// k3
+		for i := 0; i < n; i++ {
+			yTemp[i] = y[i] + dt*(a[2][0]*k[0][i]+a[2][1]*k[1][i])
+		}
+		k[2] = deriv(t+c[2]*dt, yTemp)
+
+		// k4
+		for i := 0; i < n; i++ {
+			yTemp[i] = y[i] + dt*(a[3][0]*k[0][i]+a[3][1]*k[1][i]+a[3][2]*k[2][i])
+		}
+		k[3] = deriv(t+c[3]*dt, yTemp)
+
+		// k5
+		for i := 0; i < n; i++ {
+			yTemp[i] = y[i] + dt*(a[4][0]*k[0][i]+a[4][1]*k[1][i]+a[4][2]*k[2][i]+a[4][3]*k[3][i])
+		}
+		k[4] = deriv(t+c[4]*dt, yTemp)
+
+		// k6
+		for i := 0; i < n; i++ {
+			yTemp[i] = y[i] + dt*(a[5][0]*k[0][i]+a[5][1]*k[1][i]+a[5][2]*k[2][i]+a[5][3]*k[3][i]+a[5][4]*k[4][i])
+		}
+		k[5] = deriv(t+c[5]*dt, yTemp)
+
+		// Compute 5th order solution
+		y5 := make([]float64, n)
+		for i := 0; i < n; i++ {
+			y5[i] = y[i] + dt*(b5[0]*k[0][i]+b5[1]*k[1][i]+b5[2]*k[2][i]+b5[3]*k[3][i]+b5[4]*k[4][i]+b5[5]*k[5][i])
+		}
+
+		// Compute 4th order solution
+		y4 := make([]float64, n)
+		for i := 0; i < n; i++ {
+			y4[i] = y[i] + dt*(b4[0]*k[0][i]+b4[1]*k[1][i]+b4[2]*k[2][i]+b4[3]*k[3][i]+b4[4]*k[4][i]+b4[5]*k[5][i])
+		}
+
+		// Error estimation
+		maxError := 0.0
+		for i := 0; i < n; i++ {
+			err := math.Abs(y5[i] - y4[i])
+			scale := absTol + relTol*math.Max(math.Abs(y[i]), math.Abs(y5[i]))
+			maxError = math.Max(maxError, err/scale)
+		}
+
+		// Adaptive step size control
+		if maxError > 1.0 {
+			// Reject step, reduce dt
+			dt = 0.9 * dt * math.Pow(maxError, -0.25)
+		} else {
+			// Accept step
+			t += dt
+			copy(y, y5)
+
+			// Record history
+			tHistory = append(tHistory, t)
+			yNew := make([]float64, n)
+			copy(yNew, y)
+			yHistory = append(yHistory, yNew)
+
+			// Increase dt for next step (but not too much)
+			if maxError < 0.5 {
+				dt = 0.9 * dt * math.Pow(maxError, -0.2)
+				if dt > 10.0*(tf-t0) {
+					dt = 10.0 * (tf - t0)
+				}
+			}
+		}
+
+		if dt < 1e-10 {
+			return y, tHistory, fmt.Errorf("RKF45 step size underflow at t=%f", t)
+		}
+	}
+
+	if stepCount >= maxSteps {
+		return y, tHistory, fmt.Errorf("RKF45 exceeded maximum steps (%d)", maxSteps)
+	}
+
+	return y, tHistory, nil
 }
 
 // SetInitialState updates the initial conditions
