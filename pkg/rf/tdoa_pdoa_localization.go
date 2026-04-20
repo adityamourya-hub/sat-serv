@@ -57,9 +57,14 @@ type TDOAPDOAMeasurement struct {
 	// φ[i][j] = phase difference between station i and j
 	PDOA [][]float64
 
+	// FDOA measurements (Hz)
+	// f[i][j] = frequency difference between station i and j (Doppler)
+	FDOA [][]float64
+
 	// Measurement covariance matrices
 	TDOACovariance [][]float64
 	PDOAVariance   float64
+	FDOAVariance   float64
 
 	// Signal parameters
 	CarrierFrequency float64 // Hz
@@ -92,6 +97,9 @@ func (loc *TDOAPDOALocalizer) Localize(measurement TDOAPDOAMeasurement) Localiza
 	// Step 2: Levenberg-Marquardt refinement
 	position := loc.levenbergMarquardtTDOAPDOA(bestPos, measurement, loc.MaxIterations, 0.01)
 
+	// Step 3: Estimate velocity from FDOA measurements
+	velocity := loc.EstimateVelocity(position, measurement)
+
 	// Compute final quality metrics
 	tdoaRes := loc.computeTDOACost(position, measurement)
 	pdoaRes := loc.computePDOCost(position, measurement)
@@ -106,6 +114,7 @@ func (loc *TDOAPDOALocalizer) Localize(measurement TDOAPDOAMeasurement) Localiza
 
 	return LocalizationResult{
 		Position:      position,
+		Velocity:      velocity,
 		Covariance:    covariance,
 		TDOResidual:   tdoaRes,
 		PDOResidual:   pdoaRes,
@@ -119,7 +128,7 @@ func (loc *TDOAPDOALocalizer) Localize(measurement TDOAPDOAMeasurement) Localiza
 // coarseGridSearch finds coarse initial estimate using bounding box grid
 func (loc *TDOAPDOALocalizer) coarseGridSearch(m TDOAPDOAMeasurement) [3]float64 {
 	bestPos := loc.stationCentroid()
-	bestPos[2] = 600 // Typical LEO altitude
+	bestPos[2] = (LEO_ALT_MIN + LEO_ALT_MAX) / 2 // Midpoint of LEO range
 	bestCost := loc.computeCombinedCost(bestPos, m)
 
 	// Get station bounding box
@@ -140,14 +149,14 @@ func (loc *TDOAPDOALocalizer) coarseGridSearch(m TDOAPDOAMeasurement) [3]float64
 		}
 	}
 
-	// Expand bounding box and add altitude range (LEO: 200-1200km)
+	// Expand bounding box and add altitude range (LEO)
 	pad := 500.0
 	minX, maxX = minX-pad, maxX+pad
 	minY, maxY = minY-pad, maxY+pad
-	minZ, maxZ := 200.0, 1200.0
+	minZ, maxZ := LEO_ALT_MIN, LEO_ALT_MAX
 
-	// Grid search in 3D bounding box (100km steps for better coverage)
-	step := 100.0
+	// Grid search in 3D bounding box (GRID_STEP_KM steps for better coverage)
+	step := GRID_STEP_KM
 	count := 0
 	for x := minX; x <= maxX && count < 10000; x += step {
 		for y := minY; y <= maxY && count < 10000; y += step {
@@ -263,7 +272,7 @@ func (loc *TDOAPDOALocalizer) levenbergMarquardtTDOAPDOA(initial [3]float64, m T
 		}
 
 		// Solve (J^T*J + λI) δ = J^T*r
-		delta := loc.solve3x3(jtj, jtr)
+		delta := Solve3x3(jtj, jtr)
 
 		// Update
 		xNew := [3]float64{x[0] + delta[0], x[1] + delta[1], x[2] + delta[2]}
@@ -285,51 +294,6 @@ func (loc *TDOAPDOALocalizer) levenbergMarquardtTDOAPDOA(initial [3]float64, m T
 		}
 	}
 
-	return x
-}
-
-// solve3x3 solves 3x3 linear system using Gaussian elimination
-func (loc *TDOAPDOALocalizer) solve3x3(A [3][3]float64, b [3]float64) [3]float64 {
-	M := [3][4]float64{
-		{A[0][0], A[0][1], A[0][2], b[0]},
-		{A[1][0], A[1][1], A[1][2], b[1]},
-		{A[2][0], A[2][1], A[2][2], b[2]},
-	}
-
-	// Forward elimination with partial pivoting
-	for i := 0; i < 3; i++ {
-		maxRow := i
-		maxVal := math.Abs(M[i][i])
-		for k := i + 1; k < 3; k++ {
-			if math.Abs(M[k][i]) > maxVal {
-				maxVal = math.Abs(M[k][i])
-				maxRow = k
-			}
-		}
-		if maxVal < 1e-15 {
-			continue
-		}
-		M[i], M[maxRow] = M[maxRow], M[i]
-
-		for k := i + 1; k < 3; k++ {
-			factor := M[k][i] / M[i][i]
-			for j := i; j < 4; j++ {
-				M[k][j] -= factor * M[i][j]
-			}
-		}
-	}
-
-	// Back substitution
-	x := [3]float64{}
-	for i := 2; i >= 0; i-- {
-		sum := M[i][3]
-		for j := i + 1; j < 3; j++ {
-			sum -= M[i][j] * x[j]
-		}
-		if math.Abs(M[i][i]) > 1e-15 {
-			x[i] = sum / M[i][i]
-		}
-	}
 	return x
 }
 
@@ -449,6 +413,73 @@ func (loc *TDOAPDOALocalizer) tdoaOnlyEstimate(tdoa [][]float64) [3]float64 {
 	// Refine with simple gradient descent on TDOA only
 	// (simplified version of full algorithm)
 	return centroid
+}
+
+// EstimateVelocity computes velocity from FDOA measurements using Doppler shift
+// Similar to ComputeFDOA in tdoa.go but solving for velocity instead
+func (loc *TDOAPDOALocalizer) EstimateVelocity(position [3]float64, m TDOAPDOAMeasurement) [3]float64 {
+	if len(m.FDOA) == 0 {
+		return [3]float64{0, 0, 0} // No FDOA data available
+	}
+
+	c := LIGHT_SPEED * 1000 // m/s
+	freq := m.CarrierFrequency
+
+	// Build linear system for velocity estimation
+	// For each station pair: f_observed = f_emitted * (1 - (v·LOS)/c)
+	// Rearranged: v·LOS = (f_emitted - f_observed) * c / f_emitted
+
+	var A [][]float64 // Design matrix
+	var b []float64   // Observations
+
+	for i := 0; i < len(loc.Stations); i++ {
+		for j := i + 1; j < len(loc.Stations); j++ {
+			if m.FDOA[i][j] == 0 {
+				continue
+			}
+
+			si, sj := loc.Stations[i], loc.Stations[j]
+
+			// Unit vectors from stations to emitter
+			los1 := normalize(subtract(position, si.Position))
+			los2 := normalize(subtract(position, sj.Position))
+
+			// Difference of LOS vectors
+			losDiff := [3]float64{
+				los1[0] - los2[0],
+				los1[1] - los2[1],
+				los1[2] - los2[2],
+			}
+
+			// Observation: Δf / f = (v·(los1 - los2)) / c
+			df := m.FDOA[i][j]
+			observation := df * c / freq
+
+			A = append(A, []float64{losDiff[0], losDiff[1], losDiff[2]})
+			b = append(b, observation)
+		}
+	}
+
+	if len(A) < 3 {
+		return [3]float64{0, 0, 0} // Insufficient measurements
+	}
+
+	// Solve least squares: A^T * A * v = A^T * b
+	// For 3x3 case, use direct solver
+	AtA := [3][3]float64{}
+	Atb := [3]float64{}
+
+	for k := range A {
+		for i := 0; i < 3; i++ {
+			for j := 0; j < 3; j++ {
+				AtA[i][j] += A[k][i] * A[k][j]
+			}
+			Atb[i] += A[k][i] * b[k]
+		}
+	}
+
+	velocity := Solve3x3(AtA, Atb)
+	return velocity
 }
 
 // lineSearch finds optimal step size

@@ -5,6 +5,7 @@ package analytics
 import (
 	"encoding/json"
 	"math"
+	"sync"
 	"time"
 )
 
@@ -45,36 +46,75 @@ type MGEComponent struct {
 
 // MGEAnalyzer provides Go-native MGE analysis capabilities
 type MGEAnalyzer struct {
-	sigmaThreshold float64
-	qThreshold     float64
-	resultsCache   map[int]*MGEResult // Keyed by NORAD ID
+	sigmaThreshold   float64
+	qThreshold       float64
+	resultsCache     map[int]*MGEResult // Keyed by NORAD ID
+	cacheMutex       sync.RWMutex       // Protects resultsCache from concurrent access
+	maxCacheSize     int                // Maximum cache entries to prevent unbounded growth
+	cacheAccessOrder []int              // LRU tracking for eviction
 }
 
 // NewMGEAnalyzer creates a new MGE analyzer
 func NewMGEAnalyzer() *MGEAnalyzer {
 	return &MGEAnalyzer{
-		sigmaThreshold: SigmaThreshold,
-		qThreshold:     QThreshold,
-		resultsCache:   make(map[int]*MGEResult),
+		sigmaThreshold:   SigmaThreshold,
+		qThreshold:       QThreshold,
+		resultsCache:     make(map[int]*MGEResult),
+		maxCacheSize:     1000, // Limit cache to 1000 entries
+		cacheAccessOrder: make([]int, 0, 1000),
 	}
 }
 
 // AnalyzeStructure performs MGE analysis on image data
 func (mga *MGEAnalyzer) AnalyzeStructure(imageData [][]float64, ngauss int) *MGEResult {
+	// Input validation
+	if len(imageData) == 0 {
+		return &MGEResult{
+			ArrayToBusRatio:  0.0,
+			TotalComponents:  0,
+			BusComponents:    0,
+			ArrayComponents:  0,
+			ArchitectureType: "UNKNOWN",
+			Status:           "FAILED",
+			Timestamp:        time.Now(),
+		}
+	}
+
+	if ngauss <= 0 {
+		ngauss = 8 // Default to 8 components if invalid
+	}
+
+	if ngauss > 64 {
+		ngauss = 64 // Cap at reasonable maximum to prevent excessive computation
+	}
+
 	// Simplified MGE fitting - in production, calls Python via ZMQ
 
 	components := make([]MGEComponent, 0)
 
 	// Find image center and peaks
 	totalFlux := 0.0
+	height := len(imageData)
+	width := 0
 
 	for y := range imageData {
-		for x := range imageData[y] {
+		if len(imageData[y]) == 0 {
+			continue // Skip empty rows
+		}
+		if width == 0 {
+			width = len(imageData[y])
+		} else if len(imageData[y]) != width {
+			// Ragged array detected - use minimum width
+			if len(imageData[y]) < width {
+				width = len(imageData[y])
+			}
+		}
+		for x := 0; x < len(imageData[y]); x++ {
 			totalFlux += imageData[y][x]
 		}
 	}
 
-	if totalFlux == 0 {
+	if height == 0 || width == 0 || totalFlux == 0 {
 		return &MGEResult{
 			ArrayToBusRatio:  0.0,
 			TotalComponents:  0,
@@ -180,12 +220,36 @@ func (mga *MGEAnalyzer) determineArchitecture(ratio float64) string {
 
 // GetCachedResult retrieves cached MGE result for a satellite
 func (mga *MGEAnalyzer) GetCachedResult(noradID int) *MGEResult {
+	mga.cacheMutex.RLock()
+	defer mga.cacheMutex.RUnlock()
 	return mga.resultsCache[noradID]
 }
 
-// CacheResult stores MGE result in cache
+// CacheResult stores MGE result in cache with LRU eviction
 func (mga *MGEAnalyzer) CacheResult(noradID int, result *MGEResult) {
+	mga.cacheMutex.Lock()
+	defer mga.cacheMutex.Unlock()
+
+	// Check if already in cache, move to end if so
+	for i, id := range mga.cacheAccessOrder {
+		if id == noradID {
+			mga.cacheAccessOrder = append(mga.cacheAccessOrder[:i], mga.cacheAccessOrder[i+1:]...)
+			mga.cacheAccessOrder = append(mga.cacheAccessOrder, noradID)
+			mga.resultsCache[noradID] = result
+			return
+		}
+	}
+
+	// Add new entry
 	mga.resultsCache[noradID] = result
+	mga.cacheAccessOrder = append(mga.cacheAccessOrder, noradID)
+
+	// Evict oldest if over limit
+	if len(mga.cacheAccessOrder) > mga.maxCacheSize {
+		oldest := mga.cacheAccessOrder[0]
+		delete(mga.resultsCache, oldest)
+		mga.cacheAccessOrder = mga.cacheAccessOrder[1:]
+	}
 }
 
 // IsJammerArchitecture checks if architecture indicates jammer
@@ -226,6 +290,7 @@ type MGEBridge struct {
 	pythonEndpoint string
 	analyzer       *MGEAnalyzer
 	requestQueue   chan MGERequest
+	shutdownChan   chan struct{} // Channel to signal shutdown
 }
 
 // MGERequest represents a request for MGE analysis
@@ -242,6 +307,7 @@ func NewMGEBridge(pythonEndpoint string) *MGEBridge {
 		pythonEndpoint: pythonEndpoint,
 		analyzer:       NewMGEAnalyzer(),
 		requestQueue:   make(chan MGERequest, 100),
+		shutdownChan:   make(chan struct{}),
 	}
 
 	// Start background processor
@@ -252,13 +318,24 @@ func NewMGEBridge(pythonEndpoint string) *MGEBridge {
 
 // processQueue processes MGE requests asynchronously
 func (mb *MGEBridge) processQueue() {
-	for req := range mb.requestQueue {
-		// In production, send to Python via ZMQ
-		// For now, use Go-native analyzer
-		result := mb.analyzer.AnalyzeStructure(req.ImageData, 8)
-		mb.analyzer.CacheResult(req.NoradID, result)
-		req.ResponseChan <- result
+	for {
+		select {
+		case req := <-mb.requestQueue:
+			// In production, send to Python via ZMQ
+			// For now, use Go-native analyzer
+			result := mb.analyzer.AnalyzeStructure(req.ImageData, 8)
+			mb.analyzer.CacheResult(req.NoradID, result)
+			req.ResponseChan <- result
+		case <-mb.shutdownChan:
+			// Shutdown signal received
+			return
+		}
 	}
+}
+
+// Shutdown gracefully stops the background processor
+func (mb *MGEBridge) Shutdown() {
+	close(mb.shutdownChan)
 }
 
 // RequestAnalysis queues an MGE analysis request
@@ -331,14 +408,14 @@ func (sfd *StructuralFingerprintDB) AddFingerprint(noradID int, result *MGEResul
 	} else {
 		// Create new
 		sfd.fingerprints[noradID] = &StructuralFingerprint{
-			NoradID:           noradID,
-			ArrayToBusRatio:   result.ArrayToBusRatio,
-			ArchitectureType:  result.ArchitectureType,
-			ComponentCount:    result.TotalComponents,
-			FirstSeen:         now,
-			LastSeen:          now,
-			ObservationCount:  1,
-			IsAnomalous:       false,
+			NoradID:          noradID,
+			ArrayToBusRatio:  result.ArrayToBusRatio,
+			ArchitectureType: result.ArchitectureType,
+			ComponentCount:   result.TotalComponents,
+			FirstSeen:        now,
+			LastSeen:         now,
+			ObservationCount: 1,
+			IsAnomalous:      false,
 		}
 	}
 }

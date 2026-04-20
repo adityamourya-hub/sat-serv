@@ -115,6 +115,40 @@ func (s CR3BPLite) rk4Step(system *CR3BPSystem, h float64) CR3BPLite {
 	return result
 }
 
+// forestRuthStep performs one Forest-Ruth (Yoshida 4th-order) symplectic integration step
+// ADITI 4.0: Replaces RK4 to preserve JᵀJM = J symplectic structure
+// Coefficients: γ = 1/(2-2^(1/3)), a = [γ/2, (1-γ)/2, (1-γ)/2, γ/2], b = [γ, 1-2γ, γ, 0]
+func (s CR3BPLite) forestRuthStep(system *CR3BPSystem, h float64) CR3BPLite {
+	// Forest-Ruth coefficients (Yoshida 4th-order)
+	gamma := 1.0 / (2.0 - math.Cbrt(2.0))
+	a := [4]float64{gamma / 2.0, (1.0 - gamma) / 2.0, (1.0 - gamma) / 2.0, gamma / 2.0}
+	b := [4]float64{gamma, 1.0 - 2.0*gamma, gamma, 0.0}
+
+	result := s
+
+	// Symplectic integration: for i=1..4: q = q + a[i]*h*∂H/∂p, p = p + b[i]*h*(-∂H/∂q)
+	// For CR3BP: ∂H/∂p = v, -∂H/∂q = acceleration
+	for i := 0; i < 4; i++ {
+		// Position update: q = q + a[i] * h * v
+		for j := 0; j < 3; j++ {
+			result.Pos[j] += a[i] * h * result.Vel[j]
+		}
+
+		// Momentum (velocity) update: v = v + b[i] * h * acceleration
+		if b[i] != 0 {
+			deriv := result.computeDerivatives(system)
+			for j := 0; j < 3; j++ {
+				result.Vel[j] += b[i] * h * deriv.Vel[j]
+			}
+		}
+	}
+
+	// Update Jacobi constant
+	result.JacobiC = result.ComputeJacobi(system.Mu)
+
+	return result
+}
+
 // computeDerivatives calculates CR3BP EOMs
 func (s CR3BPLite) computeDerivatives(system *CR3BPSystem) CR3BPLite {
 	mu := system.Mu

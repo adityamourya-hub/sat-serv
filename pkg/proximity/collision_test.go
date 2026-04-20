@@ -45,6 +45,11 @@ func (m mockCollisionModel) PredictManeuver(window []physics.ManeuverFrame) (phy
 	return physics.ManeuverInference{}, nil
 }
 
+func (m mockCollisionModel) PredictManeuverINT8(window []physics.ManeuverFrame) (physics.ManeuverInference, error) {
+	// Test mock: delegate to PredictManeuver
+	return m.PredictManeuver(window)
+}
+
 func (m mockCollisionModel) IsHealthy() bool { return true }
 
 func TestEvaluateCollisionRiskStages(t *testing.T) {

@@ -1,0 +1,144 @@
+// proto/ssis/v1/obs_report.proto
+// ADITI 4.0: Sovereign ObservationReport Schema
+//
+// Payload that transforms raw tracking data into Signed Intelligence Product.
+// Compact for Reticulum Network Stack (100Hz edge path) but rich enough for
+// IAF War-Room decision support.
+//
+// Protocol Buffers used for zero-copy serialization and minimal bandwidth.
+// Target: < 500 bytes per report, < 1ms serialization latency on M2 Air.
+
+syntax = "proto3";
+
+package ssis.v1;
+
+option go_package = "ssis/proto/ssis/v1;ssisv1";
+
+// ObservationReport is the sovereign payload for tactical space domain awareness
+//
+// Contains kinetic truth, optical signature, and intent logic for threat assessment.
+// Digitally signed via Ed25519 for chain of custody.
+message ObservationReport {
+  // === Target Identification ===
+  string target_id = 1;           // NORAD ID or internal designation (e.g., "HGV-2026-04A")
+  uint64 timestamp_ns = 2;        // Unix timestamp in nanoseconds (100Hz precision)
+  string station_id = 3;          // Reporting station (e.g., "DEL-HAN-01")
+
+  // === Kinetic Truth (Physics-First) ===
+  Vector3 eci_pos = 4;            // ECI position [km]
+  Vector3 eci_vel = 5;            // ECI velocity [km/s]
+  double epoch_jd = 6;            // Julian Date of observation
+
+  // === Hamiltonian Sovereign Handshake ===
+  // The "Physical Signature" - proves observation is physically consistent
+  // If σ_H / H_avg >= 1e-7, report self-invalidates (spoof detection)
+  double hamiltonian_invariant = 7;     // Mean Hamiltonian H_avg over window
+  double hamiltonian_variance = 8;     // Variance σ_H over window
+  bytes hamiltonian_hash = 9;            // SHA-256 of invariant (proof of work)
+  float hamiltonian_confidence = 10;   // 0-1: confidence in physical consistency
+
+  // === Optical Signature (Morphological Intelligence) ===
+  float visual_magnitude = 11;         // Apparent magnitude (photometric)
+  string spectral_class = 12;          // e.g., "HGV-Type-D", "Yaogan-33-Bus"
+  bytes mfbd_silhouette_hash = 13;     // Structural hash from GPU reconstruction
+
+  // Detailed optical features (optional - for Tier 3 characterization)
+  OpticalFeatures optical_features = 14;
+
+  // === Intent Logic (PAX Assessment) ===
+  float conflict_metric = 15;          // 0-1: threat level from PAX Governor
+  string active_policy = 16;           // e.g., "Maneuver-to-Goal-Alpha"
+  ThreatLevel threat_level = 17;       // Enumerated threat classification
+
+  // === Execution Tier (PAX Governor State) ===
+  ExecutionTier execution_tier = 18;     // Current PAX execution tier
+  float tier_confidence = 19;          // Confidence in tier selection
+
+  // === Spectroscopy Data (from SLiPy handoff) ===
+  // Populated when DMD Tripwire detects coherent plasma mode
+  SpectroscopyData spectroscopy = 20;
+
+  // === Cryptographic Signature (Sovereign Handshake) ===
+  bytes ed25519_signature = 21;        // Ed25519 signature of serialized report
+  bytes signer_public_key = 22;        // Public key of signing node
+}
+
+// Vector3 represents 3D vector in ECI coordinates
+message Vector3 {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+// OpticalFeatures contains detailed morphological characterization
+// From MFBD reconstruction and e3nn analysis
+message OpticalFeatures {
+  // Geometric properties
+  float estimated_rcs = 1;             // Radar Cross Section [m²]
+  float symmetry_score = 2;            // 0-1: bilateral symmetry
+  float aspect_ratio = 3;              // Length/width ratio
+  string material_class = 4;           // "Solar Panel", "Metal", "Composite", "Plasma"
+
+  // Rotational dynamics
+  float rotation_period = 5;           // Seconds (0 if stabilized)
+  float tumble_rate = 6;               // Degrees/second
+  bool is_stabilized = 7;              // True if 3-axis stabilized
+
+  // Spectral fingerprint
+  repeated float reflectance_spectrum = 8;  // Normalized spectral bins
+  float spectral_resolution = 9;         // nm per bin
+}
+
+// SpectroscopyData from SLiPy integration (DMD-triggered handoff)
+message SpectroscopyData {
+  uint64 integration_start_ns = 1;     // Start of 2-second integration window
+  uint64 integration_end_ns = 2;       // End of integration
+  repeated float spectral_bins = 3;    // Raw spectral intensities
+  float wavelength_min = 4;            // Minimum wavelength [nm]
+  float wavelength_max = 5;            // Maximum wavelength [nm]
+
+  // e3nn material identification
+  string material_id = 6;              // Classified material type
+  float material_confidence = 7;       // 0-1: ID confidence
+
+  // Plasma signature (for hypersonic objects)
+  float swir_intensity = 8;            // Short-wave IR intensity
+  float plasma_temperature = 9;        // Estimated temperature [K]
+  bool plasma_detected = 10;           // True if HGV plasma signature found
+}
+
+// ThreatLevel enumeration for IAF decision support
+enum ThreatLevel {
+  THREAT_LEVEL_UNSPECIFIED = 0;
+  THREAT_LEVEL_LOW = 1;           // Routine satellite
+  THREAT_LEVEL_MEDIUM = 2;        // Unusual activity
+  THREAT_LEVEL_HIGH = 3;          // Potential threat
+  THREAT_LEVEL_CRITICAL = 4;      // Active HGV / maneuvering weapon
+}
+
+// ExecutionTier from PAX Governor
+enum ExecutionTier {
+  EXECUTION_TIER_UNSPECIFIED = 0;
+  TIER_1_GO_PHYSICS = 1;          // M2 Air thermal-safe, Go-native
+  TIER_2_PRUNED_ONNX = 2;         // Neural network, quantized
+  TIER_3_FULL_DPHNO = 3;          // Full dissipative PHN operator
+  TIER_4_JAX_IMAGINATION = 4;     // Counterfactual planning
+}
+
+// ObservationReportBatch for efficient network transmission
+// Batches multiple reports for Reticulum network efficiency
+message ObservationReportBatch {
+  string batch_id = 1;
+  uint64 timestamp_ns = 2;
+  repeated ObservationReport reports = 3;
+  bytes ed25519_signature = 4;       // Signature of entire batch
+}
+
+// SovereignHandshake is the top-level envelope for authentication
+message SovereignHandshake {
+  bytes challenge = 1;               // Random nonce from verifier
+  bytes response = 2;                // Signed challenge
+  bytes public_key = 3;              // Ed25519 public key
+  uint64 timestamp_ns = 4;           // Challenge timestamp
+  string node_id = 5;                // Node identifier
+}

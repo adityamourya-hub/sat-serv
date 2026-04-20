@@ -144,31 +144,6 @@ func (bls *BatchLSEstimatorOptimized) BatchEstimate(
 	return results, nil
 }
 
-// PoolStats returns current pool statistics (for monitoring)
-type PoolStats struct {
-	Active int // Objects currently in use
-	Idle   int // Objects in pool ready for reuse
-}
-
-// GetPoolStats returns sync.Pool statistics
-// Note: sync.Pool doesn't expose internal state directly
-// This is a best-effort estimate based on allocation patterns
-func GetPoolStats() PoolStats {
-	// sync.Pool intentionally hides internal state
-	// for GC optimization. We can only infer from behavior.
-
-	// Warm-up the pool to get baseline
-	temp := GetODResult()
-	PutODResult(temp)
-
-	// Attempt to get stats by observing behavior
-	// This is approximate and for debugging only
-	return PoolStats{
-		Active: -1, // Unknown
-		Idle:   -1, // Unknown
-	}
-}
-
 // BenchmarkPoolAllocation compares pooled vs direct allocation
 // Usage: go test -bench=BenchmarkPoolAllocation ./pkg/od/
 func BenchmarkPoolAllocation(b *testing.B) {

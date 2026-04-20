@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+var (
+	// Classifier thresholds - loaded from ThreatConfig
+	cfgClassifier = GetConfig()
+
+	InspectorDistanceKm    = cfgClassifier.InspectorDistanceKm
+	GrappleClosureRateKms  = cfgClassifier.GrappleClosureRateKms
+	JammerThermalThreshold = cfgClassifier.JammerThermalThreshold
+)
+
 // ThreatType categorizes RSO threat classification
 type ThreatType string
 

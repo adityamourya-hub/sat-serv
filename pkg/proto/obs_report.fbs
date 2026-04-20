@@ -1,0 +1,138 @@
+// ADITI 4.0: Sovereign ObservationReport Schema
+// FlatBuffers schema for air-gapped handoff to NETRA gateway
+//
+// Design principles:
+// - Zero-copy deserialization (access data without unpacking)
+// - Fixed-size fields for cache-friendly access
+// - Binary format for compact transmission
+// - Hamiltonian hash for integrity verification
+
+namespace aditi;
+
+// Geometric state vector in canonical units
+table StateVector {
+  // Position [km] in ECI frame
+  x: double;
+  y: double;
+  z: double;
+
+  // Velocity [km/s] in ECI frame
+  vx: double;
+  vy: double;
+  vz: double;
+}
+
+// Covariance matrix (upper triangular, 6x6 = 21 unique elements)
+table Covariance {
+  // Stored as flat array: [c00, c01, c02, ..., c55]
+  // where cij = element at row i, column j
+  elements: [double] (size: 21);
+}
+
+// Hamiltonian proof for integrity verification
+table HamiltonianProof {
+  // Computed Hamiltonian invariant
+  value: double;
+
+  // Expected Hamiltonian at epoch
+  expected: double;
+
+  // Drift ratio: sigma_H / H_avg
+  drift_ratio: double;
+
+  // 32-byte SHA-256 hash of [value, expected, timestamp, target_id]
+  hash: [ubyte] (size: 32);
+}
+
+// Reachability Risk Index summary
+table RRI {
+  // Risk score 0-1 (normalized)
+  risk_score: float = 0.0;
+
+  // Time horizon of valid prediction [seconds]
+  time_horizon: float = 300.0;
+
+  // Conflict metric (EFE-based)
+  conflict_metric: float = 0.0;
+
+  // Polynomial coefficients (first 8 of 24, for compactness)
+  taylor_coeff: [double] (size: 8);
+}
+
+// Main observation report
+table ObservationReport {
+  // Target identification
+  target_id: uint32;
+
+  // Timestamp of observation [Unix nanoseconds]
+  timestamp: ulong;
+
+  // Sensor that made observation
+  sensor_id: string;
+
+  // Physical state
+  state: StateVector;
+  covariance: Covariance;
+
+  // Physics invariants
+  hamiltonian: HamiltonianProof;
+  alpha: float = 0.75;  // Fractional order (0-1)
+
+  // Intelligence assessment
+  intent_label: string;  // e.g., "Active HGV Skip", "Debris", "Routine"
+  rri: RRI;
+
+  // Quality metrics
+  confidence: float = 0.85;  // 0-1 confidence score
+  snr: float;                 // Signal-to-noise ratio
+
+  // Sovereign handshake: hash for chain verification
+  // Links to previous report in chain (for tamper detection)
+  prev_hash: [ubyte] (size: 32);
+
+  // Entropy for uniqueness
+  nonce: uint32;
+}
+
+// Batch of observation reports (for bulk transmission)
+table ObservationBatch {
+  reports: [ObservationReport];
+
+  // Batch metadata
+  batch_id: uint64;
+  sender_id: string;
+  region: string;  // e.g., "INDO-PACIFIC", "EUROPE", "AMERICAS"
+
+  // Time range of batch
+  start_time: ulong;
+  end_time: ulong;
+
+  // Overall batch integrity
+  batch_hash: [ubyte] (size: 32);
+}
+
+// Alert for immediate threat escalation
+table ThreatAlert {
+  // Urgent threat notification
+  alert_id: uint64;
+  timestamp: ulong;
+
+  // Threat details
+  target_id: uint32;
+  threat_type: string;  // e.g., "ASAT", "HGV_APPROACH", "MANEUVER"
+
+  // Assessment
+  risk_score: float;
+  time_to_event: float;  // seconds
+
+  // Recommended action
+  action: string;  // e.g., "TRACK", "ESCALATE", "ALERT_GROUND"
+
+  // Reference to observation
+  source_report: ulong;  // batch_id of source
+
+  // Authentication
+  auth_hash: [ubyte] (size: 32);
+}
+
+root_type ObservationReport;

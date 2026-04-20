@@ -7,14 +7,18 @@ import (
 	"time"
 )
 
-const (
-	// ASAT intercept thresholds
-	InterceptThresholdM   = 500.0 // 500 meters intercept threshold
-	StrikeWindowPhaseDeg  = 10.0  // 10 degrees phase angle for vulnerability
-	SleeperVelocityMPS    = 0.1   // 10 cm/s velocity change threshold
-	ASATMachThreshold     = 7.0   // Mach 7 for DA-ASAT detection
-	DAVerticalVelocityKmS = 7.0   // 7 km/s vertical velocity for DA-ASAT
+var (
+	// ASAT intercept thresholds - loaded from ThreatConfig
+	cfgASAT = GetConfig()
 
+	InterceptThresholdM   = cfgASAT.InterceptThresholdM
+	StrikeWindowPhaseDeg  = cfgASAT.StrikeWindowPhaseDeg
+	SleeperVelocityMPS    = cfgASAT.SleeperVelocityMPS
+	ASATMachThreshold     = cfgASAT.ASATMachThreshold
+	DAVerticalVelocityKmS = cfgASAT.DAVerticalVelocityKmS
+)
+
+const (
 	// ASAT types
 	ASATDirectAscent   = "DA_ASAT"
 	ASATCoorbital      = "COORBITAL_ASAT"

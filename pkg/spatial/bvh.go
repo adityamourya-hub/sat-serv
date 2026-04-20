@@ -1,14 +1,16 @@
 package spatial
 
 import (
+	"fmt"
+	"math"
 	"sort"
 
 	"ssis/pkg/types"
 )
 
 /**
- * mortonBitsPerAxis and mortonMask define the resolution of the 
- * Space-Time hierarchical grid. For 4D (X, Y, Z, T), we use 16 bits 
+ * mortonBitsPerAxis and mortonMask define the resolution of the
+ * Space-Time hierarchical grid. For 4D (X, Y, Z, T), we use 16 bits
  * per axis to fit within a 64-bit Morton code.
  */
 const (
@@ -24,6 +26,72 @@ const (
 type AABB struct {
 	Min, Max   types.Vector3
 	TMin, TMax float64
+}
+
+// Epsilon values for numerical stability
+const (
+	epsilonSpatial  = 1e-6 // 1 micrometer for spatial
+	epsilonTemporal = 1e-9 // 1 nanosecond for temporal
+	minAABBSize     = 1e-3 // 1mm minimum AABB dimension
+)
+
+// ValidateBounds ensures AABB has valid, non-degenerate bounds
+// Returns (isValid, error) - if invalid, error describes the problem
+func (a *AABB) ValidateBounds() (bool, error) {
+	// Check for NaN/Inf in spatial bounds
+	for _, v := range []float64{a.Min.X, a.Min.Y, a.Min.Z, a.Max.X, a.Max.Y, a.Max.Z} {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return false, fmt.Errorf("invalid spatial bound: %v", v)
+		}
+	}
+
+	// Check for NaN/Inf in temporal bounds
+	if math.IsNaN(a.TMin) || math.IsInf(a.TMin, 0) || math.IsNaN(a.TMax) || math.IsInf(a.TMax, 0) {
+		return false, fmt.Errorf("invalid temporal bound: tMin=%v, tMax=%v", a.TMin, a.TMax)
+	}
+
+	// Ensure Min <= Max for all dimensions
+	if a.Min.X > a.Max.X {
+		a.Min.X, a.Max.X = a.Max.X, a.Min.X
+	}
+	if a.Min.Y > a.Max.Y {
+		a.Min.Y, a.Max.Y = a.Max.Y, a.Min.Y
+	}
+	if a.Min.Z > a.Max.Z {
+		a.Min.Z, a.Max.Z = a.Max.Z, a.Min.Z
+	}
+	if a.TMin > a.TMax {
+		a.TMin, a.TMax = a.TMax, a.TMin
+	}
+
+	// Ensure non-zero size (degenerate AABB handling)
+	if a.Max.X-a.Min.X < minAABBSize {
+		a.Min.X -= minAABBSize / 2
+		a.Max.X += minAABBSize / 2
+	}
+	if a.Max.Y-a.Min.Y < minAABBSize {
+		a.Min.Y -= minAABBSize / 2
+		a.Max.Y += minAABBSize / 2
+	}
+	if a.Max.Z-a.Min.Z < minAABBSize {
+		a.Min.Z -= minAABBSize / 2
+		a.Max.Z += minAABBSize / 2
+	}
+	if a.TMax-a.TMin < epsilonTemporal {
+		a.TMin -= epsilonTemporal / 2
+		a.TMax += epsilonTemporal / 2
+	}
+
+	return true, nil
+}
+
+// Volume returns the 4D hypervolume of the AABB (spatial volume × time)
+func (a AABB) Volume() float64 {
+	dx := a.Max.X - a.Min.X
+	dy := a.Max.Y - a.Min.Y
+	dz := a.Max.Z - a.Min.Z
+	dt := a.TMax - a.TMin
+	return dx * dy * dz * dt
 }
 
 /**
@@ -134,6 +202,17 @@ type BVH struct {
  * Exit Point: Logs the resulting 64-bit code.
  */
 func mortonCode(pos types.Vector3, t float64, bounds AABB) uint64 {
+	// Validate inputs for NaN/Inf
+	if math.IsNaN(pos.X) || math.IsNaN(pos.Y) || math.IsNaN(pos.Z) || math.IsNaN(t) {
+		return 0 // Invalid morton code for NaN input
+	}
+	if math.IsInf(pos.X, 0) || math.IsInf(pos.Y, 0) || math.IsInf(pos.Z, 0) || math.IsInf(t, 0) {
+		return 0xFFFFFFFFFFFFFFFF // Max morton code for Inf input (sorts to end)
+	}
+
+	// Validate bounds to prevent division by zero
+	bounds.ValidateBounds()
+
 	nx := normalizeAndQuantize(pos.X, bounds.Min.X, bounds.Max.X)
 	ny := normalizeAndQuantize(pos.Y, bounds.Min.Y, bounds.Max.Y)
 	nz := normalizeAndQuantize(pos.Z, bounds.Min.Z, bounds.Max.Z)
@@ -144,7 +223,7 @@ func mortonCode(pos types.Vector3, t float64, bounds AABB) uint64 {
 }
 
 /**
- * normalizeAndQuantize maps a float64 value into a 16-bit integer range [0, 65535] 
+ * normalizeAndQuantize maps a float64 value into a 16-bit integer range [0, 65535]
  * relative to the provided min/max bounds.
  */
 func normalizeAndQuantize(val, min, max float64) uint32 {
@@ -188,14 +267,37 @@ type mortonItem struct {
 
 /**
  * NewBVH constructs a new 4D ST-BVH from a slice of BVHObjects.
- * It computes global 4D bounds, sorts objects by Morton code, 
+ * It computes global 4D bounds, sorts objects by Morton code,
  * and builds a balanced hierarchy recursively.
  * Entry Point: Logs object count.
  * Exit Point: Logs result tree root.
  */
 func NewBVH(objects []BVHObject) *BVH {
 	if len(objects) == 0 {
-		return &BVH{}
+		return &BVH{
+			Root:    nil,
+			Objects: []BVHObject{},
+			Bounds:  AABB{},
+		}
+	}
+
+	// Single object: create leaf-only BVH (fast path)
+	if len(objects) == 1 {
+		pos := objects[0].GetPosition()
+		t := objects[0].GetTimestamp()
+		bounds := AABB{Min: pos, Max: pos, TMin: t, TMax: t}
+		bounds.ValidateBounds()
+
+		root := &BVHNode{
+			Bounds: bounds,
+			Object: objects[0],
+			IsLeaf: true,
+		}
+		return &BVH{
+			Root:    root,
+			Objects: objects,
+			Bounds:  bounds,
+		}
 	}
 
 	// Compute global 4D bounds
@@ -209,10 +311,19 @@ func NewBVH(objects []BVHObject) *BVH {
 		bounds.Expand(obj.GetPosition(), obj.GetTimestamp())
 	}
 
+	// Validate and fix bounds before using
+	bounds.ValidateBounds()
+
 	// Add small epsilon to avoid zero-size bounds
 	eps := 1.0
-	bounds.Min.X -= eps; bounds.Min.Y -= eps; bounds.Min.Z -= eps; bounds.TMin -= eps
-	bounds.Max.X += eps; bounds.Max.Y += eps; bounds.Max.Z += eps; bounds.TMax += eps
+	bounds.Min.X -= eps
+	bounds.Min.Y -= eps
+	bounds.Min.Z -= eps
+	bounds.TMin -= eps
+	bounds.Max.X += eps
+	bounds.Max.Y += eps
+	bounds.Max.Z += eps
+	bounds.TMax += eps
 
 	// Create Morton-sorted items
 	items := make([]mortonItem, len(objects))
@@ -239,7 +350,7 @@ func NewBVH(objects []BVHObject) *BVH {
 }
 
 /**
- * buildBVHRecursive builds the binary hierarchy from Morton-sorted items 
+ * buildBVHRecursive builds the binary hierarchy from Morton-sorted items
  * using a median-split approach for tree balancing.
  * Entry Point: Logs item count.
  * Exit Point: Logs result node leaf/internal status.
@@ -288,7 +399,7 @@ func buildBVHRecursive(items []mortonItem, bounds AABB) *BVHNode {
 }
 
 /**
- * QueryRange finds all objects within a 4D Space-Time hypercylinder 
+ * QueryRange finds all objects within a 4D Space-Time hypercylinder
  * (spatial AABB + temporal interval).
  * Entry Point: Logs spatial and temporal query parameters.
  * Exit Point: Logs result object count.
@@ -323,8 +434,8 @@ func (n *BVHNode) queryRange(query AABB, results *[]BVHObject) {
 }
 
 /**
- * FindPotentialPairs performs a broad-phase Space-Time sweep to find all 
- * object-pairs whose 4D bounds overlap. 
+ * FindPotentialPairs performs a broad-phase Space-Time sweep to find all
+ * object-pairs whose 4D bounds overlap.
  * This is the primary accelerator for Conjunction Analysis (Requirement c).
  * Entry Point: Trace start.
  * Exit Point: Logs result pair count.
@@ -400,7 +511,7 @@ func (n *BVHNode) findCrossPairs(other *BVHNode, pairSet *map[uint64][2]BVHObjec
 }
 
 /**
- * makeAndStorePair creates a canonical hash key for a pair of objects 
+ * makeAndStorePair creates a canonical hash key for a pair of objects
  * to ensure bidirectional uniqueness in the result set.
  */
 func makeAndStorePair(pairSet *map[uint64][2]BVHObject, a, b BVHObject) {

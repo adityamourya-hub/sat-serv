@@ -27,8 +27,36 @@ import (
 	"ssis/pkg/physics"
 )
 
-// PoDThreshold defines when a location is considered "blind"
-const PoDThreshold = 0.05 // 5% detection probability = blind spot
+// SensorsConfig holds configurable thresholds and parameters for sensor operations
+type SensorsConfig struct {
+	// Blind spot detection thresholds
+	PoDThreshold float64 // Detection probability below which region is considered blind (default 0.05)
+
+	// PoD engine parameters
+	MinSNR        float64 // Minimum SNR threshold for detection (dB)
+	ResolutionMin float64 // Minimum resolution requirement (meters)
+
+	// Physics constants
+	EarthRadius         float64 // Earth radius in km (default 6378.0)
+	EarthShadowPenumbra float64 // Penumbra factor for Earth shadow (default 1.05)
+
+	// Sun position
+	EclipticObliquity float64 // Obliquity of ecliptic in degrees (default 23.44)
+}
+
+// DefaultSensorsConfig returns a configuration with sensible defaults
+func DefaultSensorsConfig() SensorsConfig {
+	return SensorsConfig{
+		PoDThreshold:        0.05,   // 5% detection probability
+		MinSNR:              10.0,   // 10 dB SNR
+		ResolutionMin:       1.0,    // 1 meter
+		EarthRadius:         6378.0, // km
+		EarthShadowPenumbra: 1.05,   // 5% penumbra
+		EclipticObliquity:   23.44,  // degrees
+	}
+}
+
+var defaultConfig = DefaultSensorsConfig()
 
 // BlindSpotWindow represents a temporal-spatial gap in adversary coverage
 type BlindSpotWindow struct {
@@ -74,11 +102,16 @@ func (r SpatialRegion) Contains(pos [3]float64) bool {
 
 // ECIToLatLonAlt converts ECI position to geodetic coordinates
 func ECIToLatLonAlt(pos [3]float64) (lat, lon, alt float64) {
+	return ECIToLatLonAltWithConfig(pos, defaultConfig)
+}
+
+// ECIToLatLonAltWithConfig converts ECI position to geodetic coordinates with custom config
+func ECIToLatLonAltWithConfig(pos [3]float64, config SensorsConfig) (lat, lon, alt float64) {
 	// Simplified - assumes spherical Earth
 	r := math.Sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2])
 	lat = math.Asin(pos[2]/r) * 180.0 / math.Pi
 	lon = math.Atan2(pos[1], pos[0]) * 180.0 / math.Pi
-	alt = r - 6378.0 // Earth radius ~6378 km
+	alt = r - config.EarthRadius
 	return
 }
 
@@ -109,14 +142,21 @@ type BlindSpotDetector struct {
 	AdversaryAssets []*SensorPlatform // Enemy surveillance satellites
 	TerrainModel    *TerrainDEM       // Digital elevation for SAR shadows
 	PoDCalculator   *PoDEngine        // Probability of detection calculator
+	Config          SensorsConfig     // Configuration parameters
 }
 
-// NewBlindSpotDetector creates a detector for adversary assets
+// NewBlindSpotDetector creates a detector for adversary assets with default config
 func NewBlindSpotDetector(assets []*SensorPlatform, terrain *TerrainDEM) *BlindSpotDetector {
+	return NewBlindSpotDetectorWithConfig(assets, terrain, defaultConfig)
+}
+
+// NewBlindSpotDetectorWithConfig creates a detector with custom configuration
+func NewBlindSpotDetectorWithConfig(assets []*SensorPlatform, terrain *TerrainDEM, config SensorsConfig) *BlindSpotDetector {
 	return &BlindSpotDetector{
 		AdversaryAssets: assets,
 		TerrainModel:    terrain,
-		PoDCalculator:   NewPoDEngine(),
+		PoDCalculator:   NewPoDEngineWithConfig(config),
+		Config:          config,
 	}
 }
 
@@ -139,7 +179,7 @@ func (bsd *BlindSpotDetector) FindBlindSpots(
 		// Compute PoD at this instant for the region
 		pod, gaps := bsd.computeRegionPoD(region, currentTime, params)
 
-		if pod < PoDThreshold {
+		if pod < bsd.Config.PoDThreshold {
 			// We're in a blind spot
 			if currentWindow == nil {
 				// Start new window
@@ -288,9 +328,16 @@ func determineGapReason(geo ObservationGeometry) GapReason {
 
 // computeSunPositionECI computes Sun position in ECI coordinates
 func computeSunPositionECI(jd float64) [3]float64 {
-	// Simplified sun position (accurate to ~0.01 AU)
+	return computeSunPositionECIWithConfig(jd, defaultConfig)
+}
+
+// computeSunPositionECIWithConfig computes Sun position with custom config (includes ecliptic obliquity)
+func computeSunPositionECIWithConfig(jd float64, config SensorsConfig) [3]float64 {
+	// Sun position algorithm (accurate to ~0.01 AU)
+	// Based on Vallado algorithm 24
+	T := (jd - 2451545.0) / 36525.0 // Julian centuries from J2000
+
 	// Mean longitude
-	T := (jd - 2451545.0) / 36525.0                 // Julian centuries from J2000
 	L0 := 280.46646 + 36000.76983*T + 0.0003032*T*T // degrees
 
 	// Mean anomaly
@@ -301,18 +348,29 @@ func computeSunPositionECI(jd float64) [3]float64 {
 		(0.019993-0.000101*T)*math.Sin(2*M*math.Pi/180.0) +
 		0.000289*math.Sin(3*M*math.Pi/180.0)
 
-	// True longitude
-	trueLon := L0 + C // degrees
+	// True longitude (ecliptic)
+	trueLonEcliptic := L0 + C // degrees
+
+	// True anomaly
+	trueAnomaly := M + C // degrees
 
 	// Distance (AU)
 	R := 1.000001018 * (1.0 - 0.016708617*0.016708617) /
-		(1.0 + 0.016708617*math.Cos((M+C)*math.Pi/180.0))
+		(1.0 + 0.016708617*math.Cos(trueAnomaly*math.Pi/180.0))
 
-	// Convert to ECI (assuming Earth at origin, equatorial plane)
-	trueLonRad := trueLon * math.Pi / 180.0
-	x := R * 149597870.7 * math.Cos(trueLonRad) // km
-	y := R * 149597870.7 * math.Sin(trueLonRad) // km
-	z := 0.0                                    // Simplified: neglect ecliptic obliquity
+	// Convert to ECI using ecliptic obliquity
+	eps := config.EclipticObliquity * math.Pi / 180.0 // Obliquity in radians
+	trueLonRad := trueLonEcliptic * math.Pi / 180.0
+
+	// Ecliptic coordinates
+	xEcliptic := R * 149597870.7 * math.Cos(trueLonRad) // km
+	yEcliptic := R * 149597870.7 * math.Sin(trueLonRad) // km
+	zEcliptic := 0.0
+
+	// Rotate to equatorial (ECI) using obliquity
+	x := xEcliptic
+	y := yEcliptic*math.Cos(eps) - zEcliptic*math.Sin(eps)
+	z := yEcliptic*math.Sin(eps) + zEcliptic*math.Cos(eps)
 
 	return [3]float64{x, y, z}
 }
@@ -343,11 +401,16 @@ func generateSamplePoints(region SpatialRegion, n int) [][3]float64 {
 
 // LatLonAltToECI converts geodetic to ECI (simplified)
 func LatLonAltToECI(lat, lon, alt float64) [3]float64 {
+	return LatLonAltToECIWithConfig(lat, lon, alt, defaultConfig)
+}
+
+// LatLonAltToECIWithConfig converts geodetic to ECI with custom config
+func LatLonAltToECIWithConfig(lat, lon, alt float64, config SensorsConfig) [3]float64 {
 	latRad := lat * math.Pi / 180.0
 	lonRad := lon * math.Pi / 180.0
 
 	// Earth radius + altitude
-	r := 6378.0 + alt
+	r := config.EarthRadius + alt
 
 	// ECI coordinates (assuming no Earth rotation offset)
 	x := r * math.Cos(latRad) * math.Cos(lonRad)

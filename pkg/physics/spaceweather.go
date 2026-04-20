@@ -1,7 +1,11 @@
 package physics
 
 import (
+	"encoding/json"
+	"fmt"
+	"log"
 	"math"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -19,11 +23,28 @@ import (
  * real-time space weather integration for dynamic drag calculation.
  */
 type SpaceWeatherData struct {
-	F107    float64 // Current 10.7 cm solar flux (sfu)
-	F107Avg float64 // 81-day centered average of F10.7
-	Ap      float64 // Current Ap index (nT)
-	Kp      float64 // Current Kp index (0-9)
+	F107      float64 // Current 10.7 cm solar flux (sfu)
+	F107Avg   float64 // 81-day centered average of F10.7
+	Ap        float64 // Current Ap index (nT)
+	Kp        float64 // Current Kp index (0-9)
 	Timestamp time.Time
+}
+
+// NOAASolarCycleResponse represents the NOAA SWPC solar cycle JSON response
+type NOAASolarCycleResponse struct {
+	TimeTag string `json:"time_tag"`
+	F107    []struct {
+		TimeTag string  `json:"time_tag"`
+		Flux    float64 `json:"flux"`
+	} `json:"f107"`
+}
+
+// NOAAApResponse represents the NOAA SWPC Ap index JSON response
+type NOAAApResponse struct {
+	ApIndex []struct {
+		TimeTag string  `json:"time_tag"`
+		Ap      float64 `json:"ap"`
+	} `json:"ap_index"`
 }
 
 /**
@@ -31,14 +52,21 @@ type SpaceWeatherData struct {
  * with automatic expiration and fallback values.
  */
 type SpaceWeatherCache struct {
-	mu        sync.RWMutex
-	data      SpaceWeatherData
-	valid     bool
-	maxAge    time.Duration
-	
+	mu     sync.RWMutex
+	data   SpaceWeatherData
+	valid  bool
+	maxAge time.Duration
+
 	// Fallback values for when live data unavailable
 	DefaultF107 float64
 	DefaultAp   float64
+
+	// NOAA SWPC feed configuration
+	NOAAEndpoint   string
+	NOAAApEndpoint string // Dedicated Ap index endpoint
+	Client         *http.Client
+	WorkerActive   bool
+	stopChan       chan struct{}
 }
 
 /**
@@ -49,10 +77,16 @@ type SpaceWeatherCache struct {
  */
 func NewSpaceWeatherCache() *SpaceWeatherCache {
 	return &SpaceWeatherCache{
-		maxAge:    6 * time.Hour, // Data older than 6 hours considered stale
-		DefaultF107: 140.0,
-		DefaultAp:   15.0,
-		valid:     false,
+		maxAge:         6 * time.Hour, // Data older than 6 hours considered stale
+		DefaultF107:    140.0,
+		DefaultAp:      15.0,
+		valid:          false,
+		NOAAEndpoint:   "https://services.swpc.noaa.gov/json/solar-cycle/f107_index.json",
+		NOAAApEndpoint: "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json",
+		Client: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+		WorkerActive: false,
 	}
 }
 
@@ -65,15 +99,173 @@ func (c *SpaceWeatherCache) Update(sw SpaceWeatherData) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	sw.Timestamp = time.Now()
 	c.data = sw
 	c.valid = true
 }
 
 /**
- * Get retrieves current space weather data, falling back to defaults if stale.
+ * UpdateFromNOAA fetches live space weather data from NOAA SWPC JSON feed.
+ * Returns error if fetch fails or data is out of physical bounds.
  */
+func (c *SpaceWeatherCache) UpdateFromNOAA() error {
+	if c == nil || c.Client == nil {
+		return fmt.Errorf("space weather cache not initialized with HTTP client")
+	}
+
+	// Fetch F10.7 solar flux index from NOAA SWPC
+	resp, err := c.Client.Get(c.NOAAEndpoint)
+	if err != nil {
+		return fmt.Errorf("NOAA SWPC fetch failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("NOAA SWPC returned status %d", resp.StatusCode)
+	}
+
+	var swData NOAASolarCycleResponse
+	if err := json.NewDecoder(resp.Body).Decode(&swData); err != nil {
+		return fmt.Errorf("failed to decode NOAA response: %w", err)
+	}
+
+	if len(swData.F107) == 0 {
+		return fmt.Errorf("no F10.7 data in NOAA response")
+	}
+
+	// Extract most recent F10.7 value
+	latestF107 := swData.F107[len(swData.F107)-1].Flux
+
+	// Fetch Ap index from dedicated NOAA endpoint
+	var latestAp float64
+	if c.NOAAApEndpoint != "" {
+		apResp, err := c.Client.Get(c.NOAAApEndpoint)
+		if err == nil && apResp.StatusCode == http.StatusOK {
+			defer apResp.Body.Close()
+			var apData NOAAApResponse
+			if err := json.NewDecoder(apResp.Body).Decode(&apData); err == nil && len(apData.ApIndex) > 0 {
+				latestAp = apData.ApIndex[len(apData.ApIndex)-1].Ap
+			}
+		}
+	}
+
+	// Fallback to estimation if Ap endpoint failed
+	if latestAp == 0 {
+		estimatedAp := (latestF107 - 70.0) / 5.0
+		if estimatedAp < 5.0 {
+			estimatedAp = 5.0
+		}
+		if estimatedAp > 100.0 {
+			estimatedAp = 100.0
+		}
+		latestAp = estimatedAp
+	}
+
+	// Validate bounds to prevent poisoning the FNO
+	if latestF107 < 60 || latestF107 > 400 || latestAp < 0 || latestAp > 400 {
+		return fmt.Errorf("space weather data out of physical bounds: F107=%.2f, Ap=%.2f", latestF107, latestAp)
+	}
+
+	// Update cache with live data
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.data = SpaceWeatherData{
+		F107:      latestF107,
+		F107Avg:   latestF107, // Use current as approximation (81-day avg would require historical data)
+		Ap:        latestAp,
+		Kp:        latestAp / 3.0, // Rough conversion: Ap/3 ≈ Kp
+		Timestamp: time.Now(),
+	}
+	c.valid = true
+
+	log.Printf("[SPACEWEATHER] Updated from NOAA: F107=%.2f sfu, Ap=%.2f nT", latestF107, latestAp)
+	return nil
+}
+
+/**
+ * StartWorker initiates background goroutine for periodic NOAA updates.
+ * Refreshes every 6 hours, ensuring 100Hz reflex loop is never blocked.
+ */
+func (c *SpaceWeatherCache) StartWorker() {
+	if c == nil || c.WorkerActive {
+		return
+	}
+
+	c.stopChan = make(chan struct{})
+	c.WorkerActive = true
+
+	// Immediate first fetch
+	if err := c.UpdateFromNOAA(); err != nil {
+		log.Printf("[SPACEWEATHER] Initial NOAA fetch failed: %v. Using cached/default.", err)
+	}
+
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if err := c.UpdateFromNOAA(); err != nil {
+					log.Printf("[SPACEWEATHER] Periodic SWPC update failed: %v", err)
+				}
+			case <-c.stopChan:
+				log.Printf("[SPACEWEATHER] Worker stopped")
+				c.WorkerActive = false
+				return
+			}
+		}
+	}()
+
+	log.Printf("[SPACEWEATHER] Background worker started (6-hour refresh interval)")
+}
+
+/**
+ * StopWorker gracefully stops the background NOAA update goroutine.
+ */
+func (c *SpaceWeatherCache) StopWorker() {
+	if c == nil || !c.WorkerActive {
+		return
+	}
+
+	close(c.stopChan)
+	c.WorkerActive = false
+}
+
+/**
+ * CheckStaleness returns true if cached data is older than specified duration.
+ * Default staleness threshold is 12 hours.
+ */
+func (c *SpaceWeatherCache) CheckStaleness(threshold time.Duration) bool {
+	if c == nil {
+		return true
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if !c.valid {
+		return true
+	}
+
+	if threshold == 0 {
+		threshold = 12 * time.Hour // Default threshold
+	}
+
+	return time.Since(c.data.Timestamp) > threshold
+}
+
+/*
+*
+  - data = sw
+    c.valid = true
+    }
+
+/**
+  - Get retrieves current space weather data, falling back to defaults if stale.
+*/
 func (c *SpaceWeatherCache) Get() SpaceWeatherData {
 	if c == nil {
 		return SpaceWeatherData{
@@ -81,10 +273,10 @@ func (c *SpaceWeatherCache) Get() SpaceWeatherData {
 			Ap:   15.0,
 		}
 	}
-	
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	if !c.valid || time.Since(c.data.Timestamp) > c.maxAge {
 		// Return defaults with zero timestamp to indicate fallback
 		return SpaceWeatherData{
@@ -94,7 +286,7 @@ func (c *SpaceWeatherCache) Get() SpaceWeatherData {
 			Kp:      c.DefaultAp / 3.0, // Rough conversion: Ap/3 ≈ Kp
 		}
 	}
-	
+
 	return c.data
 }
 
@@ -135,7 +327,7 @@ func NRLMSISE00Density(altKm, latDeg, lonDeg, jd float64, sw SpaceWeatherData) f
 		// Exosphere - very low density
 		return 1e-15
 	}
-	
+
 	// Solar flux effect on density (higher F10.7 = more EUV = expanded atmosphere)
 	// NRLMSISE-00 uses both current F10.7 and 81-day average
 	f107 := sw.F107
@@ -143,33 +335,33 @@ func NRLMSISE00Density(altKm, latDeg, lonDeg, jd float64, sw SpaceWeatherData) f
 	if f107a < 1 {
 		f107a = f107 // Fallback
 	}
-	
+
 	// Geomagnetic activity effect (Ap index)
 	ap := sw.Ap
-	
+
 	// Diurnal variation (day/night bulge)
 	// Peak density at ~14:00 local solar time
 	lst := localSolarTime(jd, lonDeg)
 	diurnal := 1.0 + 0.15*math.Cos((lst-14.0)*math.Pi/12.0)
-	
+
 	// Latitude variation (lower density at poles)
 	latRad := latDeg * math.Pi / 180.0
 	latEffect := 1.0 - 0.1*math.Abs(math.Sin(latRad))
-	
+
 	// Solar activity scaling factor
 	// Higher F10.7 expands atmosphere, increasing density at all altitudes
 	solarFactor := 0.5 + 0.5*(f107+f107a)/280.0 // Normalize around F10.7=140
-	
+
 	// Geomagnetic storm effect (significant at high altitudes)
 	geomagFactor := 1.0
 	if altKm > 200 {
 		// Ap effect increases with altitude
 		geomagFactor = 1.0 + (ap/100.0)*math.Min(1.0, (altKm-200)/400.0)
 	}
-	
+
 	// Base density model - piecewise exponential with solar/geomag scaling
 	rho := baseDensity(altKm) * diurnal * latEffect * solarFactor * geomagFactor
-	
+
 	return rho
 }
 
@@ -194,7 +386,7 @@ func JB2008Density(altKm, latDeg, jd float64, sw SpaceWeatherData) float64 {
 	if altKm > 2000 {
 		return 1e-15
 	}
-	
+
 	// JB2008 uses temperature as the primary driver
 	// Exospheric temperature from solar EUV heating
 	f107 := sw.F107
@@ -202,32 +394,32 @@ func JB2008Density(altKm, latDeg, jd float64, sw SpaceWeatherData) float64 {
 	if f107a < 1 {
 		f107a = f107
 	}
-	
+
 	// Base exospheric temperature (Jacchia formula)
 	// Texo = 379.0 + 3.24*F10.7 + 1.3*(F10.7 - F10.7avg)
 	texo := 379.0 + 3.24*f107 + 1.3*(f107-f107a)
-	
+
 	// Geomagnetic heating (significant effect above 200 km)
 	ap := sw.Ap
 	if altKm > 200 {
 		dtGeomag := 27.0 * ap * math.Exp(-(altKm-200)/100.0)
 		texo += dtGeomag
 	}
-	
+
 	// Diurnal variation
 	lst := localSolarTime(jd, 0) // Use local time effect
 	diurnalTemp := 30.0 * math.Cos((lst-14.0)*math.Pi/12.0)
 	texo += diurnalTemp
-	
+
 	// Density from temperature (simplified barometric formula)
 	// rho = rho0 * exp(-alt/H) where H is scale height
 	scaleHeight := texo / 30.0 // Approximate scale height in km
-	
+
 	// Base sea-level density adjusted for temperature
 	rho0 := 1.225 * (290.0 / (texo - 150.0)) // Temperature-corrected
-	
+
 	rho := rho0 * math.Exp(-altKm/scaleHeight)
-	
+
 	return rho
 }
 
@@ -249,11 +441,11 @@ func JB2008Density(altKm, latDeg, jd float64, sw SpaceWeatherData) float64 {
 func GetDensityDynamic(altKm, latDeg, lonDeg, jd float64, sw SpaceWeatherData) float64 {
 	// Use JB2008 for high solar activity or geomagnetic storms
 	useJB2008 := sw.F107 > 200.0 || sw.Ap > 50.0
-	
+
 	if useJB2008 {
 		return JB2008Density(altKm, latDeg, jd, sw)
 	}
-	
+
 	return NRLMSISE00Density(altKm, latDeg, lonDeg, jd, sw)
 }
 
@@ -263,21 +455,21 @@ func GetDensityDynamic(altKm, latDeg, lonDeg, jd float64, sw SpaceWeatherData) f
 func localSolarTime(jd, lonDeg float64) float64 {
 	// Julian Date starts at noon, so adjust
 	dayFraction := math.Mod(jd+0.5, 1.0)
-	
+
 	// UTC hour
 	utcHour := dayFraction * 24.0
-	
+
 	// Longitude correction: 15 degrees = 1 hour
 	lonCorrection := lonDeg / 15.0
-	
+
 	lst := utcHour + lonCorrection
-	
+
 	// Normalize to 0-24
 	lst = math.Mod(lst, 24.0)
 	if lst < 0 {
 		lst += 24.0
 	}
-	
+
 	return lst
 }
 
@@ -326,10 +518,10 @@ func EstimateDragErrorBound(altKm, f107Uncertainty, apUncertainty float64) float
 	// Altitude determines sensitivity to space weather
 	// LEO < 400 km: dominated by F10.7 (thermal expansion)
 	// LEO > 400 km and GEO: also sensitive to geomagnetic storms
-	
+
 	f107Sensitivity := 0.0
 	apSensitivity := 0.0
-	
+
 	if altKm < 200 {
 		// Lower atmosphere less sensitive to space weather
 		f107Sensitivity = 0.2
@@ -347,17 +539,17 @@ func EstimateDragErrorBound(altKm, f107Uncertainty, apUncertainty float64) float
 		f107Sensitivity = 0.1
 		apSensitivity = 0.5
 	}
-	
+
 	// Normalize uncertainties
 	f107Rel := f107Uncertainty / 140.0 // Normalized to typical F10.7=140
 	apRel := apUncertainty / 15.0      // Normalized to typical Ap=15
-	
+
 	// Combined uncertainty (RSS)
 	totalRel := math.Sqrt(
 		(f107Sensitivity*f107Rel)*(f107Sensitivity*f107Rel) +
-		(apSensitivity*apRel)*(apSensitivity*apRel),
+			(apSensitivity*apRel)*(apSensitivity*apRel),
 	)
-	
+
 	// Cap at reasonable bounds
 	if totalRel > 1.0 {
 		totalRel = 1.0
@@ -365,6 +557,6 @@ func EstimateDragErrorBound(altKm, f107Uncertainty, apUncertainty float64) float
 	if totalRel < 0.1 {
 		totalRel = 0.1
 	}
-	
+
 	return totalRel
 }

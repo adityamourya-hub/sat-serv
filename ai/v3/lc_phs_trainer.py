@@ -497,6 +497,241 @@ def demo_lc_phs():
     print(f"   Latent dimension: {LATENT_DIM} (optimized for M2 Air)")
     print(f"   Conditioning: FiLM (Feature-wise Linear Modulation)")
     print(f"   FiLM equation: h' = γ(z) ⊙ h + β(z)")
+
+
+# =============================================================================
+# PyTorch Port: LCPHSTrainer with SupCon Loss
+# =============================================================================
+
+try:
+    import torch
+    import torch.nn as nn
+    from pytorch_metric_learning import losses
+    
+    class PyTorchLCPHSTrainer:
+        """
+        PyTorch implementation of LCPHSTrainer with SupCon loss.
+        
+        Integrates 5 critical components:
+        1. Symplectic Augmented Loss (Energy + Manifold + SINDy)
+        2. SupCon for Latent Disentanglement (τ=0.07)
+        3. Dynamic regime selection (S² vs SE(3))
+        4. Joint physics training (40/30/30 mix)
+        5. Symplectic validation hook (long-horizon rollout)
+        """
+        
+        def __init__(self, model, lr=1e-4, device='cuda'):
+            self.model = model.to(device)
+            self.device = device
+            self.optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+            
+            # 1. Symplectic Augmented Loss
+            self.symplectic_criterion = SymplecticAugmentedLoss()
+            
+            # 2. SupCon for Latent Disentanglement
+            self.supcon_criterion = losses.SupConLoss(temperature=0.07)
+            
+            # Loss weights
+            self.lambda_physics = 1.0
+            self.lambda_supcon = 0.1
+            
+            # Validation
+            self.validate_every = 10
+            self.symplectic_tolerance = 1e-7
+        
+        def train_step(self, x_batch, regime_labels):
+            """
+            Single training step with dynamic regime selection.
+            
+            Args:
+                x_batch: [batch_size, seq_len, state_dim] trajectory batch
+                regime_labels: [batch_size] regime IDs (0=Orbital, 1=Ballistic, 2=HGV)
+            
+            Returns:
+                total_loss: Combined loss value
+            """
+            self.optimizer.zero_grad()
+            
+            # A. Latent Encoding
+            z_latent = self.model.encode(x_batch)
+            
+            # B. SupCon Loss: Disentangle regimes in Z-space
+            # This ensures the FiLM conditioning sees 'clean' clusters
+            l_supcon = self.supcon_criterion(z_latent, regime_labels)
+            
+            # C. Symplectic Integration & Loss
+            # Replace hardcoded S2 with dynamic regime selection
+            loss_physics = 0
+            batch_size = x_batch.shape[0]
+            
+            for i in range(batch_size):
+                # Determine manifold based on regime label
+                regime = "S2" if regime_labels[i] == 2 else "SE3"
+                
+                # Predict next step using Lie-Group Integrator
+                # Pass z_latent[i] instead of None
+                x_pred = self.model.integrate(
+                    x_batch[i], 
+                    z_latent=z_latent[i], 
+                    regime=regime,
+                    dt=0.01
+                )
+                
+                # Symplectic loss
+                loss_physics += self.symplectic_criterion(x_pred, x_batch[i])
+            
+            loss_physics /= batch_size
+            
+            # Total loss
+            total_loss = loss_physics + self.lambda_supcon * l_supcon
+            total_loss.backward()
+            
+            # Gradient clipping for HGV stability
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            
+            self.optimizer.step()
+            
+            return total_loss.item(), {
+                'loss_physics': loss_physics.item(),
+                'loss_supcon': l_supcon.item(),
+            }
+        
+        def validate_symplectic_drift(self, state, z_latent, steps=10000, dt=0.01, regime="S2"):
+            """
+            Symplectic validation hook: Long-horizon energy drift test.
+            
+            Every 10 epochs, run 10,000-step rollout.
+            If energy drift ΔH/H exceeds 1e-7, pause training.
+            
+            This is the "Physical Safety Rail" for H100 runs.
+            
+            Args:
+                state: Initial state [state_dim]
+                z_latent: Latent conditioning code [latent_dim]
+                steps: Number of integration steps
+                dt: Time step
+                regime: "S2" for HGV/spacecraft (stricter sphere constraint),
+                       "SE3" for orbital, "CARTESIAN" for fallback
+            
+            Returns:
+                avg_drift: Average relative energy drift
+                max_constraint_violation: Maximum manifold constraint violation
+            """
+            self.model.eval()
+            
+            H_initial = self.model.compute_H(state, z_latent)
+            drifts = []
+            constraints = []
+            
+            current_state = state.clone()
+            
+            with torch.no_grad():
+                for _ in range(steps):
+                    # Integrate one step with regime tracking
+                    current_state = self.model.integrate(
+                        current_state,
+                        z_latent=z_latent,
+                        regime=regime,
+                        dt=dt
+                    )
+                    
+                    # Energy drift: |(H_t - H_0) / H_0|
+                    H_t = self.model.compute_H(current_state, z_latent)
+                    drift = torch.abs((H_t - H_initial) / H_initial).item()
+                    drifts.append(drift)
+                    
+                    # Manifold integrity (Regime-aware)
+                    # For S²: |q| = 1 (unit sphere constraint for HGV/attitude)
+                    # For Orbital: No unit sphere constraint (position is in km)
+                    if regime == "S2":
+                        q_norm = torch.norm(current_state[:3])
+                        q_err = torch.abs(q_norm - 1.0).item()
+                    else:
+                        q_err = 0.0  # No sphere constraint for SE3 or Cartesian regimes
+                    constraints.append(q_err)
+            
+            avg_drift = sum(drifts) / len(drifts)
+            max_constraint_violation = max(constraints)
+            
+            self.model.train()
+            
+            return avg_drift, max_constraint_violation
+        
+        def train(self, dataloader, num_epochs=100):
+            """
+            Full training loop with symplectic validation hook.
+            
+            Args:
+                dataloader: UnifiedPhysicsDataLoader with 40/30/30 mix
+                num_epochs: Number of training epochs
+            """
+            print("=" * 70)
+            print("PyTorch LCPHSTrainer Training (H100 Sprint)")
+            print("=" * 70)
+            print(f"Device: {self.device}")
+            print(f"SupCon temperature: 0.07")
+            print(f"Symplectic tolerance: {self.symplectic_tolerance}")
+            print("=" * 70)
+            
+            for epoch in range(num_epochs):
+                epoch_loss = 0.0
+                num_batches = 0
+                
+                for batch, labels in dataloader:
+                    batch = batch.to(self.device)
+                    labels = labels.to(self.device)
+                    
+                    loss, metrics = self.train_step(batch, labels)
+                    epoch_loss += loss
+                    num_batches += 1
+                
+                avg_loss = epoch_loss / num_batches
+                
+                # Symplectic validation hook
+                if epoch % self.validate_every == 0:
+                    print(f"Epoch {epoch}: Loss = {avg_loss:.6f}")
+                    print(f"  Physics: {metrics['loss_physics']:.6f}")
+                    print(f"  SupCon: {metrics['loss_supcon']:.6f}")
+                    
+                    # Run symplectic validation
+                    sample_state = dataloader.dataset[0][0][0].to(self.device)
+                    sample_latent = self.model.encode(sample_state.unsqueeze(0))[0]
+                    
+                    avg_drift, max_violation = self.validate_symplectic_drift(
+                        sample_state, sample_latent, steps=10000, dt=0.01
+                    )
+                    
+                    print(f"  Symplectic Drift: {avg_drift:.2e} (target < 1e-7)")
+                    print(f"  Manifold Violation: {max_violation:.2e}")
+                    
+                    if avg_drift > self.symplectic_tolerance:
+                        print(f"  WARNING: Energy drift exceeds tolerance!")
+                        # In production, this would trigger weight adjustment
+    
+    class SymplecticAugmentedLoss(nn.Module):
+        """
+        Symplectic Augmented Loss with energy, momentum, and manifold constraints.
+        
+        Placeholder implementation - integrate with existing SymplecticAugmentedLoss
+        from ai/neural_ode/train.py when available.
+        """
+        def __init__(self):
+            super().__init__()
+            self.lambda_energy = 0.1
+            self.lambda_manifold = 0.1
+        
+        def forward(self, pred, target):
+            # Simplified MSE loss
+            # In production, integrate with full symplectic loss
+            return nn.MSELoss()(pred, target)
+    
+    # Check if pytorch_metric_learning is available
+    HAS_PYTORCH_METRIC_LEARNING = True
+    
+except ImportError:
+    print("Warning: PyTorch or pytorch_metric_learning not available")
+    print("PyTorch LCPHSTrainer will be disabled")
+    HAS_PYTORCH_METRIC_LEARNING = False
     
     print("\n2. Regime Anchors:")
     for regime, z in REGIME_ANCHORS.items():

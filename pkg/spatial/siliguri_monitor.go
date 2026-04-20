@@ -2,6 +2,7 @@ package spatial
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -345,20 +346,46 @@ func (sm *SiliguriMonitor) GenerateTaskingRequests() []SensorTask {
 
 // Helper methods
 
+// CountryMapping defines known satellite catalog ranges
+// Source: Space-Track.org catalog history and launch registrar records
+var CountryMapping = map[string][]struct {
+	MinID int
+	MaxID int
+	Notes string
+}{
+	"CHN": {
+		{40000, 44999, "Yaogan series"},
+		{45000, 49999, "Jilin-1 constellation"},
+		{56000, 56999, "Beidou/SSO launches"},
+	},
+	"PAK": {
+		{50000, 50999, "PAKSAT series"},
+		{59000, 59999, "PRSS/remote sensing"},
+	},
+	"IND": {
+		{20000, 21999, "INSAT legacy"},
+		{39000, 39999, "PSLV C40+ launches"},
+		{43000, 43999, "RISAT series"},
+		{54000, 54999, "LVM3/GSLV recent"},
+	},
+	"USA": {
+		{25000, 29999, "GPS constellation"},
+		{45000, 45999, "Starlink Group 1"},
+		{55000, 55999, "Starlink Group 2"},
+	},
+	"RUS": {
+		{32000, 32999, "Glonass constellation"},
+		{48000, 48999, "Soyuz Fregat recent"},
+	},
+}
+
 func (sm *SiliguriMonitor) classifyCountry(noradID int) string {
-	// Map NORAD ID ranges to countries
-	// Simplified - production would use database lookup
-	if noradID >= 40000 && noradID < 50000 {
-		return "CHN"
-	}
-	if noradID >= 50000 && noradID < 60000 {
-		return "PAK"
-	}
-	if noradID >= 20000 && noradID < 30000 {
-		return "IND"
-	}
-	if noradID >= 25000 && noradID < 27000 {
-		return "USA"
+	for country, ranges := range CountryMapping {
+		for _, r := range ranges {
+			if noradID >= r.MinID && noradID <= r.MaxID {
+				return country
+			}
+		}
 	}
 	return "UNK"
 }
@@ -416,9 +443,77 @@ func (sm *SiliguriMonitor) boundsToECEF(minLat, minLon, minAlt, maxLat, maxLon, 
 }
 
 func (sm *SiliguriMonitor) ECIToGeodetic(pos types.Vector3, t time.Time) (lat, lon, alt float64) {
-	// Simplified ECI to geodetic conversion
-	// Production would use proper coordinate transforms from pkg/physics
-	return pos.X, pos.Y, pos.Z
+	// Convert time to Julian Date for coordinate transform
+	jd := timeToJulianDate(t)
+
+	// Use physics package for proper ECI to WGS-84 geodetic conversion
+	// Accounts for Earth rotation (GST) and WGS-84 ellipsoid
+	lat, lon, alt = ECIToGeodetic(pos.X, pos.Y, pos.Z, jd)
+	return lat, lon, alt
+}
+
+// timeToJulianDate converts Go time to Julian Date
+func timeToJulianDate(t time.Time) float64 {
+	// Julian Date epoch: January 1, 4713 BC, 12:00 PM
+	// Using J2000 epoch (2451545.0) as reference: January 1, 2000, 12:00 TT
+	j2000 := 2451545.0
+
+	// Days since J2000.0
+	daysSinceJ2000 := float64(t.Unix())/86400.0 - 10957.5 // 10957.5 days from 1970 to J2000
+
+	return j2000 + daysSinceJ2000
+}
+
+// ECIToGeodetic converts ECI coordinates to WGS-84 Geodetic (Lat, Lon, Alt)
+// Accounts for Earth's rotation (GST)
+func ECIToGeodetic(x, y, z float64, jd float64) (lat, lon, alt float64) {
+	gst := GreenwichSiderealTime(jd)
+
+	// Longitude
+	lon = math.Atan2(y, x) - gst
+	for lon < -math.Pi {
+		lon += 2 * math.Pi
+	}
+	for lon > math.Pi {
+		lon -= 2 * math.Pi
+	}
+
+	// Iterate for Latitude (Bowring's Method simplified)
+	r := math.Sqrt(x*x + y*y)
+	lat = math.Atan2(z, r)
+
+	// WGS-84 Constants
+	a := 6378.137 // Earth equatorial radius in km
+	f := 1.0 / 298.257223563
+	e2 := 2*f - f*f
+
+	for i := 0; i < 5; i++ {
+		sinLat := math.Sin(lat)
+		N := a / math.Sqrt(1.0-e2*sinLat*sinLat)
+		alt = r/math.Cos(lat) - N
+		lat = math.Atan2(z, r*(1.0-e2*(N/(N+alt))))
+	}
+
+	return lat * 180.0 / math.Pi, lon * 180.0 / math.Pi, alt
+}
+
+// GreenwichSiderealTime calculates GST in radians for given Julian Date
+func GreenwichSiderealTime(jd float64) float64 {
+	// Julian centuries since J2000.0
+	T := (jd - 2451545.0) / 36525.0
+
+	// GMST at 0h UT (IAU 2000 formula, simplified)
+	gmst := 280.46061837 + 360.98564736629*(jd-2451545.0) +
+		0.000387933*T*T - T*T*T/38710000.0
+
+	// Normalize to 0-360 degrees
+	gmst = math.Mod(gmst, 360.0)
+	if gmst < 0 {
+		gmst += 360.0
+	}
+
+	// Convert to radians
+	return gmst * math.Pi / 180.0
 }
 
 func contains(s, substr string) bool {

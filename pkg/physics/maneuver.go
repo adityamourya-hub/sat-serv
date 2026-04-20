@@ -22,7 +22,7 @@ type ManeuverEvent struct {
 	Score     float64
 	DeltaV    float64
 	Type      ManeuverType
-	
+
 	// Characterization metrics
 	DeltaVRSW        Vector3
 	ManeuverTimeSec  float64
@@ -52,6 +52,9 @@ type FeatureContribution struct {
 
 /**
  * ManeuverInference is the schema for ML model outputs.
+ *
+ * ADITI 4.0: Added HamiltonianInvariant and HamiltonianHash for Sovereign Handshake protocol.
+ * Enables spoof detection via Hamiltonian invariant validation (σ_H / H_avg >= 10^-7 self-invalidates).
  */
 type ManeuverInference struct {
 	Probability float64
@@ -59,9 +62,13 @@ type ManeuverInference struct {
 	DeltaV      float64
 	Confidence  float64
 	SHAP        []FeatureContribution
-	
+
 	ManeuverDeltaVRSW Vector3
 	ManeuverTime      float64
+
+	// ADITI 4.0: Hamiltonian invariants for Sovereign Handshake
+	HamiltonianInvariant float64 // Computed Hamiltonian value at maneuver time
+	HamiltonianHash      string  // Hash of invariant for spoof detection (σ_H / H_avg threshold: 10^-7)
 }
 
 /**

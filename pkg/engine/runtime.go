@@ -2,8 +2,9 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
-	"log/slog"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"ssis/pkg/catalog"
+	"ssis/pkg/collision"
 	"ssis/pkg/cryptography"
 	"ssis/pkg/types"
 )
@@ -36,6 +38,17 @@ func GetObservation() *types.Observation {
 func PutObservation(o *types.Observation) {
 	o.Reset()
 	ObservationPool.Put(o)
+}
+
+// GetAlert retrieves an Alert from the sync pool.
+func GetAlert() *types.Alert {
+	return AlertPool.Get().(*types.Alert)
+}
+
+// PutAlert returns an Alert to the sync pool.
+func PutAlert(a *types.Alert) {
+	a.Reset()
+	AlertPool.Put(a)
 }
 
 /**
@@ -299,7 +312,7 @@ func (r *Runtime) collisionWorker() {
 					// Extract 2D in-track/cross-track variances (simplified)
 					sigmaR := math.Max(cov1[1][1], cov2[1][1]) // In-track variance
 					sigmaI := math.Max(cov1[2][2], cov2[2][2]) // Cross-track variance
-					sigmaRI := 0.0 // Correlation (simplified)
+					sigmaRI := 0.0                             // Correlation (simplified)
 
 					pc := collision.AdaptiveFosterPc(dx, dy, sigmaR, sigmaI, sigmaRI, hardbodyRadiusKm)
 
@@ -325,5 +338,29 @@ func (r *Runtime) collisionWorker() {
 				}
 			}
 		}
+	}
+}
+
+// MetricsSnapshot provides a snapshot of engine metrics for external consumers.
+type MetricsSnapshot struct {
+	ActiveWorkers    int64
+	QueueDepth       int64
+	Processed        uint64
+	HighAlerts       uint64
+	ServiceTimeP50Ms float64
+	ServiceTimeP99Ms float64
+}
+
+// GetMetrics returns a snapshot of current engine metrics.
+func (r *Runtime) GetMetrics() MetricsSnapshot {
+	p50, p99 := r.metrics.GetLatencyStats()
+	_, high, _, _ := r.metrics.GetAlertCounts()
+	return MetricsSnapshot{
+		ActiveWorkers:    atomic.LoadInt64(&r.metrics.ActiveWorkers),
+		QueueDepth:       r.metrics.GetQueueDepth(),
+		Processed:        atomic.LoadUint64(&r.metrics.Completions),
+		HighAlerts:       high,
+		ServiceTimeP50Ms: p50,
+		ServiceTimeP99Ms: p99,
 	}
 }

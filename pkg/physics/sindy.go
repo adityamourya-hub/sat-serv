@@ -1,9 +1,13 @@
 package physics
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
+	"time"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -16,6 +20,14 @@ import (
  *
  * Reference: Brunton et al. "Discovering governing equations from data" (PNAS 2016)
  */
+
+// Prediction represents a falsifiable prediction for validation
+type Prediction struct {
+	Timestamp   time.Time  // Prediction timestamp
+	State       [6]float64 // Predicted state [x,y,z,vx,vy,vz]
+	Probability float64    // Prediction confidence
+	HorizonSec  float64    // Prediction horizon in seconds
+}
 
 type SINDy struct {
 	// Library configuration
@@ -57,6 +69,15 @@ type ManeuverResult struct {
 	ResidualMean float64 // Mean residual magnitude
 	ResidualStd  float64 // Std dev of residuals
 	TargetType   string  // "residual" (new) vs "derivative" (legacy)
+
+	// Symbolic Certificate (VSC) - Extended for Sovereign Handshake
+	PhysicsGrade      PhysicsGrade       // A-F based on constraint satisfaction
+	CausalProvenance  map[string]float64 // Term importance scores
+	Predictions       []Prediction       // Falsifiable 60s predictions
+	HamiltonianHash   string             // Hamiltonian Invariant Hash
+	CertificateValid  bool               // Certificate validity
+	CertificateIssued time.Time          // When certificate was issued
+	EnergyDriftSigma  float64            // σ_H for spoof detection
 }
 
 // DiscoverManeuver identifies thrust signatures from orbital residuals
@@ -333,16 +354,9 @@ func (s *SINDy) computeCICoverage(coeffs, ciLower, ciUpper []float64) float64 {
 	return float64(significant) / float64(len(coeffs))
 }
 
-// sortFloats sorts a slice of float64 in-place (bubble sort for simplicity)
+// sortFloats sorts a slice of float64 in-place using stdlib sort
 func sortFloats(arr []float64) {
-	n := len(arr)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if arr[j] > arr[j+1] {
-				arr[j], arr[j+1] = arr[j+1], arr[j]
-			}
-		}
-	}
+	sort.Float64s(arr)
 }
 
 // stlsq performs Sequential Thresholded Least Squares regression
@@ -593,4 +607,149 @@ func (s *SINDy) computeRSquared(coeffs []float64, states [][6]float64, theta, xD
 	}
 
 	return rSquared
+}
+
+// ValidateCertificate checks if certificate meets criteria for validity
+//
+// Sovereign Handshake: Every ObservationReport must include Hamiltonian Invariant Hash.
+// If σ_H / H_avg >= 10^-7, certificate self-invalidates (spoof detection).
+func (r *ManeuverResult) ValidateCertificate() bool {
+	// Self-invalidation check: σ_H / H_avg >= 10^-7 (spoof detection)
+	if r.EnergyDriftSigma >= 1e-7 {
+		r.CertificateValid = false
+		return false
+	}
+
+	// Check physics grade
+	if r.PhysicsGrade == GradeF {
+		r.CertificateValid = false
+		return false
+	}
+
+	// Check bootstrap CI coverage
+	if r.CICoverage < 0.8 {
+		r.CertificateValid = false
+		return false
+	}
+
+	r.CertificateValid = true
+	return true
+}
+
+// ComputeHamiltonianHash computes the Hamiltonian Invariant Hash for the certificate
+//
+// This provides cryptographic proof of the physics state for sovereign handshake.
+func (r *ManeuverResult) ComputeHamiltonianHash(states [][6]float64) string {
+	// Compute average Hamiltonian across trajectory
+	sumH := 0.0
+	for _, state := range states {
+		sumH += computeHamiltonian(state)
+	}
+	avgH := sumH / float64(len(states))
+
+	// Create hash from average Hamiltonian and coefficients
+	h := sha256.New()
+	h.Write([]byte(fmt.Sprintf("%.15f", avgH)))
+	for _, c := range r.Coefficients {
+		h.Write([]byte(fmt.Sprintf("%.15f", c)))
+	}
+
+	r.HamiltonianHash = hex.EncodeToString(h.Sum(nil))
+	return r.HamiltonianHash
+}
+
+// ComputePhysicsGrade assigns physics consistency grade based on constraint satisfaction
+// Uses configurable GradeThresholds from certificate.go (ADITI 4.0)
+func (r *ManeuverResult) ComputePhysicsGrade(states [][6]float64) {
+	th := DefaultGradeThresholds()
+
+	// Grade A: High confidence, low residual, energy conserved
+	if r.Confidence > th.MinSINDyConfidenceC &&
+		r.ResidualMean < th.MaxResidualA &&
+		r.EnergyDriftSigma < th.MaxEnergyDriftA {
+		r.PhysicsGrade = GradeA
+		return
+	}
+
+	// Grade B: Good confidence, moderate residual
+	if r.Confidence > 0.85 && r.ResidualMean < th.MaxResidualB {
+		r.PhysicsGrade = GradeB
+		return
+	}
+
+	// Grade C: Maneuver detected, but model explains it
+	if r.ThrustDetected && r.Confidence > 0.7 {
+		r.PhysicsGrade = GradeC
+		return
+	}
+
+	// Grade F: Model divergence
+	r.PhysicsGrade = GradeF
+}
+
+// ComputeCausalProvenance calculates term importance scores for causal provenance
+func (r *ManeuverResult) ComputeCausalProvenance() {
+	r.CausalProvenance = make(map[string]float64)
+
+	// Normalize coefficients by magnitude to get importance scores
+	totalMag := 0.0
+	for _, c := range r.Coefficients {
+		totalMag += math.Abs(c)
+	}
+
+	if totalMag > 0 {
+		for i, c := range r.Coefficients {
+			termName := r.ActiveTerms[i]
+			if i < len(r.ActiveTerms) {
+				r.CausalProvenance[termName] = math.Abs(c) / totalMag
+			}
+		}
+	}
+}
+
+// GenerateFalsifiablePredictions creates 60s predictions for validation
+func (r *ManeuverResult) GenerateFalsifiablePredictions(initialState [6]float64) {
+	r.Predictions = make([]Prediction, 0)
+
+	// Generate predictions at 10s intervals for 60s horizon
+	for t := 10.0; t <= 60.0; t += 10.0 {
+		pred := Prediction{
+			Timestamp:   time.Now().Add(time.Duration(t) * time.Second),
+			State:       propagateState(initialState, t),
+			Probability: r.Confidence,
+			HorizonSec:  t,
+		}
+		r.Predictions = append(r.Predictions, pred)
+	}
+}
+
+// Helper functions for Symbolic Certificate
+
+func computeHamiltonian(state [6]float64) float64 {
+	vx, vy, vz := state[3], state[4], state[5]
+	kinetic := 0.5 * (vx*vx + vy*vy + vz*vz)
+
+	r := math.Sqrt(state[0]*state[0] + state[1]*state[1] + state[2]*state[2])
+	potential := -398600.4418 / r
+
+	return kinetic + potential
+}
+
+func propagateState(state [6]float64, duration float64) [6]float64 {
+	// Simple Keplerian propagation for predictions
+	r := math.Sqrt(state[0]*state[0] + state[1]*state[1] + state[2]*state[2])
+	mu := 398600.4418
+
+	ax := -mu * state[0] / (r * r * r)
+	ay := -mu * state[1] / (r * r * r)
+	az := -mu * state[2] / (r * r * r)
+
+	return [6]float64{
+		state[0] + state[3]*duration,
+		state[1] + state[4]*duration,
+		state[2] + state[5]*duration,
+		state[3] + ax*duration,
+		state[4] + ay*duration,
+		state[5] + az*duration,
+	}
 }

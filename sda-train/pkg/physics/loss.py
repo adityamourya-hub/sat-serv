@@ -134,7 +134,112 @@ class PhysicsInformedLoss:
         
         return torch.tensor(0.0, device=pred_state.device)
     
-    def __call__(self, pred_state, target_state, use_physics=True):
+    def lyapunov_loss(self, pred_state, target_state=None):
+        """
+        ADITI 4.0: Lyapunov stability loss using Hamiltonian as Lyapunov function.
+        
+        For conservative systems, the Hamiltonian H(x) = T + V is a natural Lyapunov function.
+        Lyapunov stability requires:
+        1. V(x) > 0 for all x ≠ 0 (positive definite)
+        2. dV/dt ≤ 0 along trajectories (non-increasing)
+        
+        Args:
+            pred_state: Predicted state [batch_size, 6] or [batch_size, timesteps, 6]
+            target_state: Optional target state for comparison
+            
+        Returns:
+            Lyapunov stability loss
+        """
+        if pred_state.dim() == 2:
+            r = pred_state[:, :3]
+            v = pred_state[:, 3:]
+            
+            # Hamiltonian (specific orbital energy)
+            r_mag = torch.norm(r, dim=-1)
+            ke = 0.5 * torch.sum(v ** 2, dim=-1)
+            pe = -self.mu / r_mag
+            H = ke + pe  # Lyapunov function candidate
+            
+            # For stability, H should not increase without external work
+            # In conservative systems, H is constant
+            # In dissipative systems (drag), H decreases
+            # We penalize increases in H (unphysical energy gain)
+            
+            if target_state is not None:
+                # Compare with target to ensure energy is not hallucinated
+                r_target = target_state[:, :3]
+                v_target = target_state[:, 3:]
+                r_mag_target = torch.norm(r_target, dim=-1)
+                ke_target = 0.5 * torch.sum(v_target ** 2, dim=-1)
+                pe_target = -self.mu / r_mag_target
+                H_target = ke_target + pe_target
+                
+                # Penalize if predicted energy > target energy (energy hallucination)
+                energy_gain = torch.relu(H - H_target)
+                lyapunov_loss = torch.mean(energy_gain)
+            else:
+                # Penalize variance (should be constant or decreasing)
+                lyapunov_loss = torch.var(H)
+            
+            return lyapunov_loss
+        
+        return torch.tensor(0.0, device=pred_state.device)
+    
+    def iss_loss(self, pred_state, input_control=None):
+        """
+        ADITI 4.0: Input-to-State Stability (ISS) loss.
+        
+        ISS ensures that for bounded inputs, the state remains bounded.
+        This is critical for control-affine systems with thrust/maneuvers.
+        
+        ISS condition: There exists a Lyapunov function V(x) such that:
+        - α1|x| ≤ V(x) ≤ α2|x|
+        - dV/dt ≤ -W(x) for |x| ≥ R (outside compact set)
+        
+        Args:
+            pred_state: Predicted state [batch_size, 6]
+            input_control: Control input (thrust) [batch_size, 3] (optional)
+            
+        Returns:
+            ISS stability loss
+        """
+        if pred_state.dim() == 2:
+            r = pred_state[:, :3]
+            v = pred_state[:, 3:]
+            
+            # State magnitude
+            state_mag = torch.norm(torch.cat([r, v], dim=-1), dim=-1)
+            
+            # Lyapunov function: V(x) = 0.5 * ||x||² (positive definite)
+            V = 0.5 * state_mag ** 2
+            
+            # ISS condition: penalize unbounded growth
+            # If state grows without bound, V grows quadratically
+            # We penalize large V values (unphysical trajectories)
+            
+            # Threshold for "large" state (e.g., 10x Earth radius)
+            R_threshold = 10.0 * 6371e3  # meters
+            
+            # Loss for states outside bounded region
+            outside_region = state_mag > R_threshold
+            iss_loss = torch.mean(torch.where(outside_region, V, torch.zeros_like(V)))
+            
+            # If control input provided, check control-to-state gain
+            if input_control is not None:
+                # Control magnitude
+                control_mag = torch.norm(input_control, dim=-1)
+                
+                # Penalize excessive control causing unbounded state
+                # Control should be bounded to maintain ISS
+                max_control = 1000.0  # m/s² (reasonable thrust limit)
+                control_excess = torch.relu(control_mag - max_control)
+                iss_loss += torch.mean(control_excess)
+            
+            return iss_loss
+        
+        return torch.tensor(0.0, device=pred_state.device)
+    
+    def __call__(self, pred_state, target_state, use_physics=True, use_stability=False):
         """
         Calculate total physics-informed loss
         
@@ -172,20 +277,31 @@ class PhysicsInformedLoss:
         
         return total_loss
     
-    def get_loss_components(self, pred_state, target_state):
+    def get_loss_components(self, pred_state, target_state, use_stability=False, input_control=None):
         """
-        Get individual loss components for logging/debugging
+        Get individual loss components for logging/debugging.
+        
+        ADITI 4.0: Added Lyapunov/ISS loss components.
         
         Returns:
             Dictionary with all loss components
         """
-        return {
+        components = {
             'mse_loss': F.mse_loss(pred_state, target_state).item(),
             'physics_loss': self.keplerian_residual(pred_state).item(),
             'energy_loss': self.energy_conservation_loss(pred_state).item(),
             'angular_momentum_loss': self.angular_momentum_loss(pred_state).item(),
-            'total_loss': self.__call__(pred_state, target_state).item()
         }
+        
+        if use_stability:
+            components['lyapunov_loss'] = self.lyapunov_loss(pred_state, target_state).item()
+            components['iss_loss'] = self.iss_loss(pred_state, input_control).item()
+        
+        components['total_loss'] = self.__call__(
+            pred_state, target_state, use_stability=use_stability, input_control=input_control
+        ).item()
+        
+        return components
 
 
 class AdaptivePhysicsLoss(PhysicsInformedLoss):

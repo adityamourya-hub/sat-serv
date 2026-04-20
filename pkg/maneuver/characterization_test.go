@@ -19,20 +19,20 @@ func TestManeuverCharacterizationImpulsive(t *testing.T) {
 	}
 
 	prop := func(s physics.State, dt float64) physics.State {
-		const maxStep = 30.0
-		v := physics.StateToVector(s)
-		n := int(math.Ceil(math.Abs(dt) / maxStep))
-		if n == 0 {
-			return s
+		// Simple Keplerian propagation for test purposes
+		// Using physics.PropagateCartesianState for numerical integration
+		params := physics.PhysicsParams{
+			Mass:           1000.0, // 1000 kg satellite
+			DragArea:       10.0,   // 10 m^2 drag area
+			SRPArea:        10.0,   // 10 m^2 SRP area
+			Cd:             2.2,    // Drag coefficient
+			Cr:             1.3,    // SRP coefficient
+			BallisticCoeff: 45.45,  // BC = m/(Cd*A) = 1000/(2.2*10)
 		}
-		step := dt / float64(n)
+		stateVec := physics.StateToVector(s)
 		jd := 2451545.0 // Test epoch
-		for i := 0; i < n; i++ {
-			// Note: This function doesn't exist, test will need to be updated
-			_ = step
-			_ = jd
-		}
-		return physics.VectorToState(v)
+		propagatedVec := physics.PropagateCartesianState(stateVec, dt, jd, params)
+		return physics.VectorToState(propagatedVec)
 	}
 
 	// 2. Generate Prior Arc (5 points, 1 min spacing)
@@ -79,17 +79,20 @@ func TestManeuverCharacterizationStealthy(t *testing.T) {
 	initial := physics.State{Pos: physics.Vector3{8000.0, 0, 0}, Vel: physics.Vector3{0, 7.0, 0}}
 
 	prop := func(s physics.State, dt float64) physics.State {
-		const maxStep = 30.0
-		v := physics.StateToVector(s)
-		n := int(math.Ceil(math.Abs(dt) / maxStep))
-		if n == 0 {
-			return s
+		// Simple Keplerian propagation for test purposes
+		// Using physics.PropagateCartesianState for numerical integration
+		params := physics.PhysicsParams{
+			Mass:           1000.0, // 1000 kg satellite
+			DragArea:       10.0,   // 10 m^2 drag area
+			SRPArea:        10.0,   // 10 m^2 SRP area
+			Cd:             2.2,    // Drag coefficient
+			Cr:             1.3,    // SRP coefficient
+			BallisticCoeff: 45.45,  // BC = m/(Cd*A) = 1000/(2.2*10)
 		}
-		step := dt / float64(n)
-		for i := 0; i < n; i++ {
-			_ = step
-		}
-		return physics.VectorToState(v)
+		stateVec := physics.StateToVector(s)
+		jd := 2451545.0 // Test epoch
+		propagatedVec := physics.PropagateCartesianState(stateVec, dt, jd, params)
+		return physics.VectorToState(propagatedVec)
 	}
 
 	prior := []physics.State{initial}

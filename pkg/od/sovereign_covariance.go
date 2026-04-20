@@ -29,8 +29,10 @@ package od
 import (
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"time"
 
+	"ssis/pkg/orbital"
 	"ssis/pkg/physics"
 
 	"gonum.org/v1/gonum/mat"
@@ -93,6 +95,7 @@ type SovereignODResult struct {
 type SovereignODGenerator struct {
 	Config   SovereignODConfig
 	Stations []GroundStation
+	Params   physics.PhysicsParams // Physics parameters for propagation
 }
 
 // NewSovereignODGenerator creates OD generator
@@ -157,7 +160,7 @@ func (gen *SovereignODGenerator) simulateObservations(
 		t := state.EpochJD + float64(i)*gen.Config.ObservationCadence.Minutes()/1440.0
 
 		// Propagate to observation time
-		propagated := propagateToTime(state, t)
+		propagated := propagateToTime(state, t, gen.Params)
 
 		// For each station that can see the satellite
 		for _, station := range gen.Stations {
@@ -211,10 +214,10 @@ func (gen *SovereignODGenerator) batchLeastSquares(
 			res := obs.Range - predicted
 			y.SetVec(i, res)
 
-			// Jacobian row (simplified)
-			// ∂range/∂x, ∂range/∂y, ∂range/∂z, etc.
-			for j := 0; j < 3; j++ {
-				H.Set(i, j, 1.0) // Simplified - would be actual partial derivatives
+			// Jacobian row: ∂range/∂state using numerical differentiation
+			jacobianRow := gen.computeJacobianRow(estimate, obs.Time, obs.StationID)
+			for j := 0; j < 6; j++ {
+				H.Set(i, j, jacobianRow[j])
 			}
 		}
 
@@ -298,26 +301,94 @@ func (gen *SovereignODGenerator) predictObservation(
 	return distance(state.Pos, station.PositionECI)
 }
 
+// computeJacobianRow computes ∂range/∂state using central differences
+func (gen *SovereignODGenerator) computeJacobianRow(
+	state physics.State,
+	t time.Time,
+	stationID string,
+) [6]float64 {
+	epsilon := 1e-6 // km for position, km/s for velocity
+
+	var jacobian [6]float64
+
+	for i := 0; i < 6; i++ {
+		// Forward perturbation
+		statePlus := state
+		if i < 3 {
+			statePlus.Pos[i] += epsilon
+		} else {
+			statePlus.Vel[i-3] += epsilon
+		}
+		obsPlus := gen.predictObservation(statePlus, t, stationID)
+
+		// Backward perturbation
+		stateMinus := state
+		if i < 3 {
+			stateMinus.Pos[i] -= epsilon
+		} else {
+			stateMinus.Vel[i-3] -= epsilon
+		}
+		obsMinus := gen.predictObservation(stateMinus, t, stationID)
+
+		// Central difference
+		jacobian[i] = (obsPlus - obsMinus) / (2.0 * epsilon)
+	}
+
+	return jacobian
+}
+
 // Helper functions
 
 func canObserve(state physics.State, station GroundStation, elevationCutoff float64) bool {
-	// Simplified visibility check
-	// Would check elevation angle, range, etc.
-	return true // Simplified for demo
+	// Compute elevation angle using dot product of LOS and zenith vectors
+	dx := state.Pos[0] - station.PositionECI[0]
+	dy := state.Pos[1] - station.PositionECI[1]
+	dz := state.Pos[2] - station.PositionECI[2]
+
+	range_km := math.Sqrt(dx*dx + dy*dy + dz*dz)
+
+	// Zenith unit vector (station position from Earth center)
+	zenithMag := math.Sqrt(station.PositionECI[0]*station.PositionECI[0] +
+		station.PositionECI[1]*station.PositionECI[1] +
+		station.PositionECI[2]*station.PositionECI[2])
+	zenith := [3]float64{
+		station.PositionECI[0] / zenithMag,
+		station.PositionECI[1] / zenithMag,
+		station.PositionECI[2] / zenithMag,
+	}
+
+	// LOS unit vector
+	los := [3]float64{dx / range_km, dy / range_km, dz / range_km}
+
+	// Elevation = 90° - angle from zenith
+	cosZenith := los[0]*zenith[0] + los[1]*zenith[1] + los[2]*zenith[2]
+	if cosZenith > 1.0 {
+		cosZenith = 1.0
+	}
+	if cosZenith < -1.0 {
+		cosZenith = -1.0
+	}
+	elevation := 90.0 - math.Acos(cosZenith)*180.0/math.Pi
+
+	return elevation >= elevationCutoff
 }
 
-func propagateToTime(state physics.State, targetJD float64) physics.State {
-	// Simplified propagation
-	// Would use SGP4 or numerical integrator
+func propagateToTime(state physics.State, targetJD float64, params physics.PhysicsParams) physics.State {
+	// Use proper orbital propagator (RKF45) instead of linear extrapolation
 	dt := (targetJD - state.EpochJD) * 86400.0 // seconds
 
+	// Convert State to []float64 for propagator
+	x := []float64{
+		state.Pos[0], state.Pos[1], state.Pos[2],
+		state.Vel[0], state.Vel[1], state.Vel[2],
+	}
+
+	// Propagate using RKF45 adaptive integrator
+	newX := orbital.PropagateCartesianState(x, dt, state.EpochJD, params)
+
 	return physics.State{
-		Pos: physics.Vector3{
-			state.Pos[0] + state.Vel[0]*dt/1000.0,
-			state.Pos[1] + state.Vel[1]*dt/1000.0,
-			state.Pos[2] + state.Vel[2]*dt/1000.0,
-		},
-		Vel:     state.Vel,
+		Pos:     physics.Vector3{newX[0], newX[1], newX[2]},
+		Vel:     physics.Vector3{newX[3], newX[4], newX[5]},
 		EpochJD: targetJD,
 	}
 }
@@ -330,12 +401,8 @@ func distance(a, b [3]float64) float64 {
 }
 
 func randn() float64 {
-	// Box-Muller transform for normal distribution
-	u1 := 1.0 - math.Abs(math.Mod(float64(time.Now().UnixNano())/1e9, 2.0)-1.0)
-	u2 := 1.0 - math.Abs(math.Mod(float64(time.Now().UnixNano())/1e9*1.1, 2.0)-1.0)
-
-	mag := math.Sqrt(-2.0 * math.Log(u1))
-	return mag * math.Cos(2.0*math.Pi*u2)
+	// Use standard library Gaussian distribution
+	return rand.NormFloat64()
 }
 
 func computeRMSE(residuals []float64) float64 {

@@ -16,6 +16,7 @@ import (
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"ssis/pkg/catalog"
 	"ssis/pkg/cryptography"
@@ -140,7 +141,7 @@ func (s *SSISServer) SubscribeAlerts(req *pb.AlertSubscription, stream pb.SpaceE
 // QueryCatalog queries the satellite catalog with pagination support
 func (s *SSISServer) QueryCatalog(ctx context.Context, req *pb.CatalogQuery) (*pb.CatalogResponse, error) {
 	if req.Timestamp == nil {
-		req.Timestamp = timestamp.New(time.Now())
+		req.Timestamp = timestamppb.New(time.Now())
 	}
 
 	snapshot := s.Store.Snapshot()
@@ -148,19 +149,31 @@ func (s *SSISServer) QueryCatalog(ctx context.Context, req *pb.CatalogQuery) (*p
 
 	for _, obj := range snapshot {
 		// Apply filters if specified
-		if req.CountryCode != "" && obj.CountryCode != req.CountryCode {
-			continue
+		countryMatch := true
+		typeMatch := true
+		if len(req.ObjectTypes) > 0 {
+			typeMatch = false
+			for _, ot := range req.ObjectTypes {
+				if strings.EqualFold(ot, obj.AssetType) {
+					typeMatch = true
+					break
+				}
+			}
 		}
-		if req.ObjectType != "" && obj.AssetType != req.ObjectType {
+		if !countryMatch || !typeMatch {
 			continue
 		}
 
 		objects = append(objects, &pb.ObjectState{
-			ObjectId:   fmt.Sprintf("%d", obj.ID),
-			ObjectName: obj.Name,
-			Position:   &pb.Vector3{X: obj.Pos.X, Y: obj.Pos.Y, Z: obj.Pos.Z},
-			Velocity:   &pb.Vector3{X: obj.Vel.X, Y: obj.Vel.Y, Z: obj.Vel.Z},
-			Epoch:      timestamp.New(time.Unix(int64(obj.EpochTT*86400-2440587.5*86400), 0)),
+			ObjectId:     fmt.Sprintf("%d", obj.ID),
+			ObjectName:   obj.Name,
+			PositionXKm:  obj.Pos.X,
+			PositionYKm:  obj.Pos.Y,
+			PositionZKm:  obj.Pos.Z,
+			VelocityXKms: obj.Vel.X,
+			VelocityYKms: obj.Vel.Y,
+			VelocityZKms: obj.Vel.Z,
+			Epoch:        timestamppb.New(time.Unix(int64(obj.EpochTT*86400-2440587.5*86400), 0)),
 		})
 	}
 

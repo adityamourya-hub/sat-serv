@@ -21,9 +21,9 @@ package rf
  */
 
 import (
+	"fmt"
 	"math"
-	"math/rand"
-	"time"
+	"math/rand/v2"
 )
 
 // PSOConfig configures the Particle Swarm Optimizer
@@ -66,7 +66,6 @@ type PSOParticle struct {
 type PSOLocalizer struct {
 	Stations []RFStation
 	Config   PSOConfig
-	rng      *rand.Rand
 }
 
 // NewPSOLocalizer creates PSO-based localizer
@@ -74,7 +73,6 @@ func NewPSOLocalizer(stations []RFStation, config PSOConfig) *PSOLocalizer {
 	return &PSOLocalizer{
 		Stations: stations,
 		Config:   config,
-		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -189,7 +187,7 @@ func (pso *PSOLocalizer) initializeSwarm(
 		for dim := 0; dim < 3; dim++ {
 			range_ := bounds.Upper[dim] - bounds.Lower[dim]
 			swarm[i].Position[dim] = initial[dim] +
-				(pso.rng.Float64()-0.5)*range_
+				(rand.Float64()-0.5)*range_
 
 			// Clamp to bounds
 			if swarm[i].Position[dim] < bounds.Lower[dim] {
@@ -200,7 +198,7 @@ func (pso *PSOLocalizer) initializeSwarm(
 			}
 
 			// Random velocity (small fraction of range)
-			swarm[i].Velocity[dim] = (pso.rng.Float64() - 0.5) * range_ * 0.1
+			swarm[i].Velocity[dim] = (rand.Float64() - 0.5) * range_ * 0.1
 		}
 
 		// Initialize personal best
@@ -259,8 +257,8 @@ func (pso *PSOLocalizer) runPSO(
 
 			// Update velocity (PSO equation)
 			for dim := 0; dim < 3; dim++ {
-				r1 := pso.rng.Float64()
-				r2 := pso.rng.Float64()
+				r1 := rand.Float64()
+				r2 := rand.Float64()
 
 				cognitive := pso.Config.CognitiveCoeff * r1 *
 					(swarm[i].PersonalBest[dim] - swarm[i].Position[dim])
@@ -493,25 +491,137 @@ func abs(x float64) float64 {
 	return x
 }
 
-// BenchmarkPSO compares both algorithms
+// BenchmarkPSO compares both algorithms with Monte Carlo simulation
+// Simulation parameters from Chen WCL2020-0388:
+// - 8 anchors in 2d×2d square, d=2.5m
+// - Target at [1, 1] m
+// - σt = 2mm, σp = 0.32mm (0.1265 rad)
 func BenchmarkPSO() map[string]struct {
 	RMSE       float64
 	Converged  float64
 	Iterations float64
 } {
-	// Simulation parameters from paper
-	// 8 anchors in 2d×2d square, d=2.5m
-	// Target at [1, 1] m
-	// σt = 2mm, σp = 0.32mm (0.1265 rad)
+	// Simulation parameters
+	d := 2.5 // Anchor spacing (m)
+	numAnchors := 8
+	targetPos := [3]float64{1.0, 1.0, 0.0} // Target position (m)
+	sigmaT := 0.002                        // 2mm time uncertainty
+	sigmaP := 0.1265                       // Phase uncertainty (rad)
+	numMonteCarlo := 100                   // Number of Monte Carlo runs
 
+	// Create 8 anchors in 2d×2d square
+	stations := make([]RFStation, numAnchors)
+	for i := 0; i < numAnchors; i++ {
+		row := i / 4
+		col := i % 4
+		stations[i] = RFStation{
+			ID:       fmt.Sprintf("A%d", i),
+			Position: [3]float64{float64(col) * d, float64(row) * d, 0.0},
+		}
+	}
+
+	// Initialize PSO localizer
+	config := DefaultPSOConfig()
+	config.SwarmSize = 100 // Reduced for benchmark speed
+	config.MaxIterations = 50
+	pso := NewPSOLocalizer(stations, config)
+
+	// Results accumulation
 	results := make(map[string]struct {
 		RMSE       float64
 		Converged  float64
 		Iterations float64
 	})
 
-	// Would run Monte Carlo simulation here
-	// Compare TDOA-PDOA-1 vs TDOA-PDOA-2
+	modes := []struct {
+		name string
+		mode LocalizationMode
+	}{
+		{"TDOA-PDOA-1", TDOA_PDOA_1},
+		{"TDOA-PDOA-2", TDOA_PDOA_2},
+	}
+
+	for _, modeInfo := range modes {
+		var totalSquaredError, totalIterations float64
+		convergedCount := 0
+
+		for mc := 0; mc < numMonteCarlo; mc++ {
+			// Generate noisy measurements
+			tdoa := make([][]float64, numAnchors)
+			pdoa := make([][]float64, numAnchors)
+			fdoa := make([][]float64, numAnchors)
+			tdoaCov := make([][]float64, numAnchors)
+
+			for i := range tdoa {
+				tdoa[i] = make([]float64, numAnchors)
+				pdoa[i] = make([]float64, numAnchors)
+				fdoa[i] = make([]float64, numAnchors)
+				tdoaCov[i] = make([]float64, numAnchors)
+			}
+
+			c := 299792458.0 // m/s
+			lambda := 0.3    // 1 GHz wavelength (m)
+
+			for i := 0; i < numAnchors; i++ {
+				for j := i + 1; j < numAnchors; j++ {
+					di := distance(targetPos, stations[i].Position)
+					dj := distance(targetPos, stations[j].Position)
+
+					// True TDOA and PDOA
+					trueTDOA := (di - dj) / c
+					truePDOA := 2.0 * math.Pi / lambda * (di - dj)
+
+					// Add noise
+					tdoa[i][j] = trueTDOA + rand.NormFloat64()*sigmaT
+					tdoa[j][i] = -tdoa[i][j]
+					pdoa[i][j] = truePDOA + rand.NormFloat64()*sigmaP
+					pdoa[j][i] = -pdoa[i][j]
+					fdoa[i][j] = 0.0
+					fdoa[j][i] = -fdoa[i][j]
+
+					tdoaCov[i][j] = sigmaT * sigmaT
+					tdoaCov[j][i] = sigmaT * sigmaT
+				}
+			}
+
+			measurement := TDOAPDOAMeasurement{
+				TDOA:             tdoa,
+				PDOA:             pdoa,
+				FDOA:             fdoa,
+				TDOACovariance:   tdoaCov,
+				PDOAVariance:     sigmaP * sigmaP,
+				FDOAVariance:     0.0,
+				CarrierFrequency: 1e9,
+				Wavelength:       lambda,
+			}
+
+			// Run PSO
+			result := pso.LocalizeWithPSO(measurement, modeInfo.mode)
+
+			// Compute error
+			error := distance(result.Position, targetPos)
+			totalSquaredError += error * error
+			totalIterations += float64(result.Iterations)
+
+			if result.Converged {
+				convergedCount++
+			}
+		}
+
+		rmse := math.Sqrt(totalSquaredError / float64(numMonteCarlo))
+		convergenceRate := float64(convergedCount) / float64(numMonteCarlo) * 100
+		avgIterations := totalIterations / float64(numMonteCarlo)
+
+		results[modeInfo.name] = struct {
+			RMSE       float64
+			Converged  float64
+			Iterations float64
+		}{
+			RMSE:       rmse,
+			Converged:  convergenceRate,
+			Iterations: avgIterations,
+		}
+	}
 
 	return results
 }

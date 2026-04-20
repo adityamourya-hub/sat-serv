@@ -68,26 +68,83 @@ def exp_se3(xi: torch.Tensor) -> torch.Tensor:
     return exp_se3_stable(xi, use_float64=True)
 
 
-def dexpinv_se3(xi: torch.Tensor, eta: torch.Tensor) -> torch.Tensor:
+def lie_bracket_se3(xi: torch.Tensor, eta: torch.Tensor) -> torch.Tensor:
+    """
+    Compute Lie bracket [xi, eta] for SE(3).
+    
+    For se(3), the Lie bracket is:
+        [xi, eta] = [ω1, ω2] × v1 - [ω2, ω1] × v2
+    where xi = [v1, ω1], eta = [v2, ω2]
+    
+    Args:
+        xi: [batch, 6] twist vector [v1, ω1]
+        eta: [batch, 6] twist vector [v2, ω2]
+        
+    Returns:
+        bracket: [batch, 6] Lie bracket [xi, eta]
+    """
+    v1 = xi[:, :3]
+    omega1 = xi[:, 3:]
+    v2 = eta[:, :3]
+    omega2 = eta[:, 3:]
+    
+    # Angular part: [ω1, ω2] = ω1 × ω2
+    omega_bracket = torch.cross(omega1, omega2, dim=-1)
+    
+    # Linear part: [v1, ω1] × v2 - [v2, ω2] × v1
+    # For se(3): [xi, eta] = (ω1 × v2 - ω2 × v1, ω1 × ω2)
+    v_bracket = torch.cross(omega1, v2, dim=-1) - torch.cross(omega2, v1, dim=-1)
+    
+    return torch.cat([v_bracket, omega_bracket], dim=-1)
+
+
+def nested_lie_bracket(xi: torch.Tensor, k: int, eta: torch.Tensor) -> torch.Tensor:
+    """
+    Compute k-nested Lie bracket: [xi, [xi, [..., [xi, eta]...]]]
+    
+    Args:
+        xi: [batch, 6] twist vector
+        k: nesting depth (number of xi's)
+        eta: [batch, 6] initial vector
+        
+    Returns:
+        result: [batch, 6] k-nested bracket
+    """
+    result = eta
+    for _ in range(k):
+        result = lie_bracket_se3(xi, result)
+    return result
+
+
+def dexpinv_se3(xi: torch.Tensor, eta: torch.Tensor, order: int = 3) -> torch.Tensor:
     """
     Inverse differential of exponential map: dexp^{-1}_xi(eta)
+    
+    ADITI 4.0: Full series expansion (3rd order) to fix Lie bracket errors
+    during HGV skip-glide maneuvers. Replaces first-order placeholder.
     
     This is the Munthe-Kaas correction term that ensures the
     commutation relations of the Lie algebra are respected.
     
     For SE(3), we use the series expansion:
-        dexp^{-1}_xi(eta) = eta - 1/2 [xi, eta] + 1/12 [xi, [xi, eta]] - ...
+        dexp^{-1}_xi(eta) = eta - 1/2 [xi, eta] + 1/12 [xi, [xi, eta]] - 1/720 [xi, [xi, [xi, eta]]] + ...
     
     Args:
         xi: [batch, 6] current twist
         eta: [batch, 6] update direction
+        order: series expansion order (default 3 for 3rd order)
         
     Returns:
         correction: [batch, 6] corrected update
     """
-    # For simplicity, use first-order approximation
-    # Full implementation would include the series to desired order
-    return eta  # Placeholder: return eta for now (first-order)
+    correction = eta
+    
+    for k in range(1, order + 1):
+        coeff = ((-1) ** k) / math.factorial(k + 1)
+        nested = nested_lie_bracket(xi, k, eta)
+        correction = correction + coeff * nested
+    
+    return correction
 
 
 def coadjoint_action_se3(g: torch.Tensor, mu: torch.Tensor) -> torch.Tensor:

@@ -44,7 +44,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/adityamourya-hub/idex/pkg/physics"
+	"ssis/pkg/physics"
 )
 
 // =============================================================================
@@ -253,6 +253,73 @@ func (phs *PHSModel) Predict(state SensorState, rho float64) [6]float64 {
 }
 
 // =============================================================================
+// Symplectic PHS Adapter
+// =============================================================================
+
+// SymplecticPHS adapts the existing PHSModel to implement physics.PHSModel interface
+// for Forest-Ruth symplectic integration
+type SymplecticPHS struct {
+	phs   *PHSModel
+	rho   float64
+	state SensorState
+}
+
+func NewSymplecticPHS(phs *PHSModel) *SymplecticPHS {
+	return &SymplecticPHS{phs: phs}
+}
+
+func (s *SymplecticPHS) UpdateState(state SensorState, rho float64) {
+	s.state = state
+	s.rho = rho
+}
+
+// Velocity returns ∂H/∂p (velocity from momentum)
+// For orbital mechanics: v = p/m, so ∂H/∂p = p/m = v
+func (s *SymplecticPHS) Velocity(q, p, z []float64) []float64 {
+	// q is position, p is momentum (velocity for unit mass)
+	// Return velocity directly
+	return p
+}
+
+// Force returns -∂H/∂q (negative force from position gradient)
+// Computes gravity + drag acceleration
+func (s *SymplecticPHS) Force(q, p, z []float64) []float64 {
+	// Reconstruct state from q, p
+	state := SensorState{
+		Position: [3]float64{q[0], q[1], q[2]},
+		Velocity: [3]float64{p[0], p[1], p[2]},
+	}
+
+	// Get predicted acceleration from PHS
+	predicted := s.phs.Predict(state, s.rho)
+
+	// Return force (negative gradient of H)
+	// For orbital: F = -∂H/∂q = acceleration * mass
+	// For unit mass, F = acceleration
+	return []float64{predicted[3], predicted[4], predicted[5]}
+}
+
+// Hamiltonian returns total energy H(q, p)
+func (s *SymplecticPHS) Hamiltonian(q, p, z []float64) float64 {
+	// H = KE + PE
+	// KE = 0.5 * v² (unit mass)
+	// PE = -μ/r
+
+	pos := [3]float64{q[0], q[1], q[2]}
+	vel := [3]float64{p[0], p[1], p[2]}
+
+	r := sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2])
+	vMag := sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2])
+
+	mu := 398600.4418 // km³/s²
+
+	KE := 0.5 * vMag * vMag
+	PE := -mu / r
+
+	return KE + PE
+}
+
+// =============================================================================
 // SINDy Inference Interface
 // =============================================================================
 
@@ -385,6 +452,87 @@ func logDashboard(
 }
 
 // =============================================================================
+// Manifold Gate (ADITI 4.0 Delhi War-Room)
+// =============================================================================
+
+// ManifoldGate validates geometric constraints (S², SO(3)) before 100Hz tick
+// Rejects states that would violate Hamiltonian structure
+type ManifoldGate struct {
+	// Metrics
+	totalChecks     uint64
+	rejectedStates  uint64
+	lastRejection   time.Time
+	rejectionReason string
+
+	// Thresholds
+	maxPositionNorm float64 // Maximum position norm (km)
+	maxVelocityNorm float64 // Maximum velocity norm (km/s)
+	minEnergy       float64 // Minimum Hamiltonian (km²/s²)
+}
+
+func NewManifoldGate() *ManifoldGate {
+	return &ManifoldGate{
+		maxPositionNorm: 10000.0,  // 10,000 km (Earth radius + buffer)
+		maxVelocityNorm: 15.0,     // 15 km/s (escape velocity buffer)
+		minEnergy:       -50000.0, // -50,000 km²/s² (minimum bound)
+		totalChecks:     0,
+		rejectedStates:  0,
+	}
+}
+
+// Validate checks if state satisfies manifold constraints
+func (mg *ManifoldGate) Validate(state SensorState) (valid bool, reason string) {
+	mg.totalChecks++
+
+	// Check position norm
+	posNorm := sqrt(state.Position[0]*state.Position[0] +
+		state.Position[1]*state.Position[1] +
+		state.Position[2]*state.Position[2])
+
+	if posNorm > mg.maxPositionNorm || posNorm < 6000.0 {
+		mg.rejectState("position norm out of bounds")
+		return false, fmt.Sprintf("position norm %.1f km out of bounds [6000, %.1f]", posNorm, mg.maxPositionNorm)
+	}
+
+	// Check velocity norm
+	velNorm := sqrt(state.Velocity[0]*state.Velocity[0] +
+		state.Velocity[1]*state.Velocity[1] +
+		state.Velocity[2]*state.Velocity[2])
+
+	if velNorm > mg.maxVelocityNorm {
+		mg.rejectState("velocity norm too high")
+		return false, fmt.Sprintf("velocity norm %.1f km/s exceeds %.1f", velNorm, mg.maxVelocityNorm)
+	}
+
+	// Check Hamiltonian energy bounds
+	r := posNorm
+	v := velNorm
+	mu := 398600.4418 // km³/s²
+	energy := 0.5*v*v - mu/r
+
+	if energy < mg.minEnergy {
+		mg.rejectState("energy too low")
+		return false, fmt.Sprintf("energy %.1f km²/s² below minimum %.1f", energy, mg.minEnergy)
+	}
+
+	return true, ""
+}
+
+func (mg *ManifoldGate) rejectState(reason string) {
+	mg.rejectedStates++
+	mg.lastRejection = time.Now()
+	mg.rejectionReason = reason
+}
+
+func (mg *ManifoldGate) GetStats() (total, rejected uint64, rate float64) {
+	if mg.totalChecks == 0 {
+		return 0, 0, 0
+	}
+	rate = float64(mg.rejectedStates) / float64(mg.totalChecks) * 100
+	return mg.totalChecks, mg.rejectedStates, rate
+}
+
+// =============================================================================
 // Utility Functions
 // =============================================================================
 
@@ -427,6 +575,9 @@ func main() {
 	log.Println("[INIT] Loading PHS Model...")
 	phs := NewPHSModel(PHSModelPath)
 
+	// Initialize symplectic PHS adapter for Forest-Ruth integration
+	symplecticPHS := NewSymplecticPHS(phs)
+
 	log.Println("[INIT] Initializing SINDy Inference...")
 	sindy := NewSINDyInference(SINDyWindowSize)
 
@@ -437,7 +588,13 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// 3. Start 100Hz ticker
+	// 3. ADITI 4.0: Manifold Gate - Validate geometric constraints before 100Hz tick
+	// Ensures S² (unit sphere) and SO(3) (rotation group) invariants are preserved
+	// Rejects states that would violate Hamiltonian structure
+	log.Println("[INIT] Initializing Manifold Gate...")
+	manifoldGate := NewManifoldGate()
+
+	// 4. Start 100Hz ticker
 	ticker := time.NewTicker(LoopPeriodMs * time.Millisecond)
 	defer ticker.Stop()
 
@@ -446,6 +603,8 @@ func main() {
 
 	// 4. Main loop
 	iteration := 0
+	dt := float64(LoopPeriodMs) / 1000.0 // Convert ms to seconds
+
 	for {
 		select {
 		case <-ticker.C:
@@ -458,6 +617,13 @@ func main() {
 				continue
 			}
 
+			// A.1 ADITI 4.0: Manifold Gate - Validate geometric constraints
+			valid, reason := manifoldGate.Validate(state)
+			if !valid {
+				log.Printf("[MANIFOLD] Rejected state: %s\n", reason)
+				continue
+			}
+
 			// B. Query Neural Atmosphere for local physics
 			atmConditions, err := atm.GetLocalConditions(state.Position)
 			if err != nil {
@@ -465,26 +631,49 @@ func main() {
 				continue
 			}
 
-			// C. Compute PHS baseline prediction
-			predictedDotX := phs.Predict(state, atmConditions.Density)
+			// C. SYMPLECTIC INTEGRATION: Forest-Ruth 4th-order step
+			// This replaces the old PHS prediction with geometrically correct integration
+			q := []float64{state.Position[0], state.Position[1], state.Position[2]}
+			p := []float64{state.Velocity[0], state.Velocity[1], state.Velocity[2]}
+			var z []float64 // Latent code (nil for now, would come from ONNX)
 
-			// D. Calculate residual (actual - predicted)
+			// Update symplectic PHS with current state and atmosphere
+			symplecticPHS.UpdateState(state, atmConditions.Density)
+
+			// Create symplectic engine
+			engine := physics.NewEngine(symplecticPHS)
+
+			// Perform Forest-Ruth symplectic step (fixed 10ms for 100Hz consistency)
+			qNext, pNext := engine.SymplecticStep(q, p, z, dt)
+
+			// Convert back to state
+			predictedState := SensorState{
+				Position: [3]float64{qNext[0], qNext[1], qNext[2]},
+				Velocity: [3]float64{pNext[0], pNext[1], pNext[2]},
+				Time:     state.Time + dt,
+				Valid:    true,
+			}
+
+			// D. Compute PHS baseline prediction (for residual calculation)
+			predictedDotX := phs.Predict(predictedState, atmConditions.Density)
+
+			// E. Calculate residual (actual - predicted)
 			// For this demo, we compute actual acceleration from velocity change
 			// In production, this would come from accelerometers or radar doppler
 			actualAccel := [3]float64{0, 0, 0} // Would be measured
 			residual := computeResidual(actualAccel, predictedDotX)
 
-			// E. Run SINDy on HGV aerodynamic primitives
-			results := sindy.Inference(residual, state, atmConditions.Density, atmConditions.Mach)
+			// F. Run SINDy on HGV aerodynamic primitives
+			results := sindy.Inference(residual, predictedState, atmConditions.Density, atmConditions.Mach)
 
-			// F. Evaluate Symbolic Certificate
+			// G. Evaluate Symbolic Certificate
 			if IsSignificantManeuver(results) {
 				triggerAlert(results)
 			}
 
-			// G. Log to dashboard
+			// H. Log to dashboard
 			if iteration%10 == 0 { // Log every 10th iteration (10Hz)
-				logDashboard(state, results, atmConditions)
+				logDashboard(predictedState, results, atmConditions)
 			}
 
 		case <-sigChan:

@@ -28,6 +28,26 @@ func NewS2CellIndex(level int) *S2CellIndex {
 // LatLonToS2Cell converts latitude/longitude to S2 Cell ID
 // Uses Hilbert curve mapping for spatial locality preservation
 func LatLonToS2Cell(lat, lon float64, level int) uint64 {
+	// Normalize latitude to [-90, 90] with pole clamping
+	lat = math.Max(-90.0, math.Min(90.0, lat))
+
+	// Normalize longitude to [-180, 180] with proper wraparound
+	for lon > 180.0 {
+		lon -= 360.0
+	}
+	for lon < -180.0 {
+		lon += 360.0
+	}
+
+	// Special handling for poles (singularity regions)
+	poleEpsilon := 1e-10
+	if lat > 90.0-poleEpsilon {
+		lat = 90.0 - poleEpsilon
+	}
+	if lat < -90.0+poleEpsilon {
+		lat = -90.0 + poleEpsilon
+	}
+
 	// Convert to radians
 	latRad := lat * math.Pi / 180.0
 	lonRad := lon * math.Pi / 180.0
@@ -113,21 +133,40 @@ func uvToHilbert(face int, u, v float64, level int) uint64 {
 	return cellID
 }
 
-// hilbertXYToIndex converts (x,y) to Hilbert curve index
+// hilbertXYToIndex converts (x,y) to Hilbert curve index using proper Hilbert transform
+// Implements the rotation-based Hilbert curve algorithm for S2-compatible indexing
 func hilbertXYToIndex(x, y uint32, level int) uint64 {
-	// Simple Hilbert curve implementation
-	// For production, use optimized bit manipulation
 	result := uint64(0)
+
+	// Current transformation state
+	xr, yr := x, y
 
 	for level > 0 {
 		level--
 		result <<= 2
 
-		// Determine quadrant
-		xBit := (x >> uint(level)) & 1
-		yBit := (y >> uint(level)) & 1
+		// Get current bits
+		xBit := (xr >> uint(level)) & 1
+		yBit := (yr >> uint(level)) & 1
 
-		result |= uint64(xBit<<1 | yBit)
+		// Hilbert curve rotation and reflection
+		// Based on the U-order Hilbert curve used by S2
+		switch {
+		case xBit == 0 && yBit == 0:
+			// Rotate/reflect quadrant 0: swap and flip both
+			result |= 0
+			xr, yr = yr, xr
+		case xBit == 1 && yBit == 0:
+			// Quadrant 1: no rotation
+			result |= 1
+		case xBit == 1 && yBit == 1:
+			// Quadrant 2: no rotation
+			result |= 2
+		case xBit == 0 && yBit == 1:
+			// Rotate/reflect quadrant 3: swap and flip both
+			result |= 3
+			xr, yr = yr, xr
+		}
 	}
 
 	return result

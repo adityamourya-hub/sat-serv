@@ -3,6 +3,7 @@
 package threat
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -10,21 +11,30 @@ import (
 	"ssis/pkg/spatial"
 )
 
-const (
-	// Detection thresholds
-	MachThreshold          = 3.0    // Mach 3 minimum for high-energy detection
-	VerticalVelocityKmS    = 1.0    // 1 km/s vertical velocity threshold
-	AltitudeBoostThreshold = 100.0  // 100km altitude threshold for boost phase
-	PlumeTempMin           = 3000.0 // Kelvin minimum for boost phase detection
-	PlasmaTempMin          = 2000.0 // Kelvin minimum for glide phase detection
+var (
+	// Detection thresholds - loaded from ThreatConfig
+	cfg = GetConfig()
 
-	// S2 cell levels for launch corridor monitoring
-	LaunchCorridorLevel   = 10 // Level 10 for ~100km resolution
-	RegionalTripwireLevel = 12 // Level 12 for ~25km resolution
+	MachThreshold          = cfg.MachThreshold
+	VerticalVelocityKmS    = cfg.VerticalVelocityKmS
+	AltitudeBoostThreshold = cfg.AltitudeBoostThreshold
+	PlumeTempMin           = cfg.PlumeTempMin
+	PlasmaTempMin          = cfg.PlasmaTempMin
+
+	// S2 cell levels
+	LaunchCorridorLevel   = cfg.LaunchCorridorLevel
+	RegionalTripwireLevel = cfg.RegionalTripwireLevel
 
 	// IMM filter parameters
-	IMMModelSwitchProb = 0.1   // Probability threshold for model switching
-	IMMUpdateRateHz    = 100.0 // 100Hz update rate for hypersonic tracking
+	IMMModelSwitchProb = cfg.IMMModelSwitchProb
+	IMMUpdateRateHz    = cfg.IMMUpdateRateHz
+
+	// Fractional Laplacian parameters
+	FractionalOrder   = cfg.FractionalOrder
+	WakeMemoryDepth   = cfg.WakeMemoryDepth
+	WakeDecayFactor   = cfg.WakeDecayFactor
+	HGVCorridorMinAlt = cfg.HGVCorridorMinAlt
+	HGVCorridorMaxAlt = cfg.HGVCorridorMaxAlt
 )
 
 // DetectionPhase identifies the current phase of missile/hypersonic flight
@@ -191,6 +201,9 @@ type LaunchAlert struct {
 	Elevation      float64
 	IsConfirmed    bool
 	TrackID        int
+
+	// Symbolic certificate for sovereign handshake
+	Certificate *SymbolicCertificate
 }
 
 // GenerateLaunchAlert creates a new launch alert from an observation
@@ -205,6 +218,20 @@ func (lte *LaunchTripwireEngine) GenerateLaunchAlert(obs LaunchObservation, corr
 	azimuth := math.Atan2(obs.Velocity[1], obs.Velocity[0]) * 180.0 / math.Pi
 	elevation := math.Atan2(obs.Velocity[2], math.Sqrt(obs.Velocity[0]*obs.Velocity[0]+obs.Velocity[1]*obs.Velocity[1])) * 180.0 / math.Pi
 
+	// Create state vector for certificate
+	stateVector := [6]float64{
+		obs.Position[0], obs.Position[1], obs.Position[2],
+		obs.Velocity[0], obs.Velocity[1], obs.Velocity[2],
+	}
+
+	// Generate symbolic certificate with Hamiltonian invariant
+	cert := NewSymbolicCertificate(
+		fmt.Sprintf("LAUNCH-%d", lte.NextAlertID),
+		obs.SourceSensor,
+		stateVector,
+		NewPhysicalConstraints(),
+	)
+
 	alert := &LaunchAlert{
 		AlertID:        lte.NextAlertID,
 		AlertTime:      time.Now(),
@@ -218,6 +245,7 @@ func (lte *LaunchTripwireEngine) GenerateLaunchAlert(obs LaunchObservation, corr
 		Elevation:      elevation,
 		IsConfirmed:    false,
 		TrackID:        lte.NextAlertID, // Initial track ID
+		Certificate:    cert,
 	}
 
 	lte.ActiveAlerts[alert.AlertID] = alert
@@ -247,6 +275,14 @@ func generateCorridorCells(corridor *LaunchCorridor, level int) []uint64 {
 	return cells
 }
 
+// WakeMemoryState stores historical state for fractional Laplacian dynamics
+type WakeMemoryState struct {
+	Position [3]float64
+	Velocity [3]float64
+	Time     time.Time
+	Altitude float64
+}
+
 // IMM (Interacting Multiple Model) Filter for hypersonic tracking
 // Handles model switching between ballistic boost and hypersonic glide
 type IMMFilter struct {
@@ -259,6 +295,12 @@ type IMMFilter struct {
 	StateVector    []float64   // Fused state vector
 	Covariance     [][]float64 // Fused covariance
 	IsNonBallistic bool        // Flag for non-ballistic threat
+
+	// Fractional Laplacian dynamics for HGV tracking
+	WakeHistory []WakeMemoryState // Historical states for wake memory
+
+	// DPHNO hard constraints
+	Constraints *PhysicalConstraints
 }
 
 // KalmanFilter represents a standard Kalman filter for a specific motion model
@@ -279,6 +321,8 @@ func NewIMMFilter(trackID int) *IMMFilter {
 		StateVector:    make([]float64, 6), // Position (3) + Velocity (3)
 		Covariance:     make([][]float64, 6),
 		IsNonBallistic: false,
+		WakeHistory:    make([]WakeMemoryState, 0),
+		Constraints:    NewPhysicalConstraints(),
 		ModelA: &KalmanFilter{
 			State:      make([]float64, 6),
 			Covariance: make([][]float64, 6),
@@ -290,8 +334,70 @@ func NewIMMFilter(trackID int) *IMMFilter {
 	}
 }
 
+// calculateFractionalLaplacian computes fractional Laplacian for non-local dynamics
+// Uses Grünwald-Letnikov approximation for fractional derivatives
+func calculateFractionalLaplacian(history []WakeMemoryState, alpha float64, decay float64) [3]float64 {
+	if len(history) < 2 {
+		return [3]float64{0, 0, 0}
+	}
+
+	// Grünwald-Letnikov coefficients
+	coeffs := make([]float64, len(history))
+	coeffs[0] = 1.0
+	for n := 1; n < len(history); n++ {
+		coeffs[n] = coeffs[n-1] * (1.0 - (alpha+1.0)/float64(n))
+	}
+
+	// Apply fractional derivative to velocity history
+	fractionalEffect := [3]float64{0, 0, 0}
+	weightSum := 0.0
+
+	for i, state := range history {
+		weight := coeffs[i] * math.Pow(decay, float64(i))
+		for j := 0; j < 3; j++ {
+			fractionalEffect[j] += weight * state.Velocity[j]
+		}
+		weightSum += weight
+	}
+
+	if weightSum > 0 {
+		for j := 0; j < 3; j++ {
+			fractionalEffect[j] /= weightSum
+		}
+	}
+
+	return fractionalEffect
+}
+
+// updateWakeHistory adds current state to wake memory with decay
+func (imm *IMMFilter) updateWakeHistory(obs LaunchObservation) {
+	altitude := math.Sqrt(obs.Position[0]*obs.Position[0]+obs.Position[1]*obs.Position[1]+obs.Position[2]*obs.Position[2]) - 6371.0
+
+	state := WakeMemoryState{
+		Position: obs.Position,
+		Velocity: obs.Velocity,
+		Time:     time.Now(),
+		Altitude: altitude,
+	}
+
+	imm.WakeHistory = append(imm.WakeHistory, state)
+
+	// Keep history bounded
+	if len(imm.WakeHistory) > WakeMemoryDepth {
+		imm.WakeHistory = imm.WakeHistory[1:]
+	}
+}
+
+// isInHGVCorridor checks if current altitude is in HGV transitional flow regime
+func isInHGVCorridor(altitude float64) bool {
+	return altitude >= HGVCorridorMinAlt && altitude <= HGVCorridorMaxAlt
+}
+
 // UpdateIMMFilter updates the IMM filter with a new observation
 func (imm *IMMFilter) UpdateIMMFilter(obs LaunchObservation) {
+	// Update wake history for fractional dynamics
+	imm.updateWakeHistory(obs)
+
 	// Update both models
 	imm.updateModel(imm.ModelA, obs, true)  // Ballistic model
 	imm.updateModel(imm.ModelB, obs, false) // Hypersonic model
@@ -308,6 +414,30 @@ func (imm *IMMFilter) UpdateIMMFilter(obs LaunchObservation) {
 	// Fuse state vectors based on probabilities
 	for i := 0; i < 6; i++ {
 		imm.StateVector[i] = imm.ProbModelA*imm.ModelA.State[i] + imm.ProbModelB*imm.ModelB.State[i]
+	}
+
+	// Enforce DPHNO hard constraints on fused state
+	if imm.Constraints != nil {
+		pos := [3]float64{imm.StateVector[0], imm.StateVector[1], imm.StateVector[2]}
+		vel := [3]float64{imm.StateVector[3], imm.StateVector[4], imm.StateVector[5]}
+
+		// Check energy conservation
+		energyViolated, energyRatio := imm.Constraints.CheckEnergyConservation(pos, vel, 1000.0)
+
+		// Check momentum conservation (simplified acceleration)
+		acc := [3]float64{0, 0, -0.0098} // Gravity
+		momentumViolated, momentumRatio := imm.Constraints.CheckMomentumConservation(pos, vel, acc, 1000.0)
+
+		// Apply augmented Lagrangian correction
+		adjustedPos, adjustedVel := imm.Constraints.ApplyAugmentedLagrangian(
+			pos, vel, energyViolated, energyRatio, momentumViolated, momentumRatio,
+		)
+
+		// Update state vector with constrained values
+		for i := 0; i < 3; i++ {
+			imm.StateVector[i] = adjustedPos[i]
+			imm.StateVector[i+3] = adjustedVel[i]
+		}
 	}
 
 	// Check for non-ballistic threat
@@ -334,13 +464,25 @@ func (imm *IMMFilter) updateModel(kf *KalmanFilter, obs LaunchObservation, isBal
 		// Constant acceleration model (gravity)
 		kf.State[5] -= 0.0098 // Gravity in km/s²
 	} else {
-		// Constant turn model (hypersonic glide)
-		// Simplified: maintain velocity magnitude, change direction
-		velMag := math.Sqrt(kf.State[3]*kf.State[3] + kf.State[4]*kf.State[4] + kf.State[5]*kf.State[5])
-		if velMag > 0 {
-			// Apply slight turn
-			kf.State[3] *= 0.999
-			kf.State[4] *= 1.001
+		// Hypersonic glide model with fractional Laplacian dynamics
+		altitude := math.Sqrt(obs.Position[0]*obs.Position[0]+obs.Position[1]*obs.Position[1]+obs.Position[2]*obs.Position[2]) - 6371.0
+
+		if isInHGVCorridor(altitude) && len(imm.WakeHistory) >= 2 {
+			// Use fractional Laplacian for non-local dynamics in transitional flow regime
+			fractionalEffect := calculateFractionalLaplacian(imm.WakeHistory, FractionalOrder, WakeDecayFactor)
+
+			// Apply fractional dynamics to velocity
+			for i := 0; i < 3; i++ {
+				kf.State[i+3] = 0.7*kf.State[i+3] + 0.3*fractionalEffect[i]
+			}
+		} else {
+			// Standard constant turn model for non-HGV corridor or insufficient history
+			velMag := math.Sqrt(kf.State[3]*kf.State[3] + kf.State[4]*kf.State[4] + kf.State[5]*kf.State[5])
+			if velMag > 0 {
+				// Apply slight turn
+				kf.State[3] *= 0.999
+				kf.State[4] *= 1.001
+			}
 		}
 	}
 }

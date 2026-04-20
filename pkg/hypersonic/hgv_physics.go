@@ -48,22 +48,37 @@ type HGVState struct {
  * Based on DF-17 / similar HGV class.
  */
 type HGVConstants struct {
-	ReferenceArea float64 // m^2
-	Mass          float64 // kg
-	MaxLD         float64 // Max L/D ratio (typically 2-4)
-	MinLD         float64 // Min L/D ratio
+	ReferenceArea  float64 // m^2
+	Mass           float64 // kg
+	MaxLD          float64 // Max L/D ratio (typically 2-4)
+	MinLD          float64 // Min L/D ratio
+	BallisticCoeff float64 // kg/m^2 (BC = m/CdA, from catalog)
+	// Aerodynamic coefficients (replaces hardcoded values)
+	CdBallistic float64 // Drag coefficient for ballistic mode (default 0.2)
+	CdGlide     float64 // Drag coefficient for glide mode (default 0.5)
+	CdManeuver  float64 // Drag coefficient for maneuver mode (default 0.8)
+	LDGlide     float64 // L/D ratio for steady glide (default 3.0)
+	LDManeuver  float64 // L/D ratio for high-G maneuver (default 3.5)
 }
 
 /**
  * DefaultHGV returns typical HGV parameters.
  * DF-17 class: ~1000 kg warhead, 0.5 m² reference area.
+ * BallisticCoeff: BC = m/CdA, typical for tumbling debris
  */
 func DefaultHGV() HGVConstants {
 	return HGVConstants{
-		ReferenceArea: 0.5,    // m^2
-		Mass:          1000.0, // kg
-		MaxLD:         4.0,    // Maximum L/D
-		MinLD:         2.0,    // Minimum L/D
+		ReferenceArea:  0.5,    // m^2
+		Mass:           1000.0, // kg
+		MaxLD:          4.0,    // Maximum L/D
+		MinLD:          2.0,    // Minimum L/D
+		BallisticCoeff: 500.0,  // kg/m^2 (BC = 1000 / (2.0 * 0.5) for CD=2.0 tumble)
+		// Aerodynamic coefficients (configurable, replaces hardcoded values)
+		CdBallistic: 0.2, // Drag coefficient for ballistic mode
+		CdGlide:     0.5, // Drag coefficient for glide mode
+		CdManeuver:  0.8, // Drag coefficient for maneuver mode
+		LDGlide:     3.0, // L/D ratio for steady glide
+		LDManeuver:  3.5, // L/D ratio for high-G maneuver
 	}
 }
 
@@ -86,7 +101,7 @@ func DefaultHGV() HGVConstants {
  */
 func HGVEquationsOfMotion(state HGVState, consts HGVConstants, jd float64) HGVDerivatives {
 	// Earth rotation effects
-	omegaEarth := 7.2921158553e-5 // rad/s
+	omegaEarth := physics.EARTH_OMEGA // rad/s (from physics constants)
 
 	// Atmospheric density from space weather model
 	rho := physics.GetDensityUnified(0, 0, state.R, jd) // Simplified - should use lat/lon
@@ -399,69 +414,131 @@ func predictBallisticImpact(state HGVState, jd float64) (lat, lon, timeToImpact 
 
 /**
  * HGVToECIState converts HGV spherical state to ECI Cartesian.
+ * Accounts for Earth rotation (GST) for proper ECI/ECEF conversion.
  */
 func HGVToECIState(hgv HGVState) physics.State {
-	// Position
+	// Position (spherical to Cartesian - ECEF)
 	cosPhi := math.Cos(hgv.Phi)
 	sinPhi := math.Sin(hgv.Phi)
 	cosLambda := math.Cos(hgv.Lambda)
 	sinLambda := math.Sin(hgv.Lambda)
 
-	x := hgv.R * cosPhi * cosLambda
-	y := hgv.R * cosPhi * sinLambda
-	z := hgv.R * sinPhi
+	xecef := hgv.R * cosPhi * cosLambda
+	yecef := hgv.R * cosPhi * sinLambda
+	zecef := hgv.R * sinPhi
 
-	// Velocity
+	// Convert ECEF to ECI using Earth rotation (GST)
+	// GST = GMST + equation of equinoxes (simplified to GMST for now)
+	jd := hgv.Epoch
+	if jd == 0 {
+		jd = 2459000.5 // Default epoch
+	}
+
+	// Calculate GMST (Greenwich Mean Sidereal Time)
+	// Simplified formula: GMST = 280.46061837 + 360.98564736629*(JD - 2451545.0)
+	t := jd - 2451545.0
+	gmst := 280.46061837 + 360.98564736629*t
+	gmstRad := gmst * (math.Pi / 180.0)
+	gmstRad = math.Mod(gmstRad, 2*math.Pi) // Normalize to [0, 2π]
+
+	// Rotation matrix for Earth rotation (z-axis rotation by -GMST)
+	cosGST := math.Cos(-gmstRad)
+	sinGST := math.Sin(-gmstRad)
+
+	// Apply rotation to position
+	x := cosGST*xecef - sinGST*yecef
+	y := sinGST*xecef + cosGST*yecef
+	z := zecef
+
+	// Velocity transformation
 	cosGamma := math.Cos(hgv.Gamma)
 	sinGamma := math.Sin(hgv.Gamma)
 	cosPsi := math.Cos(hgv.Psi)
 	sinPsi := math.Sin(hgv.Psi)
 
-	// Local ENU frame
+	// Local ENU frame velocity (relative to Earth surface)
 	vEast := hgv.V * cosGamma * sinPsi
 	vNorth := hgv.V * cosGamma * cosPsi
 	vUp := hgv.V * sinGamma
 
-	// Velocity in ECI
-	vx := -sinLambda * vEast
-	vy := cosLambda * vEast
-	vz := 0.0
+	// Transform ENU velocity to ECEF
+	vecefEast := -sinLambda*vEast - sinPhi*cosLambda*vNorth + cosPhi*cosLambda*vUp
+	vecefNorth := cosLambda*vEast - sinPhi*sinLambda*vNorth + cosPhi*sinLambda*vUp
+	vecefUp := cosPhi*vNorth + sinPhi*vUp
 
-	// North
-	vx += -sinPhi * cosLambda * vNorth
-	vy += -sinPhi * sinLambda * vNorth
-	vz += cosPhi * vNorth
+	// Add Earth rotation velocity (ω × r)
+	// v_earth = ω × r where ω = [0, 0, ω_earth]
+	omega := physics.EARTH_OMEGA * 1000.0 // Convert rad/s to rad/km/s for consistency
+	vEarthX := -omega * yecef
+	vEarthY := omega * xecef
+	vEarthZ := 0.0
 
-	// Up
-	vx += cosPhi * cosLambda * vUp
-	vy += cosPhi * sinLambda * vUp
-	vz += sinPhi * vUp
+	// Transform ECEF velocity to ECI (same rotation)
+	vxECEF := vecefEast
+	vyECEF := vecefNorth
+	vzECEF := vecefUp
+
+	vx := cosGST*vxECEF - sinGST*vyECEF + vEarthX
+	vy := sinGST*vxECEF + cosGST*vyECEF + vEarthY
+	vz := vzECEF + vEarthZ
 
 	return physics.State{
 		Pos:     [3]float64{x, y, z},
 		Vel:     [3]float64{vx, vy, vz},
-		EpochJD: hgv.Epoch,
+		EpochJD: jd,
 	}
 }
 
 /**
  * ECIToHGVState converts ECI Cartesian to HGV spherical state.
+ * Accounts for Earth rotation (GST) for proper ECI/ECEF conversion.
  */
 func ECIToHGVState(eci physics.State) HGVState {
 	x, y, z := eci.Pos[0], eci.Pos[1], eci.Pos[2]
 	vx, vy, vz := eci.Vel[0], eci.Vel[1], eci.Vel[2]
+	jd := eci.EpochJD
+	if jd == 0 {
+		jd = 2459000.5 // Default epoch
+	}
 
-	// Radius
-	r := math.Sqrt(x*x + y*y + z*z)
+	// Calculate GMST (Greenwich Mean Sidereal Time)
+	t := jd - 2451545.0
+	gmst := 280.46061837 + 360.98564736629*t
+	gmstRad := gmst * (math.Pi / 180.0)
+	gmstRad = math.Mod(gmstRad, 2*math.Pi)
 
-	// Latitude
-	phi := math.Asin(z / r)
+	// Rotation matrix for Earth rotation (z-axis rotation by GMST)
+	cosGST := math.Cos(gmstRad)
+	sinGST := math.Sin(gmstRad)
+
+	// Convert ECI to ECEF (inverse rotation)
+	xecef := cosGST*x + sinGST*y
+	yecef := -sinGST*x + cosGST*y
+	zecef := z
+
+	// Convert ECEF velocity to ECI (inverse rotation)
+	// Subtract Earth rotation velocity first
+	omega := physics.EARTH_OMEGA * 1000.0 // Convert rad/s to rad/km/s
+	vEarthX := -omega * yecef
+	vEarthY := omega * xecef
+	vEarthZ := 0.0
+
+	vxECEF := vx - vEarthX
+	vyECEF := vy - vEarthY
+	vzECEF := vz - vEarthZ
+
+	// Apply inverse rotation
+	vxECEF = cosGST*vxECEF + sinGST*vyECEF
+	vyECEF = -sinGST*vxECEF + cosGST*vyECEF
+
+	// Convert ECEF to spherical coordinates
+	r := math.Sqrt(xecef*xecef + yecef*yecef + zecef*zecef)
+
+	// Latitude (geocentric)
+	phi := math.Asin(zecef / r)
 
 	// Longitude
-	lambda := math.Atan2(y, x)
-
-	// Velocity magnitude
-	v := math.Sqrt(vx*vx + vy*vy + vz*vz)
+	lambda := math.Atan2(yecef, xecef)
 
 	// Local ENU frame vectors
 	sinPhi := math.Sin(phi)
@@ -484,10 +561,13 @@ func ECIToHGVState(eci physics.State) HGVState {
 	eastY := northZ*upX - northX*upZ
 	eastZ := northX*upY - northY*upX
 
-	// Velocity components
-	vUp := vx*upX + vy*upY + vz*upZ
-	vNorth := vx*northX + vy*northY + vz*northZ
-	vEast := vx*eastX + vy*eastY + vz*eastZ
+	// Velocity components in ENU frame
+	vUp := vxECEF*upX + vyECEF*upY + vzECEF*upZ
+	vNorth := vxECEF*northX + vyECEF*northY + vzECEF*northZ
+	vEast := vxECEF*eastX + vyECEF*eastY + vzECEF*eastZ
+
+	// Velocity magnitude
+	v := math.Sqrt(vEast*vEast + vNorth*vNorth + vUp*vUp)
 
 	// Flight path angle
 	horizontalV := math.Sqrt(vEast*vEast + vNorth*vNorth)
@@ -506,6 +586,6 @@ func ECIToHGVState(eci physics.State) HGVState {
 		V:      v,
 		Gamma:  gamma,
 		Psi:    psi,
-		Epoch:  eci.EpochJD,
+		Epoch:  jd,
 	}
 }

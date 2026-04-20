@@ -41,18 +41,17 @@ class ComplexBatchNorm2d(nn.Module):
             cov = self.running_cov
             x_centered = x_flat - mean
 
-        # 2x2 Covariance Whitening: (V + eps*I)^-0.5
-        # For 2x2, we can do this analytically
-        try:
-            # Eigen-decomposition for matrix square root inverse
-            eigvals, eigvecs = torch.linalg.eigh(cov + self.eps * torch.eye(2).to(x.device))
-            inv_sqrt_eigvals = torch.diag_embed(1.0 / torch.sqrt(eigvals))
-            whitener = eigvecs @ inv_sqrt_eigvals @ eigvecs.transpose(-1, -2)
-            
-            x_norm = x_centered @ whitener
-        except:
-            # Fallback to simple scaling if eig fails
-            x_norm = x_centered / torch.sqrt(cov.diag() + self.eps)
+        # Optimize eigendecomposition for 2x2 matrix using direct formula
+        cov_eps = cov + self.eps * torch.eye(2).to(x.device)
+        det_cov = cov_eps[0,0] * cov_eps[1,1] - cov_eps[0,1] * cov_eps[1,0]
+        inv_det = 1.0 / torch.sqrt(torch.clamp(det_cov, min=1e-6))
+        inv_cov = torch.zeros_like(cov_eps)
+        inv_cov[0,0] = inv_det * cov_eps[1,1]
+        inv_cov[1,1] = inv_det * cov_eps[0,0]
+        inv_cov[0,1] = -inv_det * cov_eps[0,1]
+        inv_cov[1,0] = -inv_det * cov_eps[1,0]
+        whitener = torch.sqrt(inv_cov)  # Approximate square root inverse
+        x_norm = x_centered @ whitener
 
         # Scale and Shift (W is 2x2 learned weight)
         out = (x_norm.unsqueeze(1) @ self.W.repeat(B*H*W, 1, 1)).squeeze(1) + self.beta.repeat(B*H*W, 1)
@@ -232,7 +231,7 @@ class EvidentialDetectionHead(nn.Module):
         params = self.regressor(x).view(B, self.max_detections, 6)
         
         # Dirichlet alphas for classification (Target present?)
-        alphas = self.uncertainty_head(x) + 1.0 # [B, max_detections]
+        alphas = self.uncertainty_head(x) + 1.0  # Ensure alphas > 1.0 for Dirichlet distribution stability
         
         # We append uncertainty mass u = 1 / S (binary detection case)
         # Note: In a 2-class case (Target/Clutter), S = alpha_target + alpha_clutter
@@ -263,9 +262,8 @@ class ATeenaIQNet(nn.Module):
         # We use a single ComplexConv1d for the learned matched filter
         self.range_compression = nn.Sequential(
             ComplexConv1d(1, 1, kernel_size=8, stride=4, padding=2),
-            # Note: Complex BN should go here, using standard for demo
-            nn.BatchNorm1d(2),
-            ModReLU(1) # Corrected: 1 complex channel (Real + Imag)
+            ComplexBatchNorm2d(2),  # Fix normalization to use complex batch norm
+            ModReLU(2)  # Fix channel count for ModReLU
         )
         
         # Stage 2: Spatial & Spectral Processing
@@ -310,10 +308,6 @@ class ATeenaIQNet(nn.Module):
         # rd_cube: [B, C_feats, D, R_new, Beams]
         # Treat Beams as channels for SE attention
         # Shape: [B, C*Beams, D, R_new]
-        feat_in = rd_cube.permute(0, 1, 4, 2, 3).reshape(B, -1, 64, R_new)
-        # Actually, standard ResNet Expects [B, C, H, W]
-        # We'll use rd_cube mean or concatenation. Let's use Beams as batch dimension 
-        # for ResNet, then pooled.
         B_tot, C_f, D, R_f, Beams = rd_cube.shape
         x_res = rd_cube.permute(0, 4, 1, 2, 3).reshape(B_tot*Beams, C_f, D, R_f)
         feats = self.feature_extractor(x_res).reshape(B_tot, Beams, 512).mean(dim=1)

@@ -9,6 +9,17 @@ import (
 	"ssis/pkg/physics"
 )
 
+var (
+	// FSM thresholds - loaded from ThreatConfig
+	cfgFSM = GetConfig()
+
+	FSMDwellTimerMinutes  = cfgFSM.FSMDwellTimerMinutes
+	FSMMaxHistory         = cfgFSM.FSMMaxHistory
+	FSMDistanceKm         = cfgFSM.FSMDistanceKm
+	FSMStalkingDistanceKm = cfgFSM.FSMStalkingDistanceKm
+	FSMTerminalDistanceKm = cfgFSM.FSMTerminalDistanceKm
+)
+
 // ThreatState defines the current tactical standing of an RSO
 type ThreatState int
 
@@ -64,15 +75,15 @@ type ThreatFSM struct {
 	MaxHistory int
 }
 
-// NewThreatFSM creates FSM with default dwell timer (3 minutes)
+// NewThreatFSM creates FSM with configurable dwell timer and history
 func NewThreatFSM(satID int) *ThreatFSM {
 	return &ThreatFSM{
 		SatID:          satID,
 		CurrentState:   StatePassive,
 		LastUpdate:     time.Now(),
 		StateEntryTime: time.Now(),
-		DwellTimer:     3 * time.Minute, // 3-minute minimum dwell
-		MaxHistory:     10,              // Keep 10 observations
+		DwellTimer:     time.Duration(FSMDwellTimerMinutes) * time.Minute,
+		MaxHistory:     FSMMaxHistory,
 		HCWHistory:     make([]physics.HCWState, 0),
 	}
 }
@@ -101,8 +112,8 @@ func (fsm *ThreatFSM) Update(inputs FSMInput) (bool, string) {
 	// State transition logic
 	switch fsm.CurrentState {
 	case StatePassive:
-		// Transition to MONITORING if within 100km
-		if inputs.DistanceKm < 100.0 {
+		// Transition to MONITORING if within configured distance
+		if inputs.DistanceKm < FSMDistanceKm {
 			fsm.transitionTo(StateMonitoring, now)
 			return true, fmt.Sprintf("SAT %d: TRANSITION %s -> %s (Distance: %.1f km)",
 				fsm.SatID, oldState, fsm.CurrentState, inputs.DistanceKm)
@@ -112,7 +123,7 @@ func (fsm *ThreatFSM) Update(inputs FSMInput) (bool, string) {
 		// Check for HCW RPO pattern (high-confidence stalking detection)
 		if len(fsm.HCWHistory) >= 5 {
 			isRPO, residual := physics.IsRPOPattern(fsm.HCWHistory, inputs.MeanMotion, inputs.TimeStepSec)
-			if isRPO && inputs.DistanceKm < 50.0 {
+			if isRPO && inputs.DistanceKm < FSMStalkingDistanceKm {
 				fsm.transitionTo(StateStalking, now)
 				return true, fmt.Sprintf("SAT %d: HCW ELLIPSE DETECTED. TRANSITION %s -> %s (Residual: %.3f km)",
 					fsm.SatID, oldState, fsm.CurrentState, residual)
@@ -120,7 +131,7 @@ func (fsm *ThreatFSM) Update(inputs FSMInput) (bool, string) {
 		}
 
 		// Standard stalking detection: matching orbit with small delta-v
-		if dwellSatisfied && inputs.DistanceKm < 20.0 && inputs.DeltaVMps < 2.0 && inputs.IsManeuvering {
+		if dwellSatisfied && inputs.DistanceKm < FSMStalkingDistanceKm && inputs.DeltaVMps < 2.0 && inputs.IsManeuvering {
 			fsm.transitionTo(StateStalking, now)
 			return true, fmt.Sprintf("SAT %d: TRANSITION %s -> %s (Station-keeping detected)",
 				fsm.SatID, oldState, fsm.CurrentState)
@@ -135,7 +146,7 @@ func (fsm *ThreatFSM) Update(inputs FSMInput) (bool, string) {
 		}
 
 		// Return to PASSIVE if far away
-		if inputs.DistanceKm > 150.0 {
+		if inputs.DistanceKm > FSMDistanceKm*1.5 {
 			fsm.transitionTo(StatePassive, now)
 			return true, fmt.Sprintf("SAT %d: TRANSITION %s -> %s (Departed AOI)",
 				fsm.SatID, oldState, fsm.CurrentState)
@@ -143,14 +154,14 @@ func (fsm *ThreatFSM) Update(inputs FSMInput) (bool, string) {
 
 	case StateStalking:
 		// Transition to TERMINAL_CLOSURE: rapid approach with stability
-		if dwellSatisfied && inputs.DistanceKm < 2.0 && inputs.DeltaVMps > 0.5 && inputs.IsStabilized {
+		if dwellSatisfied && inputs.DistanceKm < FSMTerminalDistanceKm && inputs.DeltaVMps > 0.5 && inputs.IsStabilized {
 			fsm.transitionTo(StateTerminalClosure, now)
 			return true, fmt.Sprintf("SAT %d: CRITICAL. TRANSITION %s -> %s (Rapid closure: %.2f m/s)",
 				fsm.SatID, oldState, fsm.CurrentState, inputs.DeltaVMps)
 		}
 
 		// Return to MONITORING if backing off
-		if inputs.DistanceKm > 50.0 {
+		if inputs.DistanceKm > FSMStalkingDistanceKm {
 			fsm.transitionTo(StateMonitoring, now)
 			return true, fmt.Sprintf("SAT %d: TRANSITION %s -> %s (Backing off)",
 				fsm.SatID, oldState, fsm.CurrentState)

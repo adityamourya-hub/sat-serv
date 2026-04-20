@@ -20,6 +20,11 @@ func (e lowConfidenceEngine) PredictManeuver(window []physics.ManeuverFrame) (ph
 	return physics.ManeuverInference{Probability: 0.2, Confidence: 0.1, Type: physics.ManeuverNone}, nil
 }
 
+func (e lowConfidenceEngine) PredictManeuverINT8(window []physics.ManeuverFrame) (physics.ManeuverInference, error) {
+	// Test mock: delegate to PredictManeuver
+	return e.PredictManeuver(window)
+}
+
 func (e lowConfidenceEngine) PredictCollisionRisk(input physics.CollisionRiskInput, graph physics.CollisionNeighborhoodGraph) (physics.CollisionGraphInference, error) {
 	return physics.CollisionGraphInference{RiskScore: 0.5, Confidence: 0.1}, nil
 }

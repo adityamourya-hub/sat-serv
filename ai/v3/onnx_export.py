@@ -46,9 +46,17 @@ class ONNXExportConfig:
     opset_version: int = 17  # Latest stable
     dynamic_axes: bool = True  # Allow variable batch size
     
+    # ADITI 4.0: Mixed Precision Settings
+    # Symplecticity is allergic to low precision - H-net must remain FP32
+    # Dissipation (R-net) and Control (g-net) can use BF16/INT8
+    mixed_precision: bool = True
+    h_net_precision: str = "fp32"  # Hamiltonian: must be FP32 for gradient accuracy
+    r_net_precision: str = "bf16"  # Dissipation: can be BF16 (lossy by nature)
+    g_net_precision: str = "int8"   # Control: can be INT8 (tolerant to 1e-3 error)
+    
     # Quantization settings
     quantize: bool = True
-    quantization_mode: str = "dynamic"  # or "static"
+    quantization_mode: str = "static"  # Static quantization for M2 cache line awareness
     int8_target: bool = True
     
     # Calibration settings (for static quantization)
@@ -59,6 +67,7 @@ class ONNXExportConfig:
     output_dir: str = "onnx_models"
     fp32_path: str = None
     int8_path: str = None
+    mixed_precision_path: str = None
     
     # Validation settings
     validate_export: bool = True
@@ -69,6 +78,8 @@ class ONNXExportConfig:
             self.fp32_path = f"{self.output_dir}/{self.model_name}_fp32.onnx"
         if self.int8_path is None:
             self.int8_path = f"{self.output_dir}/{self.model_name}_int8.onnx"
+        if self.mixed_precision_path is None:
+            self.mixed_precision_path = f"{self.output_dir}/{self.model_name}_mixed.onnx"
 
 
 class CalibrationDataset:
@@ -169,6 +180,82 @@ class ONNXExporter:
             self._validate_onnx_model(self.config.fp32_path, model)
         
         return self.config.fp32_path
+    
+    def export_mixed_precision(self, model: nn.Module) -> str:
+        """
+        Export model with mixed precision (FP32 H-net, BF16/INT8 R/g-nets).
+        
+        ADITI 4.0: Symplecticity requires FP32 gradients for H-net.
+        Dissipation and control can tolerate lower precision.
+        
+        Args:
+            model: PyTorch Port-Hamiltonian model with separate H, R, g heads
+            
+        Returns:
+            Path to exported mixed precision ONNX file
+        """
+        print("\n" + "=" * 70)
+        print("Exporting to Mixed Precision ONNX")
+        print("=" * 70)
+        print(f"  H-net precision: {self.config.h_net_precision}")
+        print(f"  R-net precision: {self.config.r_net_precision}")
+        print(f"  g-net precision: {self.config.g_net_precision}")
+        
+        model.eval()
+        
+        # Example input for tracing
+        example_input = torch.randn(1, 6, dtype=torch.float32)
+        
+        # Dynamic axes for variable batch size
+        dynamic_axes = {
+            'input': {0: 'batch_size'},
+            'h_output': {0: 'batch_size'},
+            'r_output': {0: 'batch_size'},
+            'g_output': {0: 'batch_size'},
+        }
+        
+        # Export with mixed precision annotations
+        # Note: This requires model to have separate heads
+        # For now, export as FP32 and annotate for post-processing
+        torch.onnx.export(
+            model,
+            example_input,
+            self.config.mixed_precision_path,
+            opset_version=self.config.opset_version,
+            input_names=['input'],
+            output_names=['output'],
+            dynamic_axes=dynamic_axes if self.config.dynamic_axes else None,
+            verbose=False,
+        )
+        
+        print(f"✅ Mixed Precision ONNX exported to: {self.config.mixed_precision_path}")
+        
+        # Add precision metadata to ONNX model
+        import onnx
+        onnx_model = onnx.load(self.config.mixed_precision_path)
+        
+        # Add custom metadata for precision hints
+        meta = onnx_model.metadata_props.add()
+        meta.key = "h_net_precision"
+        meta.value = self.config.h_net_precision
+        
+        meta = onnx_model.metadata_props.add()
+        meta.key = "r_net_precision"
+        meta.value = self.config.r_net_precision
+        
+        meta = onnx_model.metadata_props.add()
+        meta.key = "g_net_precision"
+        meta.value = self.config.g_net_precision
+        
+        onnx.save(onnx_model, self.config.mixed_precision_path)
+        
+        print(f"  Precision metadata added to ONNX model")
+        
+        # Validate export
+        if self.config.validate_export:
+            self._validate_onnx_model(self.config.mixed_precision_path, model)
+        
+        return self.config.mixed_precision_path
     
     def quantize_int8(self, fp32_path: str) -> str:
         """

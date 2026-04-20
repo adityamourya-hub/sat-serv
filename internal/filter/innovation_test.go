@@ -41,7 +41,7 @@ func (m *MockMode) Predict() {}
 
 func (m *MockMode) Update(obs float64) {}
 
-func (m *MockMode) GetInnovation() float64 { return m.Residual }
+func (m *MockMode) GetInnovation() float64 { return m.Innovation }
 
 // AdaptiveIMMTest is a simplified test version of the adaptive IMM
 type AdaptiveIMMTest struct {
@@ -55,12 +55,25 @@ type AdaptiveIMMTest struct {
 func (imm *AdaptiveIMMTest) UpdateTransitions(mixingProbs *mat.Dense, residuals []float64) {
 	rows, cols := imm.DirichletAlpha.Dims()
 
+	// Validate residual count matches mode count (columns)
+	if len(residuals) != cols {
+		// Fallback: don't weight by residual if dimension mismatch
+		for i := 0; i < rows; i++ {
+			for j := 0; j < cols; j++ {
+				evidence := mixingProbs.At(i, j)
+				newAlpha := (imm.Eta * imm.DirichletAlpha.At(i, j)) + evidence
+				imm.DirichletAlpha.Set(i, j, newAlpha)
+			}
+		}
+		return
+	}
+
 	for i := 0; i < rows; i++ {
 		for j := 0; j < cols; j++ {
 			// Online Bayesian update: alpha = eta*alpha + posterior_evidence
 			evidence := mixingProbs.At(i, j)
 			// Weight by inverse residual (modes with lower residuals get more weight)
-			if j < len(residuals) && residuals[j] > 0 {
+			if residuals[j] > 0 {
 				evidence *= 1.0 / (1.0 + residuals[j]/10.0)
 			}
 			newAlpha := (imm.Eta * imm.DirichletAlpha.At(i, j)) + evidence

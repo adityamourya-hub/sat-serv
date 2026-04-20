@@ -47,10 +47,6 @@ import (
 	"time"
 )
 
-// EarthRadiusMeters is the Earth's equatorial radius in meters
-// Used for S² manifold altitude calculations
-const EarthRadiusMeters = 6371000.0
-
 // State6D represents the 6-dimensional orbital state vector
 // Required by the Port-Hamiltonian brain
 // Matches JAX/PHS expected input format
@@ -100,11 +96,17 @@ type BridgeResponse struct {
 	Timestamp      int64              `json:"timestamp"`
 }
 
-// ONNXSession is a stub type when ONNX is not available
-type ONNXSession struct{}
-
-// HNNBridge connects Go-native physics to JAX Port-Hamiltonian brain
-// OR runs local ONNX inference for 100Hz loop (if onnx tag is set)
+// HNNBridge connects Go-native physics with the JAX Port-Hamiltonian brain
+//
+// ADITI 4.0: Zero-copy IPC via Unix domain sockets for <1ms latency.
+// Supports optional ONNX runtime for local inference (when JAX unavailable).
+//
+// Architecture:
+//
+//	Go Physics → HNNBridge → Unix Socket → JAX PHS Brain → Inference
+//	Fallback: Go Physics → ONNX Runtime → Inference
+//
+// ADITI 4.0: Integrated with full ONNX Runtime for M2 Air thermal governor
 type HNNBridge struct {
 	mu         sync.RWMutex
 	SocketPath string   // Unix domain socket path
@@ -113,9 +115,8 @@ type HNNBridge struct {
 	FrameID    uint64   // Monotonic frame counter
 
 	// ONNX Runtime for local inference (M2 Air) - optional
-	ONNXModelPath string       // Path to ONNX model file
-	ONNXSession   *ONNXSession // ONNX Runtime session (nil if not available)
-	UseONNX       bool         // Use ONNX instead of Unix Socket
+	ONNXRuntime *ONNXRuntime // ONNX Runtime session (nil if not available)
+	UseONNX     bool         // Use ONNX instead of Unix Socket
 
 	// Metrics
 	TotalPushes         uint64
@@ -131,14 +132,27 @@ type HNNBridge struct {
 }
 
 // NewHNNBridge creates a new bridge to the JAX PHS brain
-// If onnxModelPath is provided, loads ONNX model for local inference
-func NewHNNBridge(socketPath string, threshold float64, onnxModelPath string) *HNNBridge {
+// If onnxModelDir is provided, loads ONNX models for local inference
+func NewHNNBridge(socketPath string, threshold float64, onnxModelDir string) *HNNBridge {
+	var onnxRuntime *ONNXRuntime
+	useONNX := false
+
+	if onnxModelDir != "" {
+		var err error
+		onnxRuntime, err = NewONNXRuntime(onnxModelDir)
+		if err != nil {
+			fmt.Printf("[HNN] Failed to load ONNX runtime: %v\n", err)
+		} else {
+			useONNX = true
+		}
+	}
+
 	return &HNNBridge{
-		SocketPath:    socketPath,
-		Threshold:     threshold,
-		FrameID:       0,
-		ONNXModelPath: onnxModelPath,
-		UseONNX:       onnxModelPath != "",
+		SocketPath:  socketPath,
+		Threshold:   threshold,
+		FrameID:     0,
+		ONNXRuntime: onnxRuntime,
+		UseONNX:     useONNX,
 	}
 }
 
@@ -153,8 +167,10 @@ func (b *HNNBridge) Connect() error {
 	}
 
 	// Priority: ONNX local inference > Unix Socket
-	if b.UseONNX {
-		return b.loadONNXModel()
+	if b.UseONNX && b.ONNXRuntime != nil {
+		// ONNX runtime already loaded in NewHNNBridge
+		b.IsConnected = true
+		return nil
 	}
 
 	// Dial Unix domain socket
@@ -169,13 +185,6 @@ func (b *HNNBridge) Connect() error {
 	return nil
 }
 
-// loadONNXModel loads the ONNX model for local inference
-// NOTE: This is a stub when onnx build tag is not set.
-// To enable ONNX, build with: go build -tags onnx
-func (b *HNNBridge) loadONNXModel() error {
-	return fmt.Errorf("ONNX support not compiled in. Build with -tags onnx or use Unix Socket mode")
-}
-
 // Disconnect closes the connection to JAX or releases ONNX session
 func (b *HNNBridge) Disconnect() error {
 	b.mu.Lock()
@@ -185,10 +194,10 @@ func (b *HNNBridge) Disconnect() error {
 		return nil
 	}
 
-	// Release ONNX session if active
-	if b.ONNXSession != nil {
-		// (*b.ONNXSession).Release()
-		b.ONNXSession = nil
+	// Release ONNX runtime if active
+	if b.ONNXRuntime != nil {
+		b.ONNXRuntime.Close()
+		b.ONNXRuntime = nil
 	}
 
 	// Close Unix socket if active
@@ -212,7 +221,7 @@ func (b *HNNBridge) Disconnect() error {
 //
 //	r = sqrt(x² + y² + z²)
 //	n = [x, y, z] / r  (unit vector on S²)
-//	h = r - EarthRadiusMeters  (altitude)
+//	h = r - EARTH_R_EQUATORIAL  (altitude)
 //
 // Why this matters:
 //   - Rotational invariance: (7000,0,0) and (0,7000,0) have same h, different n
@@ -228,8 +237,8 @@ func (b *HNNBridge) ProjectToS2(pos [3]float64, vel [3]float64) ManifoldState {
 	// Avoid division by zero at origin (not possible in orbit, but safe)
 	if rKm < 1e-6 {
 		return ManifoldState{
-			Normal:   [3]float64{0, 0, 1}, // Point to North pole
-			Altitude: -EarthRadiusMeters,  // At Earth's center
+			Normal:   [3]float64{0, 0, 1},          // Point to North pole
+			Altitude: -EARTH_R_EQUATORIAL * 1000.0, // At Earth's center (km to m)
 			Velocity: vel,
 		}
 	}
@@ -243,7 +252,7 @@ func (b *HNNBridge) ProjectToS2(pos [3]float64, vel [3]float64) ManifoldState {
 	}
 
 	// Altitude above Earth's surface in meters
-	h := rMeters - EarthRadiusMeters
+	h := rMeters - EARTH_R_EQUATORIAL*1000.0
 
 	return ManifoldState{
 		Normal:   n,
@@ -479,7 +488,7 @@ func (b *HNNBridge) GetStats() map[string]interface{} {
 		"threshold_km":          b.Threshold,
 		"is_connected":          b.IsConnected,
 		"use_onnx":              b.UseONNX,
-		"onnx_model_path":       b.ONNXModelPath,
+		"onnx_available":        b.ONNXRuntime != nil,
 		"total_pushes":          b.TotalPushes,
 		"total_triggers":        b.TotalTriggers,
 		"total_onnx_inferences": b.TotalONNXInferences,

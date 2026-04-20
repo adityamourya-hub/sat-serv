@@ -25,6 +25,15 @@ import (
 // Constants
 const (
 	LIGHT_SPEED = 299792.458 // km/s
+
+	// Orbit constants
+	GEO_RADIUS  = 42164.0 // km (geostationary orbit radius)
+	LEO_ALT_MIN = 200.0   // km (minimum LEO altitude)
+	LEO_ALT_MAX = 1200.0  // km (maximum LEO altitude)
+
+	// Grid search parameters
+	GRID_STEP_DEG = 5.0   // degrees for coarse grid search
+	GRID_STEP_KM  = 100.0 // km for 3D bounding box search
 )
 
 // RFStation represents a ground/space-based RF receiver
@@ -149,8 +158,8 @@ func NewParticleFilter(stations []RFStation, nParticles int) *ParticleFilterTDOA
 		angle := float64(i) * 2 * math.Pi / float64(nParticles)
 		pf.Particles[i] = Particle{
 			Position: [3]float64{
-				42164 * math.Cos(angle),
-				42164 * math.Sin(angle),
+				GEO_RADIUS * math.Cos(angle),
+				GEO_RADIUS * math.Sin(angle),
 				0,
 			},
 			Velocity: [3]float64{
@@ -294,13 +303,13 @@ func NewMLLocalizer(stations []RFStation) *MLLocalizer {
 
 // Localize finds ML position estimate using coarse grid + Levenberg-Marquardt refinement
 func (ml *MLLocalizer) Localize(tdoas []TDOAMeasurement) [3]float64 {
-	// Stage 1: Coarse grid search (5° resolution for speed)
-	bestPos := [3]float64{42164, 0, 0} // GEO default
+	// Stage 1: Coarse grid search (GRID_STEP_DEG resolution for speed)
+	bestPos := [3]float64{GEO_RADIUS, 0, 0} // GEO default
 	bestLikelihood := -1e18
 
-	for lon := 0.0; lon < 360.0; lon += 5.0 {
-		for lat := -10.0; lat <= 10.0; lat += 5.0 {
-			pos := geoToCartesian(42164.0, lon, lat)
+	for lon := 0.0; lon < 360.0; lon += GRID_STEP_DEG {
+		for lat := -10.0; lat <= 10.0; lat += GRID_STEP_DEG {
+			pos := geoToCartesian(GEO_RADIUS, lon, lat)
 			likelihood := ml.computeLikelihood(pos, tdoas)
 			if likelihood > bestLikelihood {
 				bestLikelihood = likelihood
@@ -420,7 +429,7 @@ func (ml *MLLocalizer) levenbergMarquardt(initial [3]float64, tdoas []TDOAMeasur
 		}
 
 		// Solve (J^T*J + λI) δ = J^T*r using Gaussian elimination
-		delta := solve3x3(jtj, jtr)
+		delta := Solve3x3(jtj, jtr)
 
 		// Update position
 		xNew := [3]float64{x[0] + delta[0], x[1] + delta[1], x[2] + delta[2]}
@@ -446,8 +455,9 @@ func (ml *MLLocalizer) levenbergMarquardt(initial [3]float64, tdoas []TDOAMeasur
 	return x
 }
 
-// solve3x3 solves a 3x3 linear system Ax = b using Gaussian elimination
-func solve3x3(A [3][3]float64, b [3]float64) [3]float64 {
+// Solve3x3 solves a 3x3 linear system Ax = b using Gaussian elimination
+// Exported for use across the rf package
+func Solve3x3(A [3][3]float64, b [3]float64) [3]float64 {
 	// Augmented matrix
 	M := [3][4]float64{
 		{A[0][0], A[0][1], A[0][2], b[0]},

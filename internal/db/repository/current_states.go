@@ -5,6 +5,8 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -292,13 +294,21 @@ func (r *CurrentStatesRepo) VolumetricScanCone(
 	// Convert sensor cone to approximate bounding box
 	// Full implementation would use proper cone-geometry intersection
 
-	// Approximate: 1 deg = 111 km at equator
-	rangeDeg := rangeKm / 111.0
+	// Latitude-adjusted distance: 1 deg longitude = 111 km * cos(lat) at equator
+	// 1 deg latitude = 111 km (approximately constant)
+	latRad := originLat * math.Pi / 180.0
+	cosLat := math.Cos(latRad)
+	if cosLat < 0.01 { // Avoid division by zero near poles
+		cosLat = 0.01
+	}
 
-	minLon := originLon - rangeDeg
-	maxLon := originLon + rangeDeg
-	minLat := originLat - rangeDeg
-	maxLat := originLat + rangeDeg
+	rangeDegLat := rangeKm / 111.0
+	rangeDegLon := rangeKm / (111.0 * cosLat)
+
+	minLon := originLon - rangeDegLon
+	maxLon := originLon + rangeDegLon
+	minLat := originLat - rangeDegLat
+	maxLat := originLat + rangeDegLat
 	minAlt := originAltKm - rangeKm*0.3 // Approximate
 	maxAlt := originAltKm + rangeKm*0.3
 
@@ -325,7 +335,8 @@ func (r *CurrentStatesRepo) scanStateVectors(rows pgx.Rows) ([]*StateVector, err
 			&sv.LastUpdated, &sv.TLELine1, &sv.TLELine2,
 		)
 		if err != nil {
-			continue // Skip malformed rows
+			slog.Error("Failed to scan state vector", "error", err)
+			continue
 		}
 
 		sv.Position = [3]float64{lon, lat, alt}

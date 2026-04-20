@@ -10,30 +10,30 @@ import (
 
 /**
  * JPL DE440 Ephemeris Integration
- * 
+ *
  * Provides high-precision planetary ephemeris using JPL DE440/441 kernels
  * via CSPICE toolkit. Replaces the low-precision Meeus algorithms with
  * sub-meter accuracy for lunar and planetary positions.
- * 
+ *
  * Reference:
  * - JPL DE440: https://ssd.jpl.nasa.gov/planets/eph_export.html
  * - CSPICE: https://naif.jpl.nasa.gov/naif/toolkit.html
  * - IAU 2000/2006 Resolutions for coordinate frames
- * 
+ *
  * Coverage: 1550-2650 CE with nanosecond-level precision
  */
 
 // DE440Config configures the ephemeris system
 type DE440Config struct {
 	// Kernel paths
-	SpkKernelPath   string // .bsp file (SPK - Spacecraft and Planet Kernel)
-	PckKernelPath   string // .tpc file (PCK - Planetary Constants Kernel)
-	LskKernelPath   string // .tls file (LSK - Leap Seconds Kernel)
-	FkKernelPath    string // .tf file (FK - Frame Kernel)
+	SpkKernelPath string // .bsp file (SPK - Spacecraft and Planet Kernel)
+	PckKernelPath string // .tpc file (PCK - Planetary Constants Kernel)
+	LskKernelPath string // .tls file (LSK - Leap Seconds Kernel)
+	FkKernelPath  string // .tf file (FK - Frame Kernel)
 
 	// Default reference frame
 	ReferenceFrame string // "J2000", "ICRF", "ECLIPJ2000"
-	
+
 	// Aberration correction
 	AberrationCorrection string // "NONE", "LT", "LT+S", "CN", "CN+S"
 }
@@ -51,13 +51,13 @@ func DefaultDE440Config() *DE440Config {
 
 // DE440Ephemeris provides high-precision planetary positions
 type DE440Ephemeris struct {
-	mu        sync.RWMutex
-	config    *DE440Config
-	loaded    bool
-	kernels   []string // Loaded kernel paths
-	
+	mu      sync.RWMutex
+	config  *DE440Config
+	loaded  bool
+	kernels []string // Loaded kernel paths
+
 	// Body ID mapping (NAIF IDs)
-	bodyIDs   map[string]int
+	bodyIDs map[string]int
 }
 
 // NAIF body IDs
@@ -115,7 +115,7 @@ func (e *DE440Ephemeris) Initialize() error {
 		if kernel == "" {
 			continue
 		}
-		
+
 		// Check if kernel exists (or is in standard location)
 		paths := []string{
 			kernel,
@@ -139,6 +139,9 @@ func (e *DE440Ephemeris) Initialize() error {
 	}
 
 	// Note: Actual SPICE loading would happen here via cgo CSPICE
+	// ADITI 4.0: STUB - Requires CSPICE toolkit integration (cgo)
+	// TODO: Implement actual CSPICE kernel loading via cgo
+	// Reference: https://naif.jpl.nasa.gov/naif/toolkit.html
 	// For now, we mark as "loaded" for the Go interface
 	e.loaded = true
 
@@ -146,6 +149,10 @@ func (e *DE440Ephemeris) Initialize() error {
 }
 
 // GetBodyPosition returns ECI position (km) of a celestial body at given JD
+//
+// ADITI 4.0: Prioritizes CSPICE kernel data over analytical fallback
+// If CSPICE is available, uses official JPL ephemeris from DE440 kernels.
+// Otherwise, falls back to analytical models (deprecated).
 func (e *DE440Ephemeris) GetBodyPosition(bodyName string, jd float64) ([3]float64, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -159,13 +166,20 @@ func (e *DE440Ephemeris) GetBodyPosition(bodyName string, jd float64) ([3]float6
 		return [3]float64{}, fmt.Errorf("unknown body: %s", bodyName)
 	}
 
-	// In a real implementation with CSPICE:
-	// 1. Convert JD to ephemeris time (ET)
-	// 2. Call spkezr_c or spkgeo_c to get position
-	// 3. Apply reference frame transformation if needed
-	// 4. Apply aberration correction
+	// ADITI 4.0: Try CSPICE first (Go-native gospice wrapper)
+	if CSPICEAvailable() {
+		cspice := GetGlobalCSPICE()
+		pos, _, err := cspice.GetBodyPosition(bodyName, jd, "J2000", "LT")
+		if err == nil {
+			return pos, nil
+		}
+		// Log CSPICE error but fall back to analytical
+		fmt.Printf("[DE440] CSPICE query failed for %s: %v, using analytical fallback\n", bodyName, err)
+	}
 
-	// For now, use high-precision analytical fallback
+	// Fallback: Use high-precision analytical models (deprecated)
+	// ADITI 4.0: This should be removed once CSPICE is fully integrated
+	fmt.Printf("[DE440] WARNING: Using analytical fallback for %s (CSPICE not available)\n", bodyName)
 	return e.analyticalPosition(bodyID, jd)
 }
 
@@ -218,12 +232,12 @@ func (e *DE440Ephemeris) preciseMoonPosition(jd float64) [3]float64 {
 	F = math.Mod(F, 360.0) * math.Pi / 180.0
 
 	// Longitude perturbations (main terms)
-	dL := 6.289 * math.Sin(Mm) // Principal elliptic term
+	dL := 6.289 * math.Sin(Mm)     // Principal elliptic term
 	dL += 1.274 * math.Sin(2*D-Mm) // Evection
-	dL += 0.658 * math.Sin(2*D) // Variation
-	dL += 0.214 * math.Sin(2*Mm) // Elliptic evection
-	dL += 0.186 * math.Sin(Ms) // Annual inequality
-	dL += 0.114 * math.Sin(2*F) // Parallactic inequality
+	dL += 0.658 * math.Sin(2*D)    // Variation
+	dL += 0.214 * math.Sin(2*Mm)   // Elliptic evection
+	dL += 0.186 * math.Sin(Ms)     // Annual inequality
+	dL += 0.114 * math.Sin(2*F)    // Parallactic inequality
 
 	// Latitude perturbations
 	dB := 5.128 * math.Sin(F) // Principal inclination term
@@ -282,7 +296,7 @@ func (e *DE440Ephemeris) preciseSunPosition(jd float64) [3]float64 {
 	trueLon := (L0 + C) * math.Pi / 180.0
 
 	// Distance (AU)
-	R := 1.000001018 * (1.0 - 0.016708634*math.Cos(M) - 
+	R := 1.000001018 * (1.0 - 0.016708634*math.Cos(M) -
 		0.000042036*math.Cos(2*M) - 0.000000126*math.Cos(3*M))
 
 	// Convert AU to km
@@ -367,11 +381,11 @@ func (e *DE440Ephemeris) CalculateThirdBodyAcceleration(satPos [3]float64, jd fl
 	// Moon position
 	moonPos := e.GetMoonPosition(jd)
 
-	// Sun position  
+	// Sun position
 	sunPos := e.GetSunPosition(jd)
 
 	// Gravitational parameters (km³/s²)
-	muMoon := 4902.800122 // km³/s²
+	muMoon := 4902.800122     // km³/s²
 	muSun := 1.32712440018e11 // km³/s²
 
 	// Moon perturbation
@@ -414,10 +428,10 @@ func (e *DE440Ephemeris) IsTimeCovered(jd float64) bool {
 // AccuracyReport returns estimated accuracy for different bodies
 func (e *DE440Ephemeris) AccuracyReport() map[string]float64 {
 	return map[string]float64{
-		"moon":   1.0,     // km
-		"sun":    100.0,   // km
-		"mars":   500.0,   // km
-		"venus":  500.0,   // km
+		"moon":    1.0,    // km
+		"sun":     100.0,  // km
+		"mars":    500.0,  // km
+		"venus":   500.0,  // km
 		"mercury": 1000.0, // km
 	}
 }

@@ -112,11 +112,23 @@ type DashboardProvider struct {
 	wg     sync.WaitGroup
 }
 
+// allowedOrigins defines permitted WebSocket origins for IAF deployment
+var allowedOrigins = []string{
+	"localhost",
+	"localhost:8080",
+	"localhost:3000",
+}
+
 // Upgrader for WebSocket connections
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		// In production, validate origin for security
-		return true
+		origin := r.Header.Get("Origin")
+		for _, allowed := range allowedOrigins {
+			if origin == allowed || origin == "http://"+allowed || origin == "https://"+allowed {
+				return true
+			}
+		}
+		return false
 	},
 }
 

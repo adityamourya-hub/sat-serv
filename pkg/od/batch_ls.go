@@ -359,6 +359,8 @@ func (bls *BatchLSEstimator) EstimateFromTLE(
 	epochJD := julianDayFromYMD(year, 1, 1) + tle.EpochDay - 1.0
 
 	// Initial guess from TLE (simplified - would use full SGP4 in production)
+	// TODO: Integrate pkg/orbital/sgp4_akhenakh.go for production-grade TLE propagation
+	// Current implementation uses circular orbit approximation which can have ~100km error
 	sma := math.Pow(physics.EARTH_MU_IAU/math.Pow(tle.MeanMotion*2*math.Pi/86400.0, 2), 1.0/3.0)
 
 	// Position at epoch (simplified)

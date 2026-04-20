@@ -732,7 +732,7 @@ class Yoshida4Integrator:
         return z_final
 
 
-def supervised_contrastive_loss(z_codes: jnp.ndarray, labels: jnp.ndarray, temperature: float = 0.1) -> float:
+def supervised_contrastive_loss(z_codes: jnp.ndarray, labels: jnp.ndarray, temperature: float = 0.07) -> float:
     """
     Supervised Contrastive (SupCon) Loss for latent space organization.
     
@@ -750,7 +750,7 @@ def supervised_contrastive_loss(z_codes: jnp.ndarray, labels: jnp.ndarray, tempe
     Args:
         z_codes: [batch, latent_dim] latent physics codes
         labels: [batch] regime labels (0=orbital, 1=ballistic, 2=hgv)
-        temperature: Temperature scaling τ (default 0.1)
+        temperature: Temperature scaling τ (default 0.07)
         
     Returns:
         loss: Scalar contrastive loss
