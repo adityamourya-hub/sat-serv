@@ -18,10 +18,11 @@ type CoverageSummary struct {
  * selected adversary satellites. It implements Requirement (e) - Blind Spot Detection.
  */
 func ComputeBlindSpots(adversaries []catalog.ObjectRecord, roi RegionOfInterest) CoverageSummary {
+	cfg := GetConfig()
 	// 1. Initialize Coverage Index over the ROI bounds
-	index := spatial.NewCoverageIndex(180, 360)
+	index := spatial.NewCoverageIndex(cfg.CoverageIndexResolutionLat, cfg.CoverageIndexResolutionLon)
 
-	fovHalfAngleRad := 30.0 * physics.RAD_PER_DEG // Assume 30 deg half-angle sensor default
+	fovHalfAngleRad := cfg.DefaultFOVHalfAngleDeg * physics.RAD_PER_DEG
 
 	for _, sat := range adversaries {
 		r := math.Sqrt(sat.Pos.X*sat.Pos.X + sat.Pos.Y*sat.Pos.Y + sat.Pos.Z*sat.Pos.Z)

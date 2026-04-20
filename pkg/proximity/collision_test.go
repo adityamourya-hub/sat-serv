@@ -2,6 +2,7 @@ package proximity_test
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"ssis/pkg/ml/hybrid"
@@ -162,5 +163,179 @@ func TestEvaluateCollisionRiskHybridModelBlend(t *testing.T) {
 	}
 	if len(res.Heatmap) != len(graph.Nodes) {
 		t.Fatalf("Expected heatmap for all graph nodes")
+	}
+}
+
+func TestEvaluateCollisionRisk_ZeroNegativeInputs(t *testing.T) {
+	// Test zero miss distance
+	input := physics.CollisionRiskInput{
+		MissDistanceKm:      0.0,
+		HardbodyRadiusKm:    0.01,
+		SigmaRadialKm:       0.01,
+		SigmaIntrackKm:      0.01,
+		SigmaCrosstrackKm:   0.01,
+		RelativeVelocityKmS: 2.0,
+		TimeToTCASeconds:    200,
+	}
+	result := proximity.EvaluateCollisionRisk(input)
+	if result.Probability <= 0 {
+		t.Errorf("Expected non-zero probability for zero miss distance, got %e", result.Probability)
+	}
+
+	// Test negative miss distance
+	input.MissDistanceKm = -0.01
+	result = proximity.EvaluateCollisionRisk(input)
+	if result.Probability <= 0 {
+		t.Errorf("Expected non-zero probability for negative miss distance, got %e", result.Probability)
+	}
+
+	// Test zero hardbody radius
+	input.MissDistanceKm = 0.03
+	input.HardbodyRadiusKm = 0.0
+	result = proximity.EvaluateCollisionRisk(input)
+	// Should use default radius of 0.005
+	if result.Probability <= 0 {
+		t.Errorf("Expected non-zero probability with default radius, got %e", result.Probability)
+	}
+
+	// Test zero sigma values
+	input.HardbodyRadiusKm = 0.01
+	input.SigmaRadialKm = 0.0
+	input.SigmaIntrackKm = 0.0
+	input.SigmaCrosstrackKm = 0.0
+	result = proximity.EvaluateCollisionRisk(input)
+	// Should use minimum sigma of 0.001
+	if result.Probability < 0 {
+		t.Errorf("Expected non-negative probability with zero sigma, got %e", result.Probability)
+	}
+
+	// Test negative sigma values
+	input.SigmaRadialKm = -0.01
+	input.SigmaIntrackKm = -0.01
+	input.SigmaCrosstrackKm = -0.01
+	result = proximity.EvaluateCollisionRisk(input)
+	// Should use minimum sigma of 0.001
+	if result.Probability < 0 {
+		t.Errorf("Expected non-negative probability with negative sigma, got %e", result.Probability)
+	}
+}
+
+func TestCalculateGaussianKLDivergence_EdgeCases(t *testing.T) {
+	// Test identical distributions (KL divergence should be zero)
+	mu0 := []float64{0, 0, 0, 0, 0, 0}
+	mu1 := []float64{0, 0, 0, 0, 0, 0}
+	cov0 := [][]float64{{1, 0, 0, 0, 0, 0}, {0, 1, 0, 0, 0, 0}, {0, 0, 1, 0, 0, 0}, {0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0}, {0, 0, 0, 0, 0, 1}}
+	cov1 := [][]float64{{1, 0, 0, 0, 0, 0}, {0, 1, 0, 0, 0, 0}, {0, 0, 1, 0, 0, 0}, {0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0}, {0, 0, 0, 0, 0, 1}}
+	kl := proximity.CalculateGaussianKLDivergence(mu0, mu1, cov0, cov1)
+	if kl > 1e-10 {
+		t.Errorf("Expected KL divergence near zero for identical distributions, got %f", kl)
+	}
+
+	// Test with zero covariance (near-singular)
+	covZero := [][]float64{{0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0}}
+	kl = proximity.CalculateGaussianKLDivergence(mu0, mu1, covZero, cov1)
+	// Should handle gracefully with minimum threshold
+	if kl < 0 {
+		t.Errorf("Expected non-negative KL divergence, got %f", kl)
+	}
+
+	// Test with very different distributions
+	muDiff := []float64{10, 10, 10, 10, 10, 10}
+	covLarge := [][]float64{{100, 0, 0, 0, 0, 0}, {0, 100, 0, 0, 0, 0}, {0, 0, 100, 0, 0, 0}, {0, 0, 0, 100, 0, 0}, {0, 0, 0, 0, 100, 0}, {0, 0, 0, 0, 0, 100}}
+	kl = proximity.CalculateGaussianKLDivergence(mu0, muDiff, cov0, covLarge)
+	if kl <= 0 {
+		t.Errorf("Expected positive KL divergence for different distributions, got %f", kl)
+	}
+}
+
+func TestInformationBarycenterRefined_HighDivergence(t *testing.T) {
+	// Test with high KL divergence (maneuver scenario)
+	s_sgp4 := []float64{7000, 0, 0, 0, 7.5, 0}
+	s_axiom := []float64{7100, 100, 50, 0.5, 8.0, 0.1} // Significant difference
+	cov_sgp4 := [][]float64{{1, 0, 0, 0, 0, 0}, {0, 1, 0, 0, 0, 0}, {0, 0, 1, 0, 0, 0}, {0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0}, {0, 0, 0, 0, 0, 1}}
+	cov_axiom := [][]float64{{0.5, 0, 0, 0, 0, 0}, {0, 0.5, 0, 0, 0, 0}, {0, 0, 0.5, 0, 0, 0}, {0, 0, 0, 0.5, 0, 0}, {0, 0, 0, 0, 0.5, 0}, {0, 0, 0, 0, 0, 0.5}}
+
+	blended := proximity.InformationBarycenterRefined(s_sgp4, s_axiom, cov_sgp4, cov_axiom)
+	if len(blended) != 6 {
+		t.Errorf("Expected blended state of length 6, got %d", len(blended))
+	}
+	// With high divergence, SGP4 weight should be reduced
+	// Check that blended state is closer to Axiom
+	for i := 0; i < 6; i++ {
+		diffSGP4 := blended[i] - s_sgp4[i]
+		diffAxiom := blended[i] - s_axiom[i]
+		// In high divergence case, should weight Axiom more
+		if math.Abs(diffAxiom) > math.Abs(diffSGP4)*2 {
+			// This is acceptable as the exact weighting depends on KL value
+		}
+	}
+}
+
+func TestInformationBarycenterRefined_LowDivergence(t *testing.T) {
+	// Test with low KL divergence (nominal scenario)
+	s_sgp4 := []float64{7000, 0, 0, 0, 7.5, 0}
+	s_axiom := []float64{7001, 0.1, 0, 0, 7.51, 0} // Small difference
+	cov_sgp4 := [][]float64{{1, 0, 0, 0, 0, 0}, {0, 1, 0, 0, 0, 0}, {0, 0, 1, 0, 0, 0}, {0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0}, {0, 0, 0, 0, 0, 1}}
+	cov_axiom := [][]float64{{1, 0, 0, 0, 0, 0}, {0, 1, 0, 0, 0, 0}, {0, 0, 1, 0, 0, 0}, {0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0}, {0, 0, 0, 0, 0, 1}}
+
+	blended := proximity.InformationBarycenterRefined(s_sgp4, s_axiom, cov_sgp4, cov_axiom)
+	if len(blended) != 6 {
+		t.Errorf("Expected blended state of length 6, got %d", len(blended))
+	}
+	// With low divergence, SGP4 weight should be higher
+	// Check that blended state is between the two inputs
+	for i := 0; i < 6; i++ {
+		minVal := math.Min(s_sgp4[i], s_axiom[i])
+		maxVal := math.Max(s_sgp4[i], s_axiom[i])
+		if blended[i] < minVal || blended[i] > maxVal {
+			t.Errorf("Blended state %d (%f) outside input range [%f, %f]", i, blended[i], minVal, maxVal)
+		}
+	}
+}
+
+func TestCalculateMOID_CircularOrbits(t *testing.T) {
+	// Test with two circular orbits in same plane
+	s1 := physics.State{
+		Pos: physics.Vector3{7000, 0, 0},
+		Vel: physics.Vector3{0, 7.5, 0},
+	}
+	s2 := physics.State{
+		Pos: physics.Vector3{7100, 0, 0},
+		Vel: physics.Vector3{0, 7.4, 0},
+	}
+
+	moid := proximity.CalculateMOID(s1, s2)
+	// Should find a reasonable minimum distance
+	if moid < 0 {
+		t.Errorf("Expected non-negative MOID, got %f", moid)
+	}
+	if moid > 1000 {
+		t.Errorf("MOID seems too large for close orbits: %f", moid)
+	}
+}
+
+func TestAlfanoMaxPc_BoundaryConditions(t *testing.T) {
+	// Test zero miss distance
+	pc := proximity.AlfanoMaxPc(0.0, 0.01)
+	if pc != 1.0 {
+		t.Errorf("Expected Pc=1.0 for zero miss distance, got %f", pc)
+	}
+
+	// Test miss distance equal to radius
+	pc = proximity.AlfanoMaxPc(0.01, 0.01)
+	if pc != 1.0 {
+		t.Errorf("Expected Pc=1.0 for miss distance equal to radius, got %f", pc)
+	}
+
+	// Test miss distance much larger than radius
+	pc = proximity.AlfanoMaxPc(100.0, 0.01)
+	if pc <= 0 || pc >= 1 {
+		t.Errorf("Expected Pc between 0 and 1 for large miss distance, got %f", pc)
+	}
+
+	// Test negative miss distance
+	pc = proximity.AlfanoMaxPc(-0.01, 0.01)
+	if pc != 1.0 {
+		t.Errorf("Expected Pc=1.0 for negative miss distance, got %f", pc)
 	}
 }

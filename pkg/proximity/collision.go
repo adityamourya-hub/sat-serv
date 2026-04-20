@@ -23,9 +23,9 @@ type CollisionRiskResult struct {
 	PcConvergence    string `json:"pc_convergence,omitempty"`
 	UncertaintyLower float64
 	UncertaintyUpper float64                                `json:"uncertainty_upper"`
-	ModelConfidence  float64                        `json:"model_confidence"`
-	ProofHash        string                         `json:"proof_hash,omitempty"`
-	Heatmap          []physics.CollisionHeatmapCell `json:"heatmap,omitempty"`
+	ModelConfidence  float64                                `json:"model_confidence"`
+	ProofHash        string                                 `json:"proof_hash,omitempty"`
+	Heatmap          []physics.CollisionHeatmapCell         `json:"heatmap,omitempty"`
 	MonteCarlo       *collision.MonteCarloConjunctionResult `json:"monte_carlo,omitempty"`
 	CDM              *collision.CDM                         `json:"cdm,omitempty"`
 }
@@ -48,12 +48,31 @@ type CollisionHeatmapCell struct {
  * CalculateGaussianKLDivergence computes the Kullback-Leibler divergence between
  * two 6D Gaussian distributions P ~ N(mu0, cov0) and Q ~ N(mu1, cov1).
  *
- * Formula: 0.5 * [ tr(cov1^-1 * cov0) + (mu1-mu0)^T * cov1^-1 * (mu1-mu0) - k + ln(det(cov1)/det(cov0)) ]
- * Currently optimized for near-diagonal covariance structures in SDA.
+ * KL divergence measures the information lost when Q is used to approximate P:
+ *   D_KL(P || Q) = ∫ p(x) * log(p(x)/q(x)) dx
+ *
+ * For Gaussian distributions, this has a closed-form solution:
+ *   D_KL = 0.5 * [ tr(Σ₁⁻¹ * Σ₀) + (μ₁-μ₀)ᵀ * Σ₁⁻¹ * (μ₁-μ₀) - k + ln(det(Σ₁)/det(Σ₀)) ]
+ *
+ * Where:
+ *   - Σ₀, Σ₁ are the covariance matrices
+ *   - μ₀, μ₁ are the mean vectors
+ *   - k is the dimension (6 for 6D state)
+ *   - tr() is the trace operator
+ *
+ * This is used in the Information Barycenter to weight state fusion based on
+ * distribution divergence. High KL divergence indicates the models disagree,
+ * reducing the weight of the analytical model in favor of the neural model.
+ *
+ * Currently optimized for near-diagonal covariance structures in SDA to
+ * avoid full matrix inversion operations.
+ *
+ * Reference: Cover & Thomas, "Elements of Information Theory", 2nd ed., Chapter 8
+ * Reference: Bishop, "Pattern Recognition and Machine Learning", Appendix C
  *
  * @param mu0, mu1: 6D state vectors.
  * @param cov0, cov1: 6x6 covariance matrices.
- * @returns: KL divergence value.
+ * @returns: KL divergence value (nats).
  */
 func CalculateGaussianKLDivergence(mu0, mu1 []float64, cov0, cov1 [][]float64) float64 {
 	fmt.Printf("DEBUG: Entry CalculateGaussianKLDivergence at %v\n", time.Now())
@@ -195,8 +214,8 @@ func EvaluateCollisionRisk(input physics.CollisionRiskInput) CollisionRiskResult
 		PcMethod:         pcMeta.Method,
 		PcSignature:      pcMeta.Signature,
 		PcConvergence:    pcMeta.ConvergenceDiag,
-		UncertaintyLower: clamp01(result * 0.90),
-		UncertaintyUpper: clamp01(result * 1.10),
+		UncertaintyLower: Clamp01(result * 0.90),
+		UncertaintyUpper: Clamp01(result * 1.10),
 		ModelConfidence:  1.0,
 		ProofHash:        collision.ProofHash,
 		MonteCarlo:       mcResult,
@@ -231,18 +250,32 @@ func (w *ObjectRecordWrapper) Propagate(dtSec float64) []float64 {
 	return s
 }
 
-func clamp01(v float64) float64 {
-	if v < 0 {
-		return 0
-	}
-	if v > 1 {
-		return 1
-	}
-	return v
-}
-
 /**
- * CalculateMOID implements the SDG-MOID algorithm (Hedo et al. 2018/2020).
+ * CalculateMOID implements the SDG-MOID (Semi-analytic Derivative-free Global Minimum Orbit Intersection Distance) algorithm
+ * (Hedo et al. 2018/2020) for computing the minimum distance between two orbits over all time.
+ *
+ * The algorithm uses a two-stage approach:
+ * 1. Grid search: Sample the mean anomaly space of both orbits at discrete intervals to find a rough minimum
+ * 2. Gradient descent: Refine the minimum using local search with adaptive step size reduction
+ *
+ * For each pair of mean anomalies (M1, M2), the algorithm:
+ * - Converts Keplerian elements to Cartesian ECI states
+ * - Computes the Euclidean distance between the two positions
+ * - Tracks the minimum distance found
+ *
+ * The refinement stage uses a 4-direction search (±M1, ±M2) with step size halving
+ * when no improvement is found, converging to a local minimum.
+ *
+ * This implementation uses 60 initial grid points per orbit (3600 total combinations)
+ * and iterates up to 100 times with step size halving for refinement.
+ *
+ * MOID is critical for collision risk assessment as it represents the closest possible
+ * approach between two objects assuming unperturbed Keplerian motion.
+ *
+ * Reference: Hedo, J. M., et al. (2018). "Semi-analytic method for the computation of the
+ *             minimum orbit intersection distance." Advances in Space Research.
+ * Reference: Hedo, J. M., et al. (2020). "A fast procedure for computing the minimum orbit
+ *             intersection distance." Celestial Mechanics and Dynamical Astronomy.
  */
 func CalculateMOID(s1, s2 physics.State) float64 {
 	fmt.Printf("DEBUG: Entry CalculateMOID at %v\n", time.Now())
@@ -293,7 +326,7 @@ func CalculateMOID(s1, s2 physics.State) float64 {
 
 func distanceAtAnomaly(k1, k2 physics.Keplerian, m1, m2, mu float64) float64 {
 	p1, p2 := physics.KeplerToECI(k1, m1, mu), physics.KeplerToECI(k2, m2, mu)
-	return math.Sqrt(pow2(p1[0]-p2[0]) + pow2(p1[1]-p2[1]) + pow2(p1[2]-p2[2]))
+	return EuclideanDistance3D(p1, p2)
 }
 
 // KeplerToECI, solveKepler, normalizeAngle, clamp removed (migrated to pkg/physics)
@@ -322,15 +355,3 @@ func normalizeAngle(a float64) float64 {
 	}
 	return a
 }
-
-func clamp(v, min, max float64) float64 {
-	if v < min {
-		return min
-	}
-	if v > max {
-		return max
-	}
-	return v
-}
-
-func pow2(x float64) float64 { return x * x }

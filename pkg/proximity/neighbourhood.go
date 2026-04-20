@@ -2,7 +2,6 @@ package proximity
 
 import (
 	"fmt"
-	"math"
 	"ssis/pkg/catalog"
 	"ssis/pkg/spatial"
 	"ssis/pkg/types"
@@ -10,7 +9,7 @@ import (
 )
 
 /**
- * ProximityAlert represents a potential intersection or close-approach event 
+ * ProximityAlert represents a potential intersection or close-approach event
  * between a protected asset and a resident space object (RSO).
  */
 type ProximityAlert struct {
@@ -23,21 +22,22 @@ type ProximityAlert struct {
 }
 
 /**
- * ScreenIndianAssets implements the 'Neighbourhood Watch' screening requirement 
- * for the ADITI 4.0 challenge. 
- * It uses the high-performance 4D ST-BVH for O(n log n) spatial-temporal queries, 
+ * ScreenIndianAssets implements the 'Neighbourhood Watch' screening requirement
+ * for the ADITI 4.0 challenge.
+ * It uses the high-performance 4D ST-BVH for O(n log n) spatial-temporal queries,
  * ensuring that only objects proximal in both space and time are flagged.
  * Entry Point: Logs the current catalog size and threat radius.
  * Exit Point: Logs the number of proximity alerts generated.
  */
 func ScreenIndianAssets(store *catalog.Store, threatRadiusKm float64) []ProximityAlert {
+	cfg := GetConfig()
 	fmt.Printf("DEBUG: Entry ScreenIndianAssets at %v radius=%.2f\n", time.Now(), threatRadiusKm)
 	if store == nil {
 		fmt.Printf("DEBUG: Exit ScreenIndianAssets: nil store\n")
 		return nil
 	}
 	if threatRadiusKm <= 0 {
-		threatRadiusKm = 500.0 // Default 500km screening radius
+		threatRadiusKm = cfg.DefaultThreatRadiusKm
 	}
 
 	snapshot := store.Snapshot()
@@ -70,11 +70,11 @@ func ScreenIndianAssets(store *catalog.Store, threatRadiusKm float64) []Proximit
 		// Query BVH for objects within threat radius and a 1-second temporal tolerance
 		min := types.Vector3{X: asset.Pos.X - threatRadiusKm, Y: asset.Pos.Y - threatRadiusKm, Z: asset.Pos.Z - threatRadiusKm}
 		max := types.Vector3{X: asset.Pos.X + threatRadiusKm, Y: asset.Pos.Y + threatRadiusKm, Z: asset.Pos.Z + threatRadiusKm}
-		
+
 		// Use a tight temporal window around the asset's current timestamp
-		tMin := asset.EpochTT - 0.5
-		tMax := asset.EpochTT + 0.5
-		
+		tMin := asset.EpochTT - cfg.TemporalToleranceSec
+		tMax := asset.EpochTT + cfg.TemporalToleranceSec
+
 		nearby := bvh.QueryRange(min, max, tMin, tMax)
 
 		for _, obj := range nearby {
@@ -93,10 +93,7 @@ func ScreenIndianAssets(store *catalog.Store, threatRadiusKm float64) []Proximit
 			}
 			seenPairs[pair] = struct{}{}
 
-			dx := asset.Pos.X - threat.Pos.X
-			dy := asset.Pos.Y - threat.Pos.Y
-			dz := asset.Pos.Z - threat.Pos.Z
-			dist := math.Sqrt(dx*dx + dy*dy + dz*dz)
+			dist := EuclideanDistance3D([3]float64{asset.Pos.X, asset.Pos.Y, asset.Pos.Z}, [3]float64{threat.Pos.X, threat.Pos.Y, threat.Pos.Z})
 
 			if dist <= threatRadiusKm {
 				level, desc, interject := evaluateThreat(asset, threat, dist)
@@ -123,6 +120,7 @@ func ScreenIndianAssets(store *catalog.Store, threatRadiusKm float64) []Proximit
  * Exit Point: Resulting threat level [0, 1] and description.
  */
 func evaluateThreat(asset, threat catalog.SDAObject, dist float64) (float64, string, bool) {
+	cfg := GetConfig()
 	fmt.Printf("DEBUG: Entry evaluateThreat Asset=%d Threat=%d Dist=%.2f\n", asset.ID, threat.ID, dist)
 	level := 0.1 // Base level for proximity
 	desc := "Proximity detected"
@@ -134,18 +132,18 @@ func evaluateThreat(asset, threat catalog.SDAObject, dist float64) (float64, str
 		desc = "Adversary asset in close proximity"
 	}
 
-	// Threat Level based on distance
-	if dist < 100.0 {
+	// Threat Level based on distance (using config thresholds)
+	if dist < cfg.TightProximityKm {
 		level += 0.3
-		desc = "Tight proximity alert (<100km)"
+		desc = fmt.Sprintf("Tight proximity alert (<%.0fkm)", cfg.TightProximityKm)
 	}
-	if dist < 20.0 {
+	if dist < cfg.CriticalInterceptKm {
 		level = 0.95
-		desc = "Critical intercept/conjunction imminent"
+		desc = fmt.Sprintf("Critical intercept/conjunction imminent (<%.0fkm)", cfg.CriticalInterceptKm)
 		interject = true
 	}
 
-	resLevel := clamp01(level)
+	resLevel := Clamp01(level)
 	fmt.Printf("DEBUG: Exit evaluateThreat: level=%.2f desc=%s\n", resLevel, desc)
 	return resLevel, desc, interject
 }
