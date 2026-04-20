@@ -1,0 +1,102 @@
+name: ONNX Model Validation and Go Smoke Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  onnx-lint:
+    name: ONNX Model Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install onnx onnxruntime
+
+      - name: Validate ONNX models from registry
+        run: |
+          python scripts/validate_onnx_models.py --registry configs/model_registry.yaml
+
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onnx-validation-results
+          path: onnx_validation_report.json
+
+  go-smoke-tests:
+    name: Go Smoke Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Download ONNX Runtime
+        run: |
+          wget https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-linux-x64-1.16.3.tgz
+          tar -xzf onnxruntime-linux-x64-1.16.3.tgz
+          export LD_LIBRARY_PATH=$PWD/lib:$LD_LIBRARY_PATH
+
+      - name: Run Go smoke tests for ONNX models
+        run: |
+          go test -tags onnx -v ./pkg/ml/onnx/... -run SmokeTest
+
+      - name: Run ML integration tests
+        run: |
+          go test -v ./pkg/ml/...
+
+  model-registry-sync:
+    name: Model Registry Synchronization
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate Go wrappers from registry
+        run: |
+          python scripts/generate_model_wrappers.py --registry configs/model_registry.yaml --output pkg/ml/models/generated
+
+      - name: Check for uncommitted changes
+        run: |
+          git diff --exit-code pkg/ml/models/generated/ || (echo "Generated Go wrappers are out of date. Run: python scripts/generate_model_wrappers.py" && exit 1)
+
+  codegen-test:
+    name: Code Generation Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Generate Go wrappers
+        run: |
+          python scripts/generate_model_wrappers.py --registry configs/model_registry.yaml --output pkg/ml/models/generated
+
+      - name: Build generated code
+        run: |
+          go build ./pkg/ml/models/...
