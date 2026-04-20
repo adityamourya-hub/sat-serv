@@ -1,4 +1,4 @@
-# SSIS - Sovereign Space Intelligence Substrate
+# drq
 
 A command-and-control substrate designed for the Indian Air Force. It provides sub-second volumetric surveillance, hypersonic threat detection, and symplectic orbital prediction at planetary scale.
 
@@ -14,9 +14,9 @@ A command-and-control substrate designed for the Indian Air Force. It provides s
 
 ---
 
-## Strategic Architecture: First-Principles Sovereign SDA
+## Strategic Architecture: 
 
-**Physics does not lie.** Every observation is a measurement of perturbed two-body Hamiltonian flow (H = T + V, with J2, drag ρ(v) exponential, SRP, third-body). Sensor physics sets hard limits:
+* Every observation is a measurement of perturbed two-body Hamiltonian flow (H = T + V, with J2, drag ρ(v) exponential, SRP, third-body). Sensor physics sets hard limits:
 
 | Sensor | Observables | Physics Constraint |
 |--------|-------------|-------------------|
@@ -29,7 +29,7 @@ Covariance explodes in-track from energy uncertainty (δa → δperiod → km/da
 
 **Indigenous reality:** NETRA phased-array radar (Northeast LEO), optical telescope (Ladakh), MOTR (Sriharikota), future space-based inspectors. Air-gapped IAF compute. Perpetual ownership. Zero foreign kill-switch.
 
-### P0: Defensive Foundation (4-8 weeks — truth engine first)
+### P0: Defensive Foundation 
 
 | Feature | Sensors | DSP Stack | ML Role |
 |---------|---------|-----------|---------|
@@ -39,7 +39,7 @@ Covariance explodes in-track from energy uncertainty (δa → δperiod → km/da
 
 **P0 Output:** Reject spoofed tracks before catalog ingest. Without this, volumetric scan (a) and NW (b) flood with garbage.
 
-### P1: Dual-Use Multiplier (next 4-12 weeks — combat edge)
+### P1: Dual-Use Multiplier 
 
 | Feature | Sensors | DSP Stack | ML Role |
 |---------|---------|-----------|---------|
@@ -367,27 +367,27 @@ The SSIS foundation model is a **Lie-Group Port-Hamiltonian Neural Operator (LG-
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        INPUT: Sensor Measurements                           │
-│  (r, v, σ_r, σ_v, t, sensor_id) + (F10.7, Ap, DoY, lat, lon)               │
+│  (r, v, σ_r, σ_v, t, sensor_id) + (F10.7, Ap, DoY, lat, lon)                │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  LAYER 0: SE(3)-EQUIVARIANT GRAPH NEURAL NETWORK                           │
+│  LAYER 0: SE(3)-EQUIVARIANT GRAPH NEURAL NETWORK                            │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │ • Nodes: RSO/HGV track points (position, velocity)               │    │
-│  │ • Edges: Sensor-measurement bipartite graph                        │    │
-│  │ • Message passing: Equivariant under rotation/translation         │    │
-│  │ • Output: z_obs ∈ ℝ^512 (rotation-invariant latent state)        │    │
+│  │ • Nodes: RSO/HGV track points (position, velocity)                  │    │
+│  │ • Edges: Sensor-measurement bipartite graph                         │    │
+│  │ • Message passing: Equivariant under rotation/translation           │    │
+│  │ • Output: z_obs ∈ ℝ^512 (rotation-invariant latent state)           │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  LAYER 1: ATMOSPHERIC NEURAL OPERATOR (DeepONet)                          │
+│  LAYER 1: ATMOSPHERIC NEURAL OPERATOR (DeepONet)                            │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │ • Input: (h, F10.7, Ap, DoY, lat, lon) → ρ(h)                      │    │
-│  │ • Branch net: Encodes space weather → coefficients                 │    │
-│  │ • Trunk net: Maps altitude → basis functions                       │    │
-│  │ • Hard constraint: ∂p/∂h = -ρg (hydrostatic equilibrium)           │    │
-│  │ • Output: z_atm ∈ ℝ^256, ρ_nn(h) differentiable field            │    │
+│  │ • Input: (h, F10.7, Ap, DoY, lat, lon) → ρ(h)                       │    │
+│  │ • Branch net: Encodes space weather → coefficients                  │    │
+│  │ • Trunk net: Maps altitude → basis functions                        │    │
+│  │ • Hard constraint: ∂p/∂h = -ρg (hydrostatic equilibrium)            │    │
+│  │ • Output: z_atm ∈ ℝ^256, ρ_nn(h) differentiable field               │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   ▼
@@ -396,57 +396,57 @@ The SSIS foundation model is a **Lie-Group Port-Hamiltonian Neural Operator (LG-
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │ z_context = Concat[z_obs, z_atm, p_mode] ∈ ℝ^768                    │    │
 │  │                                                                     │    │
-│  │ Hypernetwork H_φ: z_context → {W_H, W_R, W_g, W_lib}              │    │
-│  │   • W_H: Hamiltonian network weights                               │    │
-│  │   • W_R: Dissipation network weights (Cholesky L·Lᵀ)               │    │
-│  │   • W_g: Control coupling weights                                  │    │
-│  │   • W_lib: Neural SINDy library adaptation                         │    │
+│  │ Hypernetwork H_φ: z_context → {W_H, W_R, W_g, W_lib}                │    │
+│  │   • W_H: Hamiltonian network weights                                │    │
+│  │   • W_R: Dissipation network weights (Cholesky L·Lᵀ)                │    │
+│  │   • W_g: Control coupling weights                                   │    │
+│  │   • W_lib: Neural SINDy library adaptation                          │    │
 │  │                                                                     │    │
-│  │ Per-vehicle-class physics kernels generated on-the-fly             │    │
+│  │ Per-vehicle-class physics kernels generated on-the-fly              │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  LAYER 3: DISSIPATIVE PORT-HAMILTONIAN DYNAMICS                           │
+│  LAYER 3: DISSIPATIVE PORT-HAMILTONIAN DYNAMICS                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  dz/dt = [J - R(z; W_R)] · ∇_z H(z; W_H) + g(z; W_g)·u            │    │
+│  │  dz/dt = [J - R(z; W_R)] · ∇_z H(z; W_H) + g(z; W_g)·u              │    │
 │  │                                                                     │    │
-│  │  • J = [[0, I], [-I, 0]] — canonical symplectic (hardcoded)       │    │
-│  │  • R = L·Lᵀ — PSD by Cholesky construction                        │    │
-│  │  • H — scalar Hamiltonian from generated weights                   │    │
-│  │  • u — SINDy-discovered control (bank angle, thrust)               │    │
+│  │  • J = [[0, I], [-I, 0]] — canonical symplectic (hardcoded)         │    │
+│  │  • R = L·Lᵀ — PSD by Cholesky construction                          │    │
+│  │  • H — scalar Hamiltonian from generated weights                    │    │
+│  │  • u — SINDy-discovered control (bank angle, thrust)                │    │
 │  │                                                                     │    │
-│  │  Integration: Yoshida-4 symplectic with operator splitting         │    │
-│  │  (conservative step + dissipative step preserves structure)      │    │
+│  │  Integration: Yoshida-4 symplectic with operator splitting          │    │
+│  │  (conservative step + dissipative step preserves structure)         │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  LAYER 4: NEURAL SINDY READOUT                                            │
+│  LAYER 4: NEURAL SINDY READOUT                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │ • Learned library: Θ_learned(z) = [φ₁(z), ..., φ_K(z)]            │    │
-│  │   (each φᵢ is a small 1×32 network, not fixed polynomials)        │    │
-│  │ • Sparse regression: ż = Θ_learned(z) · ξ, ‖ξ‖₀ ≤ s               │    │
-│  │ • Output: SymbolicCertificate with CI, physics grade, 60s prediction │    │
+│  │ • Learned library: Θ_learned(z) = [φ₁(z), ..., φ_K(z)]              │    │
+│  │   (each φᵢ is a small 1×32 network, not fixed polynomials)          │    │
+│  │ • Sparse regression: ż = Θ_learned(z) · ξ, ‖ξ‖₀ ≤ s                 │    │
+│  │ • Output: SymbolicCertificate with CI, physics grade, 60s prediction│    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  LAYER 5: CONFORMAL UNCERTAINTY QUANTIFICATION (CQR)                      │
+│  LAYER 5: CONFORMAL UNCERTAINTY QUANTIFICATION (CQR)                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │ • Distribution-free prediction intervals                            │    │
-│  │ • P(y_true ∈ Ĉ_α(x)) ≥ 1 - α (exact coverage guarantee)           │    │
-│  │ • Output: σ_position ∈ ℝ³ with 95% coverage                      │    │
+│  │ • P(y_true ∈ Ĉ_α(x)) ≥ 1 - α (exact coverage guarantee)             │    │
+│  │ • Output: σ_position ∈ ℝ³ with 95% coverage                         │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        OUTPUT: Verifiable Symbolic Certificate             │
+│                        OUTPUT: Verifiable Symbolic Certificate              │
 │  • LaTeX equation from discovered dynamics                                  │
 │  • Bootstrap 95% CI per coefficient                                         │
 │  • Physics grade (A/B/C/F)                                                  │
-│  • 60-second falsifiable prediction with σ envelope                        │
-│  • Ed25519 signed hash for sovereign audit trail                           │
+│  • 60-second falsifiable prediction with σ envelope                         │
+│  • Ed25519 signed hash for sovereign audit trail                            │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 Total Parameters: ~181M (GPT-2 scale, intentionally modest)
@@ -459,18 +459,18 @@ Edge Footprint: ~300KB per class (INT8 quantized, 32× compression)
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                    PHASE-ADAPTIVE EXECUTION (PAX)                           │
 │                                                                             │
-│  IMM Mode Probability ──► Execution Tier Selection                         │
+│  IMM Mode Probability ──► Execution Tier Selection                          │
 │                                                                             │
-│  ┌─────────────┐    P(ballistic) > 0.8                                     │
-│  │ TIER 0      │    Pure Go physics (~0.1W, 0.01ms)                        │
+│  ┌─────────────┐    P(ballistic) > 0.8                                      │
+│  │ TIER 0      │    Pure Go physics (~0.1W, 0.01ms)                         │
 │  │ BALLISTIC   │    hgv_physics.go: HGVEquationsOfMotion()                  │
-│  └──────┬──────┘                                                          │
-│         │ P(glide) > 0.5                                                   │
-│  ┌──────▼──────┐                                                           │
-│  │ TIER 1      │    Pruned ONNX 4×32 INT8 (~2W, 0.5ms)                     │
-│  │ GLIDE       │    8× parameter reduction                                 │
-│  └──────┬──────┘                                                           │
-│         │ P(maneuver) > 0.3 OR residual > 3σ                              │
+│  └──────┬──────┘                                                            │
+│         │ P(glide) > 0.5                                                    │
+│  ┌──────▼──────┐                                                            │
+│  │ TIER 1      │    Pruned ONNX 4×32 INT8 (~2W, 0.5ms)                      │
+│  │ GLIDE       │    8× parameter reduction                                  │
+│  └──────┬──────┘                                                            │
+│         │ P(maneuver) > 0.3 OR residual > 3σ                               │
 │  ┌──────▼──────┐                                                           │
 │  │ TIER 2      │    Full DPHNO 4×128 FP16 (~8W, 2ms)                       │
 │  │ MANEUVER    │    Maximum fidelity for zero-day events                   │
@@ -478,12 +478,12 @@ Edge Footprint: ~300KB per class (INT8 quantized, 32× compression)
 │         │ SINDy R² < 0.7 (unexplainable dynamics)                          │
 │  ┌──────▼──────┐                                                           │
 │  │ TIER 3      │    Full DPHNO + SINDy + JAX imagination (~12W, 10ms)      │
-│  │ BREACH      │    JAX Metal backend, thermal warning after 60s          │
+│  │ BREACH      │    JAX Metal backend, thermal warning after 60s           │
 │  └─────────────┘                                                           │
-│                                                                             │
-│  THERMAL GOVERNOR:                                                          │
+│                                                                            │
+│  THERMAL GOVERNOR:                                                         │
 │    T < 70°C: All tiers available                                           │
-│    T 70-85°C: TIER 3 disabled, max TIER 2                                │
+│    T 70-85°C: TIER 3 disabled, max TIER 2                                  │
 │    T > 85°C: Force TIER 0 + alert ground station                           │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -496,8 +496,8 @@ Edge Footprint: ~300KB per class (INT8 quantized, 32× compression)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SENSOR INPUT LAYER                               │
-│                                                                               │
+│                              SENSOR INPUT LAYER                             │
+│                                                                             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
 │  │   NETRA      │  │  LADAKH      │  │  PASSIVE RF  │  │   NavIC      │     │
 │  │ Radar Array  │  │  Telescope   │  │   Network    │  │   L5 Band    │     │
@@ -512,19 +512,19 @@ Edge Footprint: ~300KB per class (INT8 quantized, 32× compression)
 └──────────────────────────────────┼────────────────────────────────────────────┘
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           DSP PRE-PROCESSING                                  │
-│                                                                               │
+│                           DSP PRE-PROCESSING                                 │
+│                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐     │
 │  │  1. BEAMFORMING & DETECTION                                         │     │
-│  │     • Eigenbeamspace beamforming (radar long-baseline networks)    │     │
-│  │     • Coherent integration gain >100 dB (weak scattered signals)   │     │
+│  │     • Eigenbeamspace beamforming (radar long-baseline networks)     │     │
+│  │     • Coherent integration gain >100 dB (weak scattered signals)    │     │
 │  │     • CFAR detection thresholding                                   │     │
 │  │                                                                     │     │
 │  │  2. MEASUREMENT EXTRACTION                                          │     │
-│  │     • Radar: range/Doppler/RCS from pulse returns                    │     │
-│  │     • Optical: centroiding on PSF-deconvolved streaks                 │     │
-│  │     • RF: Doppler/code correlation with aiding                       │     │
-│  │     • NavIC: Carrier-phase + code (dual-freq when S4>0.6)          │     │
+│  │     • Radar: range/Doppler/RCS from pulse returns                   │     │
+│  │     • Optical: centroiding on PSF-deconvolved streaks               │     │
+│  │     • RF: Doppler/code correlation with aiding                      │     │
+│  │     • NavIC: Carrier-phase + code (dual-freq when S4>0.6)           │     │
 │  │                                                                     │     │
 │  │  3. OUTLIER REJECTION                                               │     │
 │  │     • Chi-square test: |measurement - prediction|² / σ²             │     │
@@ -538,18 +538,18 @@ Edge Footprint: ~300KB per class (INT8 quantized, 32× compression)
 │  ┌─────────────────────────────────────────────────────────────────────┐     │
 │  │  PHYSICS GATE                                                       │     │
 │  │                                                                     │     │
-│  │  State Transition:  x(t+Δt) = Φ(t+Δt, t) · x(t) + Q(Δt)            │     │
+│  │  State Transition:  x(t+Δt) = Φ(t+Δt, t) · x(t) + Q(Δt)             │     │
 │  │                                                                     │     │
-│  │  Residual Test:     |ΔH/H| < bound after modeled perturbations?    │     │
+│  │  Residual Test:     |ΔH/H| < bound after modeled perturbations?     │     │
 │  │                     • J2 gravity                                    │     │
-│  │                     • Drag ρ(v) exponential                       │     │
+│  │                     • Drag ρ(v) exponential                         │     │
 │  │                     • Solar radiation pressure                      │     │
 │  │                     • Third-body perturbations                      │     │
 │  │                                                                     │     │
-│  │  FAIL → Reject track as spoof / garbage                           │     │
-│  │  PASS → Propagate to fusion layer                                  │     │
+│  │  FAIL → Reject track as spoof / garbage                             │     │
+│  │  PASS → Propagate to fusion layer                                   │     │
 │  │                                                                     │     │
-│  │  Kalman/UKF: P(t) = Φ·P·Φᵀ + Q (covariance realism)               │     │
+│  │  Kalman/UKF: P(t) = Φ·P·Φᵀ + Q (covariance realism)                 │     │
 │  └─────────────────────────────────┬───────────────────────────────────┘     │
 └────────────────────────────────────┼──────────────────────────────────────────┘
                                      ▼
@@ -559,49 +559,49 @@ Edge Footprint: ~300KB per class (INT8 quantized, 32× compression)
 │  ┌─────────────────────────────────────────────────────────────────────┐     │
 │  │  INITIAL ORBIT DETERMINATION (IOD)                                  │     │
 │  │  • Gauss/Laplace methods from angles-only (optical)                 │     │
-│  │  • Range/Doppler methods (radar)                                   │     │
+│  │  • Range/Doppler methods (radar)                                    │     │
 │  │                                                                     │     │
 │  │  DIFFERENTIAL CORRECTION                                            │     │
-│  │  • Weighted least-squares on (O-C) residuals                       │     │
-│  │  • W = diag(1/σ²_radar, 1/σ²_optical, 1/σ²_rf)                     │     │
+│  │  • Weighted least-squares on (O-C) residuals                        │     │
+│  │  • W = diag(1/σ²_radar, 1/σ²_optical, 1/σ²_rf)                      │     │
 │  │                                                                     │     │
 │  │  COVARIANCE PROPAGATION                                             │     │
-│  │  • δa → δperiod → km/day in-track drift mapped                     │     │
-│  │  • Consider parameters: drag uncertainty, solar flux                 │     │
+│  │  • δa → δperiod → km/day in-track drift mapped                      │     │
+│  │  • Consider parameters: drag uncertainty, solar flux                │     │
 │  └─────────────────────────────────┬───────────────────────────────────┘     │
 └────────────────────────────────────┼──────────────────────────────────────────┘
                                      ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                   FOUNDATION MODEL INFERENCE (LG-PHNO)                        │
-│                                                                               │
+│                   FOUNDATION MODEL INFERENCE (LG-PHNO)                       │
+│                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐     │
-│  │  INPUT: (r, v, t, F10.7, Ap, vehicle_class_prior)                  │     │
+│  │  INPUT: (r, v, t, F10.7, Ap, vehicle_class_prior)                   │     │
 │  │                                                                     │     │
 │  │  SE(3)-GNN Encoder ──► z_obs                                        │     │
-│  │  DeepONet Atmosphere ──► z_atm, ρ_nn(h)                            │     │
+│  │  DeepONet Atmosphere ──► z_atm, ρ_nn(h)                             │     │
 │  │  IMM Mode Probability ──► p_mode                                    │     │
 │  │                                                                     │     │
-│  │  Hypernetwork: H_φ(z_context) ──► {W_H, W_R, W_g}                 │     │
+│  │  Hypernetwork: H_φ(z_context) ──► {W_H, W_R, W_g}                   │     │
 │  │                                                                     │     │
 │  │  DPHNO Integration:                                                 │     │
-│  │    dz/dt = [J - R(z)]·∇H(z) + g(z)·u(t)                           │     │
+│  │    dz/dt = [J - R(z)]·∇H(z) + g(z)·u(t)                             │     │
 │  │                                                                     │     │
-│  │  Yoshida-4 symplectic steps ──► trajectory prediction             │     │
+│  │  Yoshida-4 symplectic steps ──► trajectory prediction               │     │
 │  │                                                                     │     │
 │  │  Neural SINDy on residual ──► u(t) inferred control                 │     │
 │  │                                                                     │     │
-│  │  Conformal UQ ──► σ_position with 95% coverage guarantee           │     │
+│  │  Conformal UQ ──► σ_position with 95% coverage guarantee            │     │
 │  └─────────────────────────────────┬───────────────────────────────────┘     │
 └────────────────────────────────────┼──────────────────────────────────────────┘
                                      ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                       ANALYTICS & DECISION LAYER                              │
-│                                                                               │
+│                       ANALYTICS & DECISION LAYER                             │
+│                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐     │
 │  │  GHOST-MANEUVER DETECTION (D9)                                      │     │
-│  │  • Bayesian posterior P(thrusting | residuals)                     │     │
+│  │  • Bayesian posterior P(thrusting | residuals)                      │     │
 │  │  • IMM switching: ballistic vs thrusting mode probabilities         │     │
-│  │  • Sub-threshold Δv detection via passive RF signatures            │     │
+│  │  • Sub-threshold Δv detection via passive RF signatures             │     │
 │  │                                                                     │     │
 │  │  FUEL POSTERIOR (D5)                                                │     │
 │  │  • Particle filter on fuel mass as hidden state                     │     │
@@ -617,26 +617,26 @@ Edge Footprint: ~300KB per class (INT8 quantized, 32× compression)
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         VERIFIABLE OUTPUTS                                    │
 │                                                                               │
-│  ┌─────────────────────────────────────────────────────────────────────┐     │
-│  │  SYMBOLIC CERTIFICATE (VSC)                                         │     │
+│  ┌─────────────────────────────────────────────────────────────────────┐      │
+│  │  SYMBOLIC CERTIFICATE (VSC)                                          │     │
 │  │  ┌─────────────────────────────────────────────────────────────┐     │     │
-│  │  │ Equation: \dot{v} = -0.42v|v| + 0.03sin(r/7000) + u_drag   │     │     │
-│  │  │ R² = 0.87 (bootstrap CI: [0.82, 0.91])                    │     │     │
+│  │  │ Equation: \dot{v} = -0.42v|v| + 0.03sin(r/7000) + u_drag    │     │     │
+│  │  │ R² = 0.87 (bootstrap CI: [0.82, 0.91])                      │     │     │
 │  │  │ Physics Grade: B (< 1e-3 energy residual)                   │     │     │
 │  │  │ Prediction: [x, y, z, vx, vy, vz] @ T+60s ± σ               │     │     │
 │  │  │ VerifyAt: 2026-04-21T12:34:56Z                              │     │     │
 │  │  │ Hash: sha256(...) signed with SSIS_SIGNING_KEY              │     │     │
 │  │  └─────────────────────────────────────────────────────────────┘     │     │
-│  │                                                                     │     │
-│  │  CUSTODY MAP                                                        │     │
-│  │  • 72h strong/weak/doubtful per AOR                                 │     │
-│  │  • Covariance ellipses for all trackable objects                    │     │
-│  │                                                                     │     │
-│  │  DECISION PRODUCTS                                                  │     │
-│  │  • Conjunction Data Message (CDM) for collision (d)                │     │
-│  │  • Neighbourhood Watch alert (b) for proximity anomalies           │     │
+│  │                                                                      │     │
+│  │  CUSTODY MAP                                                         │     │
+│  │  • 72h strong/weak/doubtful per AOR                                  │     │
+│  │  • Covariance ellipses for all trackable objects                     │     │
+│  │                                                                      │     │
+│  │  DECISION PRODUCTS                                                   │     │
+│  │  • Conjunction Data Message (CDM) for collision (d)                  │     │
+│  │  • Neighbourhood Watch alert (b) for proximity anomalies             │     │
 │  │  • Ghost-maneuver warning (D9) for sub-threshold thrust              │     │
-│  │  • Standing OPLAN menu (A1) + blind calendar (A2)                  │     │
+│  │  • Standing OPLAN menu (A1) + blind calendar (A2)                    │     │
 │  └─────────────────────────────────────────────────────────────────────┘     │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
