@@ -19,6 +19,10 @@ models/llm/**
 *.jsonl
 *.onnx
 
+# Training datasets (large files, stored in GCS)
+training-data/
+!training-data/readme-for-all-dataset-download-use-case.txt
+
 # Python
 **/__pycache__/
 **/*.pyc

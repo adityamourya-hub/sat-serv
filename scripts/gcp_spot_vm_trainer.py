@@ -295,10 +295,156 @@ def train_collision_with_checkpoints(args):
     return 0
 
 
+def train_navic_with_checkpoints(args):
+    """Train NavIC anomaly detector with checkpointing."""
+    sys.path.insert(0, "ai/v3")
+    from navic_anomaly_detector import NavICAnomalyDetector
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"🖥️  Device: {device}")
+
+    ckpt = SimpleCheckpointManager(args.gcs_bucket)
+
+    model = NavICAnomalyDetector(input_dim=12, hidden_dim=64, n_heads=4, n_classes=3).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+
+    start_epoch = 0
+    checkpoint = ckpt.load_latest()
+    if checkpoint:
+        state = checkpoint['state']
+        model.load_state_dict(state['model_state'])
+        optimizer.load_state_dict(state['optimizer_state'])
+        start_epoch = checkpoint['epoch'] + 1
+
+    # Load preprocessed data if available, else use synthetic
+    import numpy as np
+    data_path = Path("ai/v3/data/navic_training.npz")
+    if data_path.exists():
+        data = np.load(data_path)
+        X_all, y_all = data['X'], data['y']
+        print(f"📂 Loaded {len(X_all)} samples from {data_path}")
+    else:
+        print("⚠ No preprocessed data found, using synthetic. Run preprocess_training_data.py first.")
+        rng = np.random.default_rng(42)
+        X_all = rng.normal(0, 1, (5000, 60, 12)).astype(np.float32)
+        y_all = rng.integers(0, 3, 5000).astype(np.int64)
+
+    X_tensor = torch.tensor(X_all, dtype=torch.float32)
+    y_tensor = torch.tensor(y_all, dtype=torch.long)
+    dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=128, shuffle=True)
+
+    print(f"\n🏃 Training NavIC from epoch {start_epoch} to {args.epochs}")
+    try:
+        for epoch in range(start_epoch, args.epochs):
+            if ckpt.should_stop():
+                ckpt.save({'model_state': model.state_dict(), 'optimizer_state': optimizer.state_dict()}, epoch, is_emergency=True)
+                return 1
+            model.train()
+            total_loss = 0.0
+            for X_batch, y_batch in loader:
+                X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+                logits = model(X_batch)
+                if isinstance(logits, tuple):
+                    logits = logits[0]
+                loss = nn.CrossEntropyLoss()(logits, y_batch)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+            if (epoch + 1) % 5 == 0:
+                print(f"Epoch {epoch+1}/{args.epochs} - Loss: {total_loss/len(loader):.4f}")
+            if (epoch + 1) % args.checkpoint_every == 0:
+                ckpt.save({'model_state': model.state_dict(), 'optimizer_state': optimizer.state_dict()}, epoch + 1)
+        print("\n✅ NavIC training complete!")
+    except Exception as e:
+        print(f"\n⚠️ Error: {e}")
+        ckpt.save({'model_state': model.state_dict(), 'optimizer_state': optimizer.state_dict()}, epoch, is_emergency=True)
+        raise
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), output_dir / "navic_detector.pt")
+    print(f"✓ Saved: {output_dir / 'navic_detector.pt'}")
+    return 0
+
+
+def train_reentry_with_checkpoints(args):
+    """Train re-entry predictor with checkpointing."""
+    sys.path.insert(0, "ai/v3")
+    from reentry_predictor import train_reentry_predictor, export_reentry_onnx
+    import numpy as np
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"🖥️  Device: {device}")
+
+    # Load preprocessed data
+    data_path = Path("ai/v3/data/reentry_training.npz")
+    n_samples = 5000
+    if data_path.exists():
+        data = np.load(data_path)
+        n_samples = len(data['X'])
+        print(f"📂 Loaded {n_samples} samples from {data_path}")
+
+    model = train_reentry_predictor(n_samples=n_samples, epochs=args.epochs, device=str(device))
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    export_reentry_onnx(model, str(output_dir / "reentry_predictor.onnx"))
+    print(f"✓ Exported: {output_dir / 'reentry_predictor.onnx'}")
+    return 0
+
+
+def train_maneuver_with_checkpoints(args):
+    """Train maneuver detector with checkpointing."""
+    sys.path.insert(0, "ai/maneuver")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"🖥️  Device: {device}")
+
+    ckpt = SimpleCheckpointManager(args.gcs_bucket)
+
+    from train_maneuver_detector import TrainConfig, SyntheticManeuverDataset
+    cfg = TrainConfig()
+    cfg.epochs = args.epochs
+
+    # Check for preprocessed TLE residuals
+    data_path = Path("ai/maneuver/data/tle_residuals.jsonl")
+    if data_path.exists():
+        print(f"📂 Found preprocessed TLE residuals at {data_path}")
+
+    # Use existing training script
+    from train_maneuver_detector import train as maneuver_train
+    maneuver_train()
+    print("\n✅ Maneuver detector training complete!")
+    return 0
+
+
+def train_all_with_checkpoints(args):
+    """Train all components sequentially."""
+    components = ['maneuver', 'navic', 'reentry', 'collision']
+    for comp in components:
+        print(f"\n{'#'*60}")
+        print(f"Training: {comp}")
+        print(f"{'#'*60}")
+        args.component = comp
+        try:
+            if comp == 'collision':
+                train_collision_with_checkpoints(args)
+            elif comp == 'navic':
+                train_navic_with_checkpoints(args)
+            elif comp == 'reentry':
+                train_reentry_with_checkpoints(args)
+            elif comp == 'maneuver':
+                train_maneuver_with_checkpoints(args)
+        except Exception as e:
+            print(f"⚠️ {comp} failed: {e}")
+            continue
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description='Train on GCP Spot VM')
     parser.add_argument('--component', type=str, default='collision',
-                       choices=['collision', 'navic', 'reentry', 'ateena'])
+                       choices=['collision', 'navic', 'reentry', 'maneuver', 'all'])
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--checkpoint-every', type=int, default=10,
                        help='Checkpoint every N epochs')
@@ -308,12 +454,19 @@ def main():
     parser.add_argument('--output-dir', type=str, default='/ssis/ai/training/models')
     parser.add_argument('--auto-setup', action='store_true',
                        help='Auto-clone and setup SSIS on fresh VM')
+    parser.add_argument('--preprocess', action='store_true',
+                       help='Run data preprocessing before training')
     
     args = parser.parse_args()
     
     # Auto-setup if needed
     if args.auto_setup or not Path("/ssis").exists():
         install_ssis()
+    
+    # Run preprocessing if requested
+    if args.preprocess:
+        print("📊 Running data preprocessing...")
+        subprocess.run([sys.executable, "scripts/preprocess_training_data.py"], check=True)
     
     print("=" * 60)
     print("SSIS Spot VM Trainer")
@@ -327,6 +480,14 @@ def main():
     # Train
     if args.component == 'collision':
         exit_code = train_collision_with_checkpoints(args)
+    elif args.component == 'navic':
+        exit_code = train_navic_with_checkpoints(args)
+    elif args.component == 'reentry':
+        exit_code = train_reentry_with_checkpoints(args)
+    elif args.component == 'maneuver':
+        exit_code = train_maneuver_with_checkpoints(args)
+    elif args.component == 'all':
+        exit_code = train_all_with_checkpoints(args)
     else:
         print(f"Component {args.component} not yet implemented")
         exit_code = 1
