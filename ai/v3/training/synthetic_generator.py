@@ -1,23 +1,37 @@
 """
 Synthetic Trajectory Generator for GLPA Training (JAX-Accelerated)
 
-Generates 10^6 synthetic HGV trajectories for training the Global Latent Physics Atlas.
+Generates 10^6 synthetic trajectories for training the Global Latent Physics Atlas.
 
-Physics Improvements:
-- Correct gravity: mu/r^2 (was mu/r^3)
+Physics Improvements (Gap 1 - Canonical Units):
+- Canonical units: μ=1, DU=R_E, TU≈806.81s
+- Hamiltonian values near unity for MLP numerical stability
+- Correct gravity: μ/r² (was μ/r³)
 - Proper ECEF/ECI coordinates with Earth rotation
-- RK4 integrator (replaces Euler)
+- RK4 symplectic integrator (replaces Euler)
 - Energy, momentum, Hamiltonian per timestep for Augmented Lagrangian training
-- JAX vmap parallelization for H100 scale
+
+Gap 3 - Ghost Maneuver Signatures (D9/A7):
+- BHT-800 Hall Thruster (80 mN, Isp 2000s)
+- PPS-1350 Gridded Ion (250 mN, Isp 3200s)
+- Low-thrust spiral trajectories with Δv < 0.1 m/s
+- Nearly invisible to SGP4 tracking
+
+Gap 5 - Multi-Sensor Spectral Data (A3 SFL):
+- MWIR (3-5 μm) thermal signatures
+- LWIR (8-12 μm) thermal signatures
+- Radar Cross-Section (X, Ku, Ka bands)
+- Plasma sheath effects at high velocity
 
 Varying:
 - Density profiles (NRLMSISE-00, US Standard 1976)
 - Lift-to-drag ratios (L/D = 0.5 to 5.0)
 - Bank angles (σ = -45° to +45°)
-- Altitude ranges (30-80 km corridor)
-- Vehicle classes (HGV, ballistic, satellite, debris, etc.)
+- Altitude ranges (30-80 km corridor, 400-800 km LEO)
+- Vehicle classes (HGV, ballistic, satellite, ghost maneuver, etc.)
 
-Reference: ai/model_arch.md - Hypernetwork Atlas training
+Reference: ai/foundation.md - LG-PHNO architecture
+         ai/model_arch.md - Hypernetwork Atlas training
 """
 
 import jax
@@ -44,6 +58,36 @@ CANONICAL_DU = EARTH_RADIUS  # km per canonical distance unit
 CANONICAL_TU = jnp.sqrt(CANONICAL_DU**3 / EARTH_MU)  # seconds per canonical time unit (~806.81s)
 CANONICAL_MU = 1.0  # Canonical gravitational parameter
 
+# Electric Propulsion Specifications (for Ghost Maneuver Detection - D9/A7)
+# BHT-800 Hall Thruster (typical for small satellites)
+BHT800_THRUST_MN = 80.0  # mN
+BHT800_ISP_S = 2000.0  # seconds
+BHT800_EXHAUST_VELOCITY = BHT800_ISP_S * 9.80665  # m/s
+
+# PPS-1350 Gridded Ion Thruster (higher performance)
+PPS1350_THRUST_MN = 250.0  # mN
+PPS1350_ISP_S = 3200.0  # seconds
+PPS1350_EXHAUST_VELOCITY = PPS1350_ISP_S * 9.80665  # m/s
+
+# Spectral Band Constants (for A3 Spectral Fingerprint Library)
+# MWIR: Mid-Wave Infrared (3-5 μm)
+MWIR_WAVELENGTH_MIN_UM = 3.0
+MWIR_WAVELENGTH_MAX_UM = 5.0
+MWIR_WAVELENGTH_CENTER_UM = 4.0
+
+# LWIR: Long-Wave Infrared (8-12 μm)
+LWIR_WAVELENGTH_MIN_UM = 8.0
+LWIR_WAVELENGTH_MAX_UM = 12.0
+LWIR_WAVELENGTH_CENTER_UM = 10.0
+
+# Radar bands (GHz)
+RADAR_X_BAND_GHZ = 10.0
+RADAR_KU_BAND_GHZ = 16.0
+RADAR_KA_BAND_GHZ = 35.0
+
+# Stefan-Boltzmann constant for thermal signature computation
+STEFAN_BOLTZMANN = 5.670374e-8  # W/(m²·K⁴)
+
 
 class SyntheticTrajectoryGenerator:
     """
@@ -69,7 +113,8 @@ class SyntheticTrajectoryGenerator:
             6: "debris",
             7: "reentry_vehicle",
             8: "aerospace_plane",
-            9: "unknown"
+            9: "unknown",
+            10: "ghost_maneuver_electric"  # Gap 3: BHT-800/PPS-1350 low-thrust
         }
     
     @staticmethod
@@ -399,6 +444,386 @@ class SyntheticTrajectoryGenerator:
         atmosphere = atmosphere.at[3].set(altitude)
         
         return atmosphere
+    
+    # =========================================================================
+    # GAP 1: CANONICAL UNITS CONVERSION
+    # Convert between SI (km, km/s) and Canonical Units (DU, TU, μ=1)
+    # This keeps Hamiltonian values near unity for MLP numerical stability
+    # =========================================================================
+    
+    @staticmethod
+    @jit
+    def to_canonical_position(r_km: jnp.ndarray) -> jnp.ndarray:
+        """Convert position from km to canonical units (Earth radii)."""
+        return r_km / CANONICAL_DU
+    
+    @staticmethod
+    @jit
+    def to_canonical_velocity(v_kms: jnp.ndarray) -> jnp.ndarray:
+        """Convert velocity from km/s to canonical units (DU/TU)."""
+        return v_kms * CANONICAL_TU / CANONICAL_DU
+    
+    @staticmethod
+    @jit
+    def from_canonical_position(r_canonical: jnp.ndarray) -> jnp.ndarray:
+        """Convert position from canonical units to km."""
+        return r_canonical * CANONICAL_DU
+    
+    @staticmethod
+    @jit
+    def from_canonical_velocity(v_canonical: jnp.ndarray) -> jnp.ndarray:
+        """Convert velocity from canonical units to km/s."""
+        return v_canonical * CANONICAL_DU / CANONICAL_TU
+    
+    @staticmethod
+    @jit
+    def state_to_canonical(state_km: jnp.ndarray) -> jnp.ndarray:
+        """
+        Convert full state [r, v] from km/km/s to canonical units.
+        
+        Args:
+            state_km: [x, y, z, vx, vy, vz] in km, km/s
+            
+        Returns:
+            State in canonical units [x', y', z', vx', vy', vz']
+        """
+        r_canonical = state_km[0:3] / CANONICAL_DU
+        v_canonical = state_km[3:6] * CANONICAL_TU / CANONICAL_DU
+        return jnp.concatenate([r_canonical, v_canonical])
+    
+    @staticmethod
+    @jit
+    def state_from_canonical(state_canonical: jnp.ndarray) -> jnp.ndarray:
+        """
+        Convert full state [r, v] from canonical units to km/km/s.
+        
+        Args:
+            state_canonical: [x', y', z', vx', vy', vz'] in canonical units
+            
+        Returns:
+            State in km, km/s [x, y, z, vx, vy, vz]
+        """
+        r_km = state_canonical[0:3] * CANONICAL_DU
+        v_kms = state_canonical[3:6] * CANONICAL_DU / CANONICAL_TU
+        return jnp.concatenate([r_km, v_kms])
+    
+    @staticmethod
+    @jit
+    def compute_hamiltonian_canonical(state_canonical: jnp.ndarray, 
+                                        mass: float = 1000.0) -> float:
+        """
+        Compute Hamiltonian (total energy) in canonical units.
+        
+        In canonical units: H = v²/2 - μ/r  (with μ = 1.0)
+        Result is in canonical energy units (energy scale is μ/DU ~ 62.5 MJ/kg)
+        
+        Args:
+            state_canonical: [x', y', z', vx', vy', vz'] in canonical units
+            mass: Vehicle mass (kg)
+            
+        Returns:
+            Hamiltonian in canonical energy units
+        """
+        r = state_canonical[0:3]
+        v = state_canonical[3:6]
+        
+        r_norm = jnp.linalg.norm(r)
+        v_sq = jnp.dot(v, v)
+        
+        # In canonical units: T = v²/2, V = -μ/r = -1/r
+        specific_energy = 0.5 * v_sq - CANONICAL_MU / r_norm
+        
+        # Scale to physical units for interpretability
+        # Canonical energy unit = μ/DU = EARTH_MU / EARTH_RADIUS
+        energy_scale = EARTH_MU / EARTH_RADIUS  # km²/s²
+        return specific_energy * energy_scale * mass
+    
+    # =========================================================================
+    # GAP 3: GHOST MANEUVER SIGNATURES (Electric Propulsion)
+    # Low-thrust trajectories for D9 Ghost-Maneuver Detector and A7 Covert Δv
+    # =========================================================================
+    
+    @staticmethod
+    @jit
+    def electric_propulsion_dynamics(state: jnp.ndarray, 
+                                     thrust_mn: float,
+                                     isp_s: float,
+                                     mass: float,
+                                     burn_direction: jnp.ndarray,
+                                     use_canonical: bool = False) -> jnp.ndarray:
+        """
+        Compute state derivatives for electric propulsion (low-thrust) spacecraft.
+        
+        For Gap 3: Ghost Maneuver Signatures
+        - BHT-800 Hall Thruster: 80 mN, Isp 2000s
+        - PPS-1350 Gridded Ion: 250 mN, Isp 3200s
+        
+        Args:
+            state: [x, y, z, vx, vy, vz] position/velocity
+            thrust_mn: Thrust in millinewtons (mN)
+            isp_s: Specific impulse in seconds
+            mass: Spacecraft mass in kg
+            burn_direction: Unit vector [dx, dy, dz] for thrust direction
+            use_canonical: If True, use canonical units
+            
+        Returns:
+            State derivative [dx, dy, dz, dvx, dvy, dvz]
+        """
+        r = state[0:3]
+        v = state[3:6]
+        
+        # Select mu based on units
+        mu = CANONICAL_MU if use_canonical else EARTH_MU
+        
+        # Gravitational acceleration
+        r_norm = jnp.linalg.norm(r)
+        g_vec = -mu * r / (r_norm**3)
+        
+        # Electric propulsion acceleration
+        # F = m*a, so a = F/m
+        thrust_n = thrust_mn * 1e-3  # Convert to Newtons
+        
+        if use_canonical:
+            # Convert acceleration to canonical units
+            # a_canonical = a_physical * TU² / DU
+            accel_ms2 = thrust_n / mass  # m/s²
+            accel_canonical = accel_ms2 * CANONICAL_TU**2 / (CANONICAL_DU * 1000.0)
+            thrust_accel = accel_canonical * burn_direction
+        else:
+            # km/s²
+            thrust_accel = (thrust_n / mass / 1000.0) * burn_direction  # km/s²
+        
+        # Total acceleration (gravity + thrust)
+        acc = g_vec + thrust_accel
+        
+        return jnp.concatenate([v, acc])
+    
+    @staticmethod
+    def generate_ghost_trajectory_jax(key: jnp.ndarray, 
+                                      jd_start: float = 2460000.0,
+                                      propulsion_type: str = "bht800") -> Dict:
+        """
+        Generate a low-thrust (ghost maneuver) trajectory using electric propulsion.
+        
+        For D9 Ghost-Maneuver Detection and A7 Covert Δv Planning.
+        These trajectories have Δv < 0.1 m/s and are nearly invisible to SGP4 tracking.
+        
+        Args:
+            key: JAX random key
+            jd_start: Starting Julian Date
+            propulsion_type: "bht800" or "pps1350"
+            
+        Returns:
+            Dictionary with trajectory data and physics metrics
+        """
+        # Split key for random parameters
+        k1, k2, k3 = random.split(key, 3)
+        
+        # Select propulsion parameters
+        if propulsion_type == "bht800":
+            thrust_mn = BHT800_THRUST_MN
+            isp_s = BHT800_ISP_S
+        else:  # pps1350
+            thrust_mn = PPS1350_THRUST_MN
+            isp_s = PPS1350_ISP_S
+        
+        # Random initial conditions for LEO satellite
+        altitude_km = random.uniform(k1, minval=400.0, maxval=800.0)  # LEO altitude
+        velocity_circular = jnp.sqrt(EARTH_MU / (EARTH_RADIUS + altitude_km))  # km/s
+        
+        # Small eccentricity
+        eccentricity = random.uniform(k2, minval=0.0, maxval=0.05)
+        
+        # Random burn schedule (intermittent firing to reduce observability)
+        burn_start = random.uniform(k3, minval=0.1, maxval=0.3)  # Start after 10-30% of orbit
+        burn_duration = random.uniform(k1, minval=0.05, maxval=0.15)  # Burn for 5-15% of orbit
+        
+        # Initial state (circular orbit, equatorial for simplicity)
+        r_init = jnp.array([EARTH_RADIUS + altitude_km, 0.0, 0.0])
+        v_init = jnp.array([0.0, velocity_circular * jnp.sqrt(1 - eccentricity**2), 0.0])
+        state = jnp.concatenate([r_init, v_init])
+        
+        # Convert to canonical units
+        state_canonical = SyntheticTrajectoryGenerator.state_to_canonical(state)
+        
+        # Vehicle parameters
+        mass = 1000.0  # kg (typical small satellite)
+        
+        # Simulation parameters (orbital period ~ 90-120 min)
+        dt_canonical = 0.001  # ~0.8 seconds in canonical time
+        n_orbits = 2.0
+        period_canonical = 2 * jnp.pi  # ~2π in canonical time units
+        n_steps = int(n_orbits * period_canonical / dt_canonical)
+        
+        # Storage arrays
+        states_canonical = jnp.zeros((n_steps, 6))
+        hamiltonians = jnp.zeros(n_steps)
+        thrust_history = jnp.zeros(n_steps)
+        
+        # Burn direction (tangent to velocity for efficiency)
+        v_norm = v_init / jnp.linalg.norm(v_init)
+        burn_direction = v_norm
+        
+        def step_fn(carry, i):
+            state_can, states, hams, thrusts = carry
+            
+            # Determine if thrust is active (ghost maneuver schedule)
+            orbit_progress = (i * dt_canonical) % period_canonical / period_canonical
+            thrust_active = jnp.where(
+                (orbit_progress > burn_start) & (orbit_progress < burn_start + burn_duration),
+                1.0, 0.0
+            )
+            
+            # Get burn direction in current state
+            v_current = state_can[3:6]
+            v_current_norm = v_current / (jnp.linalg.norm(v_current) + 1e-10)
+            
+            # Dynamics: gravity + intermittent thrust
+            # For simplicity, use RK4 with thrust
+            dt = dt_canonical
+            k1 = SyntheticTrajectoryGenerator.electric_propulsion_dynamics(
+                state_can, thrust_mn * thrust_active, isp_s, mass, v_current_norm, use_canonical=True)
+            k2 = SyntheticTrajectoryGenerator.electric_propulsion_dynamics(
+                state_can + 0.5*dt*k1, thrust_mn * thrust_active, isp_s, mass, v_current_norm, use_canonical=True)
+            k3 = SyntheticTrajectoryGenerator.electric_propulsion_dynamics(
+                state_can + 0.5*dt*k2, thrust_mn * thrust_active, isp_s, mass, v_current_norm, use_canonical=True)
+            k4 = SyntheticTrajectoryGenerator.electric_propulsion_dynamics(
+                state_can + dt*k3, thrust_mn * thrust_active, isp_s, mass, v_current_norm, use_canonical=True)
+            
+            new_state = state_can + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
+            
+            # Compute Hamiltonian
+            ham = SyntheticTrajectoryGenerator.compute_hamiltonian_canonical(new_state, mass)
+            
+            states = states.at[i].set(new_state)
+            hams = hams.at[i].set(ham)
+            thrusts = thrusts.at[i].set(thrust_active)
+            
+            return (new_state, states, hams, thrusts), None
+        
+        init_carry = (state_canonical, states_canonical, hamiltonians, thrust_history)
+        (final_state, states_canonical, hamiltonians, thrust_history), _ = \
+            jax.lax.scan(step_fn, init_carry, jnp.arange(n_steps))
+        
+        # Convert back to physical units
+        states = jax.vmap(SyntheticTrajectoryGenerator.state_from_canonical)(states_canonical)
+        
+        return {
+            'states': states,
+            'hamiltonians': hamiltonians,
+            'thrust_history': thrust_history,
+            'mass': mass,
+            'thrust_mn': thrust_mn,
+            'isp_s': isp_s,
+            'propulsion_type': propulsion_type,
+            'burn_schedule': {'start': float(burn_start), 'duration': float(burn_duration)},
+            'vehicle_class': 10,  # Ghost maneuver signature class
+            'use_canonical': True,
+            'metadata': {
+                'altitude_initial': float(altitude_km),
+                'eccentricity': float(eccentricity),
+                'thrust_mn': thrust_mn,
+                'isp_s': isp_s,
+                'total_delta_v': float(thrust_mn * 1e-3 / mass * burn_duration * n_orbits * period_canonical * CANONICAL_TU),
+                'maneuver_class': 'ghost_electric_propulsion'
+            }
+        }
+    
+    # =========================================================================
+    # GAP 5: MULTI-SENSOR SPECTRAL DATA (A3 Spectral Fingerprint Library)
+    # MWIR, LWIR thermal signatures and Radar Cross-Section (RCS)
+    # =========================================================================
+    
+    @staticmethod
+    @jit
+    def compute_spectral_signatures(state: jnp.ndarray,
+                                    mass: float = 1000.0,
+                                    surface_temp_k: float = 300.0,
+                                    emissivity: float = 0.9) -> Dict:
+        """
+        Compute multi-sensor spectral signatures for A3 Spectral Fingerprint Library.
+        
+        Returns:
+            Dictionary with MWIR, LWIR, and radar signatures
+        """
+        r = state[0:3]
+        v = state[3:6]
+        
+        # Range from Earth's center
+        r_norm = jnp.linalg.norm(r)
+        altitude_km = r_norm - EARTH_RADIUS
+        
+        # Velocity magnitude for heating calculation
+        v_mag = jnp.linalg.norm(v)  # km/s
+        v_mag_ms = v_mag * 1000.0  # m/s
+        
+        # Aerodynamic heating (simplified stagnation point temperature)
+        # T_stag ≈ T_ambient + v²/(2*cp) where cp ≈ 1005 J/(kg·K) for air
+        gamma = 1.4
+        R_specific = 287.0
+        T_stagnation = surface_temp_k + (v_mag_ms**2) / (2 * 1005.0)
+        
+        # =========================================================================
+        # MWIR (3-5 μm) Signatures
+        # =========================================================================
+        # Planck blackbody radiation at MWIR wavelengths
+        h = 6.626e-34  # Planck constant J·s
+        c = 2.998e8    # Speed of light m/s
+        k = 1.381e-23  # Boltzmann constant J/K
+        
+        # Convert wavelengths to meters
+        lambda_mwir = MWIR_WAVELENGTH_CENTER_UM * 1e-6  # meters
+        
+        # Spectral radiance using Planck's law
+        # B_λ(T) = (2hc²/λ⁵) * 1/(exp(hc/(λkT)) - 1)
+        exponent_mwir = (h * c) / (lambda_mwir * k * T_stagnation)
+        spectral_radiance_mwir = (2 * h * c**2 / lambda_mwir**5) / (jnp.exp(exponent_mwir) - 1.0)
+        
+        # MWIR signature (W/m²/sr) scaled by effective area
+        # For HGV: nose cone area approx 0.5 m²
+        effective_area = 0.5  # m²
+        mwir_signature = spectral_radiance_mwir * effective_area * emissivity
+        
+        # =========================================================================
+        # LWIR (8-12 μm) Signatures
+        # =========================================================================
+        lambda_lwir = LWIR_WAVELENGTH_CENTER_UM * 1e-6  # meters
+        exponent_lwir = (h * c) / (lambda_lwir * k * T_stagnation)
+        spectral_radiance_lwir = (2 * h * c**2 / lambda_lwir**5) / (jnp.exp(exponent_lwir) - 1.0)
+        lwir_signature = spectral_radiance_lwir * effective_area * emissivity
+        
+        # =========================================================================
+        # Radar Cross-Section (RCS) Signatures
+        # =========================================================================
+        # Simplified RCS model for re-entry vehicle
+        # X-band (10 GHz): scattering from nose cone
+        # Ku-band (16 GHz): higher resolution, more surface detail
+        # Ka-band (35 GHz): very high resolution, plasma effects at high altitude
+        
+        # Plasma frequency check (simplified)
+        # Plasma sheath forms at high velocities (>6 km/s) at lower altitudes (<80km)
+        plasma_effect = jnp.where((v_mag > 6.0) & (altitude_km < 80.0), 0.3, 1.0)
+        
+        # Base RCS (m²) - simplified geometric optics
+        base_rcs = effective_area  # m²
+        
+        # Frequency-dependent scattering (simplified)
+        # Higher frequencies see more surface detail
+        rcs_x_band = base_rcs * 1.0 * plasma_effect  # X-band (10 GHz)
+        rcs_ku_band = base_rcs * 0.8 * plasma_effect  # Ku-band (16 GHz)  
+        rcs_ka_band = base_rcs * 0.5 * plasma_effect  # Ka-band (35 GHz)
+        
+        return {
+            'mwir_radiance': mwir_signature,  # W/m²/sr
+            'lwir_radiance': lwir_signature,  # W/m²/sr
+            'rcs_x_band': rcs_x_band,  # m²
+            'rcs_ku_band': rcs_ku_band,  # m²
+            'rcs_ka_band': rcs_ka_band,  # m²
+            'stagnation_temp': T_stagnation,  # K
+            'altitude': altitude_km,  # km
+            'velocity': v_mag,  # km/s
+            'plasma_effect': plasma_effect
+        }
     
     @staticmethod
     @jit
