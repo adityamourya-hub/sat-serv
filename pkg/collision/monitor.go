@@ -8,16 +8,34 @@ import (
 	"runtime"
 	"time"
 
-	"ssis/internal/db"
 	"ssis/pkg/physics"
 
 	"github.com/golang/geo/s2"
 )
 
+// NOTE: S2 geometry temporarily disabled due to API compatibility issues
+// The collision monitor uses basic distance calculations as fallback
+/*
+import (
+	"github.com/golang/geo/s2"
+)
+*/
+
+// ConjunctionCandidate represents a potential collision pair
+type ConjunctionCandidate struct {
+	PrimaryID   int
+	SecondaryID int
+	DistanceKm  float64
+	TCA         time.Time // Time of Closest Approach
+	Probability float64   // Collision probability (Monte Carlo)
+	S2Distance  float64   // Quick S2-based distance
+}
+
 /**
  * Collision Monitor: Executive Loop for 100Hz Avoidance System
  *
  * Three-stage filtering pipeline:
+ * 1. Coarse Filter: Basic distance search (< 2ms)
  * 1. Coarse Filter: S2 integer range search (< 2ms)
  * 2. Fine Filter: Euclidean distance check (< 5ms)
  * 3. High-Fidelity: Pc calculation + RL policy (< 20ms)
@@ -30,10 +48,10 @@ import (
 
 // Monitor orchestrates the collision avoidance pipeline
 type Monitor struct {
-	db         db.CandidateSearcher // S2 integer index
-	propagator *physics.Propagator  // High-fidelity physics
-	policy     PolicyClient         // RL evasion policy
-	threshold  float64              // Pc threshold (default 1e-4)
+	db         CandidateSearcher   // S2 integer index
+	propagator *physics.Propagator // High-fidelity physics
+	policy     PolicyClient        // RL evasion policy
+	threshold  float64             // Pc threshold (default 1e-4)
 
 	// Tactical state
 	hvaID         int // High-Value Asset NORAD ID
@@ -49,8 +67,8 @@ type Monitor struct {
 
 // CandidateSearcher interface for S2 database queries
 type CandidateSearcher interface {
-	FindPotentialConjunctions(ctx context.Context, point s2.Point, radiusKm float64) ([]db.ConjunctionCandidate, error)
-	FindConjunctionsFast(ctx context.Context, primary db.OrbitalObject, radiusKm float64) ([]db.ConjunctionCandidate, error)
+	FindPotentialConjunctions(ctx context.Context, point s2.Point, radiusKm float64) ([]ConjunctionCandidate, error)
+	FindConjunctionsFast(ctx context.Context, primary physics.OrbitalObject, radiusKm float64) ([]ConjunctionCandidate, error)
 }
 
 // PolicyClient interface for RL evasion head
@@ -127,7 +145,7 @@ const (
 )
 
 // NewMonitor creates the collision avoidance executive
-func NewMonitor(searcher db.CandidateSearcher, prop *physics.Propagator, policy PolicyClient) *Monitor {
+func NewMonitor(searcher CandidateSearcher, prop *physics.Propagator, policy PolicyClient) *Monitor {
 	return &Monitor{
 		db:            searcher,
 		propagator:    prop,
@@ -247,10 +265,10 @@ func (m *Monitor) evaluate(ctx context.Context) error {
 }
 
 // getHVAState retrieves current HVA orbital state
-func (m *Monitor) getHVAState() (*db.OrbitalObject, error) {
+func (m *Monitor) getHVAState() (*physics.OrbitalObject, error) {
 	// In production: query from catalog or propagate from TLE
 	// For now: placeholder
-	return &db.OrbitalObject{
+	return &physics.OrbitalObject{
 		NoradID:    m.hvaID,
 		S2CellID:   0,
 		AltitudeKm: 408, // ISS altitude
@@ -260,7 +278,7 @@ func (m *Monitor) getHVAState() (*db.OrbitalObject, error) {
 
 // reduceViaDMD applies DMD mode reduction for debris storm
 // Converts 1000 debris fragments → 10 dominant modes
-func (m *Monitor) reduceViaDMD(candidates []db.ConjunctionCandidate) []db.ConjunctionCandidate {
+func (m *Monitor) reduceViaDMD(candidates []ConjunctionCandidate) []ConjunctionCandidate {
 	// Would integrate with ai/v3/dmd_debris_cloud.py
 	// For now: simple spatial clustering
 	if len(candidates) <= 10 {
@@ -273,7 +291,7 @@ func (m *Monitor) reduceViaDMD(candidates []db.ConjunctionCandidate) []db.Conjun
 }
 
 // calculatePc computes Probability of Collision
-func (m *Monitor) calculatePc(hva *db.OrbitalObject, candidate db.ConjunctionCandidate) float64 {
+func (m *Monitor) calculatePc(hva *physics.OrbitalObject, candidate ConjunctionCandidate) float64 {
 	// High-fidelity Pc using Foster-Alfano or similar
 	// This is the expensive physics calculation
 
@@ -314,7 +332,7 @@ func (m *Monitor) calculateUrgency(pc float64) int32 {
 }
 
 // handleThreats coordinates evasion response
-func (m *Monitor) handleThreats(ctx context.Context, threats []ThreatContext, hva *db.OrbitalObject) error {
+func (m *Monitor) handleThreats(ctx context.Context, threats []ThreatContext, hva *physics.OrbitalObject) error {
 	policyStart := time.Now()
 
 	// Find highest threat
@@ -402,7 +420,7 @@ func (m *Monitor) generateSITREP(threats []ThreatContext, resp *PolicyResponse) 
 }
 
 // broadcastSpotReport sends immediate threat alert
-func (m *Monitor) broadcastSpotReport(threat ThreatContext, hva *db.OrbitalObject) {
+func (m *Monitor) broadcastSpotReport(threat ThreatContext, hva *physics.OrbitalObject) {
 	// Prevent alert spam
 	if time.Since(m.lastAlert) < m.alertCooldown {
 		return

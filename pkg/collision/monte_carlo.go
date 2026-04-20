@@ -3,6 +3,7 @@ package collision
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"runtime"
 	"sort"
 	"sync"
