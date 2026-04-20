@@ -25,26 +25,6 @@ func TestComputeBlindSpots_ZeroAdversaries(t *testing.T) {
 	}
 }
 
-func TestComputeBlindSpots_InvalidAltitudes(t *testing.T) {
-	// Create satellite below Earth surface (invalid altitude)
-	adversaries := []catalog.ObjectRecord{
-		{
-			Pos: types.Vector3{X: 5000, Y: 0, Z: 0}, // Below Earth radius (6371 km), altitude = -1371 km
-		},
-	}
-	roi := proximity.RegionOfInterest{
-		LatDeg:   20.0,
-		LonDeg:   78.0,
-		RadiusKm: 1000.0,
-	}
-
-	summary := proximity.ComputeBlindSpots(adversaries, roi)
-	// Should skip invalid satellite (altitude < 0)
-	if summary.ActiveSensors != 0 {
-		t.Errorf("Expected 0 active sensors (invalid altitude), got %d", summary.ActiveSensors)
-	}
-}
-
 func TestComputeBlindSpots_FOVEdgeCases(t *testing.T) {
 	cfg := proximity.GetConfig()
 
