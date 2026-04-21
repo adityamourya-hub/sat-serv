@@ -6,17 +6,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/pebbe/zmq4"
 )
 
 // Action represents tactical command decisions
 type Action int
 
 const (
-	ActionPassiveTrack   Action = 0 // Standard custody, minimal sensor draw
-	ActionActiveScan     Action = 1 // High frame rate, MGE + Spectroscopy
-	ActionFollowTarget   Action = 2 // INDI mount lock on specific target
-	ActionEmitterGeo     Action = 3 // TDOA geolocation for jammer detection
-	ActionTacticalAlert  Action = 4 // Broadcast FCH to mesh
+	ActionPassiveTrack     Action = 0 // Standard custody, minimal sensor draw
+	ActionActiveScan       Action = 1 // High frame rate, MGE + Spectroscopy
+	ActionFollowTarget     Action = 2 // INDI mount lock on specific target
+	ActionEmitterGeo       Action = 3 // TDOA geolocation for jammer detection
+	ActionTacticalAlert    Action = 4 // Broadcast FCH to mesh
 	ActionFuelOptimalEvade Action = 5 // Execute escape maneuver (on-orbit)
 )
 
@@ -34,10 +36,10 @@ var ActionNames = map[Action]string{
 type Intent int
 
 const (
-	IntentPassive            Intent = 0 // Pure Keplerian, minimal Δv
-	IntentRPOInspection      Intent = 1 // HCW-locked, circumnavigation
-	IntentElectronicWarfare  Intent = 2 // Nadir-pointing, thermal spikes
-	IntentKineticThreat      Intent = 3 // High-thrust, non-Keplerian
+	IntentPassive           Intent = 0 // Pure Keplerian, minimal Δv
+	IntentRPOInspection     Intent = 1 // HCW-locked, circumnavigation
+	IntentElectronicWarfare Intent = 2 // Nadir-pointing, thermal spikes
+	IntentKineticThreat     Intent = 3 // High-thrust, non-Keplerian
 )
 
 // IntentNames maps intents to human-readable strings
@@ -53,19 +55,19 @@ type StateVector struct {
 	// Orbital state (normalized)
 	Position [3]float64 `json:"position"` // ECI position (km)
 	Velocity [3]float64 `json:"velocity"` // ECI velocity (km/s)
-	
+
 	// Intent classification (from neural network)
 	Intent     int     `json:"intent"`     // 0-3 intent label
 	Confidence float64 `json:"confidence"` // 0.0-1.0 confidence
-	
+
 	// Threat indicators
 	PowerEstimate float64 `json:"power_estimate"` // dBm
 	RiskScore     float64 `json:"risk_score"`     // 0.0-100.0
-	
+
 	// Physics residuals (Yoshida-4 integrator)
-	HCWResidual   float64 `json:"hcw_residual"`   // Hill-Clohessy-Wiltshire residual
-	DeltaVRecent  float64 `json:"delta_v_recent"` // Recent maneuver magnitude (m/s)
-	
+	HCWResidual  float64 `json:"hcw_residual"`   // Hill-Clohessy-Wiltshire residual
+	DeltaVRecent float64 `json:"delta_v_recent"` // Recent maneuver magnitude (m/s)
+
 	// Custody state
 	TimeSinceLastCustody float64 `json:"time_since_custody"` // seconds
 	FramesInCustody      int     `json:"frames_in_custody"`  // consecutive frames
@@ -73,19 +75,19 @@ type StateVector struct {
 
 // PolicyResponse represents the action recommendation from Python policy head
 type PolicyResponse struct {
-	Action      int     `json:"action"`       // 0-5 action index
-	ActionProb  float64 `json:"action_prob"`  // Probability of chosen action
-	Value       float64 `json:"value"`        // Critic's state value estimate
-	Entropy     float64 `json:"entropy"`      // Policy entropy (exploration)
-	Timestamp   int64   `json:"timestamp"`    // Unix nanoseconds
+	Action     int     `json:"action"`      // 0-5 action index
+	ActionProb float64 `json:"action_prob"` // Probability of chosen action
+	Value      float64 `json:"value"`       // Critic's state value estimate
+	Entropy    float64 `json:"entropy"`     // Policy entropy (exploration)
+	Timestamp  int64   `json:"timestamp"`   // Unix nanoseconds
 }
 
 // CommandBridge manages ZMQ communication with Python RL policy head
 type CommandBridge struct {
-	endpoint   string
-	timeout    time.Duration
-	socket     interface{} // *zmq.Socket when available
-	connected  bool
+	endpoint  string
+	timeout   time.Duration
+	socket    *zmq4.Socket
+	connected bool
 }
 
 // NewCommandBridge creates a new RL command bridge
@@ -93,7 +95,7 @@ func NewCommandBridge(endpoint string) *CommandBridge {
 	if endpoint == "" {
 		endpoint = "ipc:///tmp/policy_bridge.ipc"
 	}
-	
+
 	return &CommandBridge{
 		endpoint:  endpoint,
 		timeout:   100 * time.Millisecond, // Fast response required
@@ -103,42 +105,61 @@ func NewCommandBridge(endpoint string) *CommandBridge {
 
 // Connect establishes ZMQ connection to Python policy head
 func (cb *CommandBridge) Connect() error {
-	// TODO: Implement ZMQ REQ socket when zmq4 available
-	// For now, return success to allow testing
+	socket, err := zmq4.NewSocket(zmq4.REQ)
+	if err != nil {
+		return fmt.Errorf("failed to create ZMQ REQ socket: %w", err)
+	}
+
+	// Set receive timeout to prevent blocking forever
+	socket.SetRcvtimeo(cb.timeout)
+
+	if err := socket.Connect(cb.endpoint); err != nil {
+		socket.Close()
+		return fmt.Errorf("failed to connect to %s: %w", cb.endpoint, err)
+	}
+
+	cb.socket = socket
 	cb.connected = true
+	fmt.Printf("[RL] Connected to Python policy head at %s\n", cb.endpoint)
 	return nil
 }
 
 // GetAction requests action decision from RL policy head
 func (cb *CommandBridge) GetAction(state StateVector) (*PolicyResponse, error) {
-	if !cb.connected {
+	if !cb.connected || cb.socket == nil {
 		return nil, fmt.Errorf("command bridge not connected")
 	}
-	
+
 	// Serialize state to JSON
 	stateJSON, err := json.Marshal(state)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal state: %w", err)
 	}
-	
-	// TODO: Send via ZMQ and receive response
-	// For now, return default action
-	defaultResponse := &PolicyResponse{
-		Action:     int(ActionPassiveTrack),
-		ActionProb: 0.95,
-		Value:      0.5,
-		Entropy:    0.1,
-		Timestamp:  time.Now().UnixNano(),
+
+	// Send state via ZMQ
+	if _, err := cb.socket.Send(string(stateJSON), 0); err != nil {
+		return nil, fmt.Errorf("failed to send state to policy head: %w", err)
 	}
-	
-	_ = stateJSON // Use in actual ZMQ implementation
-	return defaultResponse, nil
+
+	// Receive response
+	reply, err := cb.socket.Recv(0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to receive response from policy head: %w", err)
+	}
+
+	// Parse response
+	var response PolicyResponse
+	if err := json.Unmarshal([]byte(reply), &response); err != nil {
+		return nil, fmt.Errorf("failed to parse policy response: %w", err)
+	}
+
+	return &response, nil
 }
 
 // ExecuteAction performs the tactical action
 func (cb *CommandBridge) ExecuteAction(action Action, state StateVector) error {
 	actionName := ActionNames[action]
-	
+
 	switch action {
 	case ActionPassiveTrack:
 		return cb.executePassiveTrack(state)
@@ -195,7 +216,12 @@ func (cb *CommandBridge) executeFuelOptimalEvade(state StateVector) error {
 
 // Disconnect closes ZMQ connection
 func (cb *CommandBridge) Disconnect() error {
+	if cb.socket != nil {
+		cb.socket.Close()
+		cb.socket = nil
+	}
 	cb.connected = false
+	fmt.Printf("[RL] Disconnected from Python policy head\n")
 	return nil
 }
 
@@ -206,9 +232,9 @@ func (cb *CommandBridge) IsConnected() bool {
 
 // TacticalAgent provides high-level RL-driven decision making
 type TacticalAgent struct {
-	bridge     *CommandBridge
-	lastAction Action
-	lastIntent Intent
+	bridge       *CommandBridge
+	lastAction   Action
+	lastIntent   Intent
 	stateHistory []StateVector
 }
 
@@ -229,23 +255,23 @@ func (ta *TacticalAgent) Decide(currentState StateVector) (Action, error) {
 	if len(ta.stateHistory) > 100 {
 		ta.stateHistory = ta.stateHistory[1:] // Keep last 100
 	}
-	
+
 	// Get action from RL policy head
 	response, err := ta.bridge.GetAction(currentState)
 	if err != nil {
 		// Fallback to rule-based decision
 		return ta.fallbackDecision(currentState), nil
 	}
-	
+
 	action := Action(response.Action)
 	ta.lastAction = action
 	ta.lastIntent = Intent(currentState.Intent)
-	
+
 	// Execute the action
 	if err := ta.bridge.ExecuteAction(action, currentState); err != nil {
 		return action, fmt.Errorf("failed to execute action %s: %w", ActionNames[action], err)
 	}
-	
+
 	return action, nil
 }
 
@@ -255,17 +281,17 @@ func (ta *TacticalAgent) fallbackDecision(state StateVector) Action {
 	if state.Intent == int(IntentKineticThreat) && state.Confidence > 0.8 {
 		return ActionTacticalAlert
 	}
-	
+
 	// Electronic warfare with power spike → geolocation
 	if state.Intent == int(IntentElectronicWarfare) && state.PowerEstimate > -20.0 {
 		return ActionEmitterGeo
 	}
-	
+
 	// RPO inspection with close approach → active scanning
 	if state.Intent == int(IntentRPOInspection) && state.HCWResidual < 0.1 {
 		return ActionActiveScan
 	}
-	
+
 	// Default: passive tracking
 	return ActionPassiveTrack
 }
@@ -295,23 +321,23 @@ func (ta *TacticalAgent) Reset() {
 // CalculateReward computes physics-informed reward for state transition
 func (ta *TacticalAgent) CalculateReward(prevState, nextState StateVector, action Action) float64 {
 	// R = w1*CustodyTime - w2*sum|Δv| - w3*ThreatMiss
-	
+
 	// Weights
 	w1 := 1.0  // Custody reward
 	w2 := 0.5  // Fuel penalty
 	w3 := 10.0 // Threat miss penalty (heavy)
-	
+
 	// Custody reward (frames in custody)
 	custodyReward := float64(nextState.FramesInCustody) * w1
-	
+
 	// Fuel penalty (recent delta-V)
 	fuelPenalty := nextState.DeltaVRecent * w2
-	
+
 	// Threat miss penalty
 	threatPenalty := 0.0
 	if nextState.Intent == int(IntentKineticThreat) && action != ActionTacticalAlert && action != ActionFuelOptimalEvade {
 		threatPenalty = w3 // Heavy penalty for missing kinetic threat
 	}
-	
+
 	return custodyReward - fuelPenalty - threatPenalty
 }

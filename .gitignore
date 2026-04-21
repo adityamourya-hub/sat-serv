@@ -15,9 +15,13 @@ ai/models/**
 ai/training/**
 ai/simulator/data/**
 pkg/ml/models/**
+pkg/ml/pax/models/**
 models/llm/**
 *.jsonl
 *.onnx
+*.onnx.data
+*.pth
+*.pt
 
 # Training datasets (large files, stored in GCS)
 training-data/

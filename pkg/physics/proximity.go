@@ -1,5 +1,48 @@
 package physics
 
+import "time"
+
+/**
+ * Propagator provides high-fidelity orbital propagation for collision assessment.
+ */
+type Propagator struct {
+	// Core propagator state - fields defined as needed
+	db interface{} // Database connection for state retrieval
+}
+
+// OrbitalObject represents a catalog object (local stub for compatibility)
+type OrbitalObject struct {
+	ID         string
+	NoradID    int
+	S2CellID   uint64
+	Position   Point
+	Lat        float64
+	Lng        float64
+	AltitudeKm float64
+	Timestamp  time.Time
+	Metadata   []byte
+}
+
+// Point represents a geographic point
+type Point struct {
+	Lat, Lng float64
+}
+
+// GetState retrieves current state for an object by NORAD ID
+func (p *Propagator) GetState(noradID int) (*OrbitalObject, error) {
+	// Placeholder: In production, query from catalog or propagate from TLE
+	return &OrbitalObject{
+		NoradID: noradID,
+	}, nil
+}
+
+// CalculatePc computes Probability of Collision between two objects
+func (p *Propagator) CalculatePc(primary, secondary *OrbitalObject) float64 {
+	// Simplified Pc calculation
+	// In production: Use Foster-Alfano or Chan method
+	return 1e-6 // Placeholder
+}
+
 /**
  * CollisionRiskInput defines the parameters for a conjunction assessment.
  */

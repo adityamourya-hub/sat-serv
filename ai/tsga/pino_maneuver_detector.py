@@ -19,6 +19,8 @@ class PINOManoeuvreDetector:
         """
         v_mag = np.linalg.norm(v)
         r_mag = np.linalg.norm(r)
+        if r_mag == 0:
+            raise ValueError("Position vector magnitude cannot be zero")
         return (v_mag**2 / 2.0) - (self.mu / r_mag)
 
     def detect_manoeuvre(self, states: np.ndarray, threshold: float = 0.01) -> bool:
@@ -28,6 +30,8 @@ class PINOManoeuvreDetector:
         """
         if len(states) < 2:
             return False
+        if states.shape[1] != 6:
+            raise ValueError("Each state vector must have 6 elements [r_x, r_y, r_z, v_x, v_y, v_z]")
             
         r_start, v_start = states[0][:3], states[0][3:]
         h_initial = self.calculate_h_specific(r_start, v_start)

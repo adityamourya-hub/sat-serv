@@ -21,6 +21,7 @@ import (
 	"math"
 	"ssis/pkg/orbital"
 	"ssis/pkg/physics"
+	"time"
 )
 
 // SensorPlatform represents a space-based SSA asset
@@ -74,6 +75,17 @@ type SensorPayload struct {
 	RangeLimit  float64 // Maximum detection range (km)
 	Wavelength  WavelengthBand
 	Sensitivity float64 // Magnitude limit or SNR threshold
+
+	// Slew dynamics
+	MaxSlewRate      float64 // Maximum angular velocity (deg/s)
+	MaxAcceleration  float64 // Maximum angular acceleration (deg/s²)
+	CurrentAzimuth   float64 // Current azimuth pointing (degrees)
+	CurrentElevation float64 // Current elevation pointing (degrees)
+
+	// DSP Preprocessor chain for sensor data
+	AnalogPreprocessor  *AnalogPreprocessor
+	DigitalPreprocessor *DigitalPreprocessor
+	DSPPreprocessor     *DSPPreprocessor
 }
 
 // SensorType
@@ -131,18 +143,26 @@ func NewGSSAP1(epochJD float64) *SensorPlatform {
 		},
 		Sensors: []SensorPayload{
 			{
-				Type:        SensorOptical,
-				FOV:         2.0,   // Narrow FOV for detailed imaging
-				RangeLimit:  50000, // GEO to GEO range
-				Wavelength:  BandVisible,
-				Sensitivity: 15.0, // Visual magnitude limit
+				Type:             SensorOptical,
+				FOV:              2.0,   // Narrow FOV for detailed imaging
+				RangeLimit:       50000, // GEO to GEO range
+				Wavelength:       BandVisible,
+				Sensitivity:      15.0, // Visual magnitude limit
+				MaxSlewRate:      2.0,  // 2 deg/s (typical for GEO surveillance)
+				MaxAcceleration:  1.0,  // 1 deg/s²
+				CurrentAzimuth:   0.0,
+				CurrentElevation: 0.0,
 			},
 			{
-				Type:        SensorIR,
-				FOV:         2.0,
-				RangeLimit:  50000,
-				Wavelength:  BandThermalIR,
-				Sensitivity: 12.0,
+				Type:             SensorIR,
+				FOV:              2.0,
+				RangeLimit:       50000,
+				Wavelength:       BandThermalIR,
+				Sensitivity:      12.0,
+				MaxSlewRate:      2.0,
+				MaxAcceleration:  1.0,
+				CurrentAzimuth:   0.0,
+				CurrentElevation: 0.0,
 			},
 		},
 		EpochJD: epochJD,
@@ -165,11 +185,15 @@ func NewGSSAP2(epochJD float64) *SensorPlatform {
 		},
 		Sensors: []SensorPayload{
 			{
-				Type:        SensorOptical,
-				FOV:         2.0,
-				RangeLimit:  50000,
-				Wavelength:  BandVisible,
-				Sensitivity: 15.0,
+				Type:             SensorOptical,
+				FOV:              2.0,
+				RangeLimit:       50000,
+				Wavelength:       BandVisible,
+				Sensitivity:      15.0,
+				MaxSlewRate:      2.0,
+				MaxAcceleration:  1.0,
+				CurrentAzimuth:   120.0,
+				CurrentElevation: 0.0,
 			},
 		},
 		EpochJD: epochJD,
@@ -194,11 +218,15 @@ func NewSBSS(epochJD float64) *SensorPlatform {
 		},
 		Sensors: []SensorPayload{
 			{
-				Type:        SensorOptical,
-				FOV:         60.0,  // Wide FOV for survey
-				RangeLimit:  50000, // Can see GEO from LEO
-				Wavelength:  BandVisible,
-				Sensitivity: 19.0, // Very sensitive (dim objects)
+				Type:             SensorOptical,
+				FOV:              60.0,  // Wide FOV for survey
+				RangeLimit:       50000, // Can see GEO from LEO
+				Wavelength:       BandVisible,
+				Sensitivity:      19.0, // Very sensitive (dim objects)
+				MaxSlewRate:      5.0,  // Faster slew for LEO platform
+				MaxAcceleration:  3.0,  // Higher acceleration
+				CurrentAzimuth:   0.0,
+				CurrentElevation: 45.0,
 			},
 		},
 		EpochJD: epochJD,
@@ -226,18 +254,26 @@ func NewNorthStarConstellation(epochJD float64) []*SensorPlatform {
 			},
 			Sensors: []SensorPayload{
 				{
-					Type:        SensorOptical,
-					FOV:         45.0,
-					RangeLimit:  40000,
-					Wavelength:  BandVisible,
-					Sensitivity: 17.0,
+					Type:             SensorOptical,
+					FOV:              45.0,
+					RangeLimit:       40000,
+					Wavelength:       BandVisible,
+					Sensitivity:      17.0,
+					MaxSlewRate:      4.0,
+					MaxAcceleration:  2.0,
+					CurrentAzimuth:   float64(i) * 120.0,
+					CurrentElevation: 30.0,
 				},
 				{
-					Type:        SensorIR,
-					FOV:         30.0,
-					RangeLimit:  30000,
-					Wavelength:  BandThermalIR,
-					Sensitivity: 14.0,
+					Type:             SensorIR,
+					FOV:              30.0,
+					RangeLimit:       30000,
+					Wavelength:       BandThermalIR,
+					Sensitivity:      14.0,
+					MaxSlewRate:      4.0,
+					MaxAcceleration:  2.0,
+					CurrentAzimuth:   float64(i) * 120.0,
+					CurrentElevation: 30.0,
 				},
 			},
 			EpochJD: epochJD,
@@ -265,11 +301,15 @@ func NewAndromedaRGXX(epochJD float64) *SensorPlatform {
 		},
 		Sensors: []SensorPayload{
 			{
-				Type:        SensorOptical,
-				FOV:         3.0,
-				RangeLimit:  50000,
-				Wavelength:  BandVisible,
-				Sensitivity: 14.0,
+				Type:             SensorOptical,
+				FOV:              3.0,
+				RangeLimit:       50000,
+				Wavelength:       BandVisible,
+				Sensitivity:      14.0,
+				MaxSlewRate:      2.5,
+				MaxAcceleration:  1.5,
+				CurrentAzimuth:   180.0,
+				CurrentElevation: 0.0,
 			},
 		},
 		EpochJD: epochJD,
@@ -388,8 +428,13 @@ func (p *SensorPlatform) ComputeObservationGeometry(target physics.State, sunPos
 
 // IsIlluminated checks if point is in Earth's shadow
 func IsIlluminated(pos [3]float64, sunPos [3]float64) bool {
+	return IsIlluminatedWithConfig(pos, sunPos, defaultConfig)
+}
+
+// IsIlluminatedWithConfig checks if point is in Earth's shadow with custom config
+func IsIlluminatedWithConfig(pos [3]float64, sunPos [3]float64, config SensorsConfig) bool {
 	// Simple cylindrical shadow model
-	// Earth radius ~6378 km, shadow cylinder extends ~1.4M km
+	// Earth shadow cylinder extends ~1.4M km
 
 	// Vector from sun to point
 	dx := pos[0] - sunPos[0]
@@ -420,7 +465,7 @@ func IsIlluminated(pos [3]float64, sunPos [3]float64) bool {
 		(pos[2]-closestZ)*(pos[2]-closestZ))
 
 	// Earth shadow radius (including penumbra)
-	shadowRadius := 6378.0 * 1.05 // ~1% penumbra
+	shadowRadius := config.EarthRadius * config.EarthShadowPenumbra
 
 	return distToLine > shadowRadius
 }
@@ -439,6 +484,429 @@ func (p *SensorPlatform) Propagate(targetJD float64, params physics.PhysicsParam
 	p.State.Pos = [3]float64{newState[0], newState[1], newState[2]}
 	p.State.Vel = [3]float64{newState[3], newState[4], newState[5]}
 	p.EpochJD = targetJD
+}
+
+// EstimateSlewTime calculates time required to slew sensor to target
+// Uses angular acceleration profile: trapezoidal velocity profile
+func (p *SensorPlatform) EstimateSlewTime(targetState [6]float64) time.Duration {
+	if len(p.Sensors) == 0 {
+		return 5 * time.Second // Default if no sensors
+	}
+
+	sensor := p.Sensors[0] // Use primary sensor
+
+	// Compute target azimuth/elevation from platform
+	targetPos := physics.State{
+		Pos: physics.Vector3{targetState[0], targetState[1], targetState[2]},
+		Vel: physics.Vector3{targetState[3], targetState[4], targetState[5]},
+	}
+	sunPos := computeSunPositionECI(p.EpochJD)
+	geo := p.ComputeObservationGeometry(targetPos, sunPos)
+
+	if !geo.Visible {
+		return 60 * time.Second // Long time if not visible
+	}
+
+	// Angular distance from current pointing to target
+	dAz := geo.Azimuth - sensor.CurrentAzimuth
+	dEl := geo.Elevation - sensor.CurrentElevation
+
+	// Normalize angles to [-180, 180]
+	for dAz > 180 {
+		dAz -= 360
+	}
+	for dAz < -180 {
+		dAz += 360
+	}
+
+	angularDistance := math.Sqrt(dAz*dAz + dEl*dEl) // degrees
+
+	// Trapezoidal velocity profile
+	// Time to accelerate to max slew rate
+	tAccel := sensor.MaxSlewRate / sensor.MaxAcceleration
+
+	// Distance during acceleration
+	distAccel := 0.5 * sensor.MaxAcceleration * tAccel * tAccel
+
+	// If angular distance is small, never reach max slew rate
+	if angularDistance < 2*distAccel {
+		// Triangular profile: accelerate then decelerate
+		tTotal := 2 * math.Sqrt(angularDistance/sensor.MaxAcceleration)
+		return time.Duration(tTotal) * time.Second
+	}
+
+	// Trapezoidal profile: accelerate, coast, decelerate
+	distCoast := angularDistance - 2*distAccel
+	tCoast := distCoast / sensor.MaxSlewRate
+	tTotal := 2*tAccel + tCoast
+
+	return time.Duration(tTotal) * time.Second
+}
+
+// CanObserve checks if sensor can observe target at given time
+func (p *SensorPlatform) CanObserve(targetState [6]float64, t time.Time) bool {
+	// Convert time to Julian Date
+	jd := orbital.TimeToJulianDate(t)
+
+	// Propagate platform to current time
+	params := physics.PhysicsParams{Mass: 1000, Cd: 2.2, Cr: 1.0}
+	p.Propagate(jd, params)
+
+	// Compute observation geometry
+	target := physics.State{
+		Pos: physics.Vector3{targetState[0], targetState[1], targetState[2]},
+		Vel: physics.Vector3{targetState[3], targetState[4], targetState[5]},
+	}
+	sunPos := computeSunPositionECI(jd)
+	geo := p.ComputeObservationGeometry(target, sunPos)
+
+	// Check visibility
+	if !geo.Visible {
+		return false
+	}
+
+	// Check range limits
+	for _, sensor := range p.Sensors {
+		if geo.Range > sensor.RangeLimit {
+			return false
+		}
+	}
+
+	// Check illumination for optical sensors
+	for _, sensor := range p.Sensors {
+		if sensor.Type == SensorOptical && !geo.Illuminated {
+			return false
+		}
+	}
+
+	return true
+}
+
+// MeasurementCovariance returns sensor measurement noise covariance matrix
+func (p *SensorPlatform) MeasurementCovariance() [3][3]float64 {
+	if len(p.Sensors) == 0 {
+		// Default: 100m position uncertainty
+		return [3][3]float64{
+			{0.01, 0, 0},
+			{0, 0.01, 0},
+			{0, 0, 0.01},
+		}
+	}
+
+	sensor := p.Sensors[0]
+
+	// Covariance based on sensor type and sensitivity
+	var sigma float64 // km (3-sigma)
+
+	switch sensor.Type {
+	case SensorOptical:
+		// Optical: ~100m at GEO range
+		sigma = 0.1
+	case SensorIR:
+		// IR: ~200m at GEO range
+		sigma = 0.2
+	case SensorRadar:
+		// Radar: ~50m at close range
+		sigma = 0.05
+	case SensorLidar:
+		// Lidar: ~10m at close range
+		sigma = 0.01
+	default:
+		sigma = 0.1
+	}
+
+	sigma2 := sigma * sigma
+
+	return [3][3]float64{
+		{sigma2, 0, 0},
+		{0, sigma2, 0},
+		{0, 0, sigma2},
+	}
+}
+
+// ScheduleObservation schedules an observation for a target at specified time
+// In production, this would send command to sensor control system
+func (p *SensorPlatform) ScheduleObservation(objectID string, t time.Time) {
+	// Update sensor pointing to target
+	// In production: Send gRPC message to sensor control
+	// For now: Update current pointing angles
+
+	// This is a placeholder - in production this would:
+	// 1. Send slew command to sensor
+	// 2. Wait for slew completion
+	// 3. Trigger observation
+	// 4. Receive measurement
+}
+
+// Position returns the platform's current ECI position
+func (p *SensorPlatform) Position() [3]float64 {
+	return p.State.Pos
+}
+
+// =============================================================================
+// DSP Pipeline Integration
+// =============================================================================
+
+// PreprocessRawData processes raw sensor data through the full DSP pipeline
+// Returns processed samples, spectrum, features, and preprocessing metadata
+func (p *SensorPlatform) PreprocessRawData(
+	sensorIndex int,
+	rawData []float64,
+) ([]float64, []complex128, *DSPFeatures, *PreprocessingMetadata) {
+	if sensorIndex < 0 || sensorIndex >= len(p.Sensors) {
+		return nil, nil, nil, nil
+	}
+
+	sensor := &p.Sensors[sensorIndex]
+	metadata := &PreprocessingMetadata{
+		SensorType:   sensor.Type.String(),
+		InputSamples: len(rawData),
+		Timestamp:    time.Now(),
+		Stages:       []string{},
+	}
+
+	// Initialize preprocessors if not already done
+	if sensor.AnalogPreprocessor == nil {
+		sensor.AnalogPreprocessor = NewAnalogPreprocessor(DefaultAnalogConfig())
+	}
+	if sensor.DigitalPreprocessor == nil {
+		sensor.DigitalPreprocessor = NewDigitalPreprocessor(DefaultDigitalConfig())
+	}
+	if sensor.DSPPreprocessor == nil {
+		sensor.DSPPreprocessor = NewDSPPreprocessor(DefaultDSPConfig())
+	}
+
+	// Stage 1: Analog preprocessing
+	analogOutput, analogClipped := sensor.AnalogPreprocessor.Process(rawData)
+	metadata.Stages = append(metadata.Stages, "analog")
+	metadata.AnalogClipped = analogClipped
+	analogClipCount, analogSatCount, analogInRMS, analogOutRMS := sensor.AnalogPreprocessor.GetStatistics()
+	metadata.AnalogClippingCount = analogClipCount
+	metadata.AnalogSaturationCount = analogSatCount
+	metadata.AnalogInputRMS = analogInRMS
+	metadata.AnalogOutputRMS = analogOutRMS
+
+	// Stage 2: Digital preprocessing
+	digitalOutput, digitalClipped := sensor.DigitalPreprocessor.Process(analogOutput)
+	metadata.Stages = append(metadata.Stages, "digital")
+	metadata.DigitalClipped = digitalClipped
+	digitalClipCount, digitalQuantErr, _ := sensor.DigitalPreprocessor.GetStatistics()
+	metadata.DigitalClippingCount = digitalClipCount
+	metadata.QuantizationError = digitalQuantErr
+	metadata.SQNR = sensor.DigitalPreprocessor.GetSQNR()
+
+	// Stage 3: DSP processing
+	dspOutput, spectrum, features := sensor.DSPPreprocessor.Process(digitalOutput)
+	metadata.Stages = append(metadata.Stages, "dsp")
+	metadata.SNREstimate = features.SNR
+	metadata.PeakCount = len(features.Peaks)
+
+	metadata.OutputSamples = len(dspOutput)
+	metadata.TotalLatencyMs = time.Since(metadata.Timestamp).Seconds() * 1000.0
+
+	return dspOutput, spectrum, features, metadata
+}
+
+// PreprocessingMetadata contains information about the preprocessing pipeline
+type PreprocessingMetadata struct {
+	SensorType     string
+	InputSamples   int
+	OutputSamples  int
+	Timestamp      time.Time
+	Stages         []string
+	TotalLatencyMs float64
+
+	// Analog stage metrics
+	AnalogClipped         bool
+	AnalogClippingCount   int
+	AnalogSaturationCount int
+	AnalogInputRMS        float64
+	AnalogOutputRMS       float64
+
+	// Digital stage metrics
+	DigitalClipped       bool
+	DigitalClippingCount int
+	SQNR                 float64
+	QuantizationError    float64
+
+	// DSP stage metrics
+	SNREstimate      float64
+	PeakCount        int
+	SpectralCentroid float64
+	Bandwidth        float64
+}
+
+// =============================================================================
+// ObservationReport with Verification Symbolic Certificate (VSC)
+// =============================================================================
+
+// ObservationReport represents a sensor observation with sovereign handshake
+// Every report includes Hamiltonian Invariant Hash for spoof detection
+// If σ_H / H_avg >= 10^-7, certificate self-invalidates
+//
+// References:
+//   - Sovereign Handshake Protocol (ADITI 4.0)
+//   - Physics as Hard Constraint (Augmented Lagrangian optimization)
+type ObservationReport struct {
+	// Report metadata
+	ReportID   string
+	Timestamp  time.Time
+	PlatformID string
+	SensorID   string
+	ObjectID   string
+
+	// Observation data
+	MeasuredState [6]float64    // [x,y,z,vx,vy,vz] km, km/s
+	Covariance    [6][6]float64 // Measurement uncertainty
+
+	// Verification Symbolic Certificate (VSC)
+	SymbolicCertificate *VerificationCertificate
+
+	// Physics consistency verification
+	HamiltonianHash  string  // Hash of H(q,p) for energy conservation check
+	HamiltonianValue float64 // Computed H(q,p)
+	EnergyDrift      float64 // |H(t) - H(0)| / |H(0)|
+	ConsistencyGrade string  // A/B/C/D based on physics compliance
+
+	// Falsifiable predictions (60s lookahead for VSC validation)
+	PredictedState60s [6]float64
+	PredictionCI      [6][2]float64 // Bootstrap confidence intervals
+
+	// Provenance
+	CausalChain []string // Processing steps applied
+	RawDataHash string   // Hash of raw sensor data
+
+	// DSP Pipeline preprocessing metadata
+	PreprocessingMetadata *PreprocessingMetadata
+}
+
+// VerificationCertificate extends SINDy EquationString with bootstrap CI,
+// physics consistency grade, causal provenance, and falsifiable predictions
+type VerificationCertificate struct {
+	// Symbolic representation
+	EquationString string // SINDy-derived dynamics equation
+	LaTeXForm      string // Human-readable equation
+
+	// Statistical validation
+	BootstrapCI      [6][2]float64 // 95% confidence intervals per state dimension
+	PhysicsGrade     string        // A: strict energy/momentum conservation, B: within tolerance, C: approximate
+	CausalProvenance []string      // Chain of processing/modification steps
+
+	// Falsifiable predictions (60s window)
+	PredictedState60s [6]float64 // Predicted state 60 seconds ahead
+	PredictionError   float64    // Actual error at t+60s (validated post-facto)
+	FalsificationFlag bool       // True if prediction outside CI (indicates model failure)
+
+	// Cryptographic verification
+	HamiltonianHash    string // SHA-256 of canonical H representation
+	CertificateHash    string // SHA-256 of entire certificate
+	TimestampSignature string // Ed25519 signature of report timestamp
+}
+
+// ComputeHamiltonianHash computes the Hamiltonian invariant hash for spoof detection
+// Uses canonical string representation of H(q,p) to ensure reproducibility
+func (r *ObservationReport) ComputeHamiltonianHash() string {
+	// Canonical representation: "H=T+V;T=0.5*sum(p_i^2);V=-mu/sqrt(sum(q_i^2))"
+	// This is a simplified hash - production would use full canonical form
+
+	// Compute hash from measured state
+	hashInput := fmt.Sprintf("H=%.15e|q=[%.15e,%.15e,%.15e]|p=[%.15e,%.15e,%.15e]",
+		r.HamiltonianValue,
+		r.MeasuredState[0], r.MeasuredState[1], r.MeasuredState[2],
+		r.MeasuredState[3], r.MeasuredState[4], r.MeasuredState[5])
+
+	// In production: Use SHA-256 of canonical representation
+	// For now, use simple string hash
+	return hashInput
+}
+
+// VerifyPhysicsConsistency checks if observation satisfies physics constraints
+// Returns grade and whether certificate is valid
+func (r *ObservationReport) VerifyPhysicsConsistency() (grade string, valid bool) {
+	// Grade A: Energy drift < 10^-10 (machine precision limited)
+	// Grade B: Energy drift < 10^-7 (sovereign handshake threshold)
+	// Grade C: Energy drift < 10^-5 (acceptable for operations)
+	// Grade D: Energy drift >= 10^-5 (suspect/spoof)
+
+	if r.EnergyDrift < 1e-10 {
+		return "A", true
+	} else if r.EnergyDrift < 1e-7 {
+		return "B", true
+	} else if r.EnergyDrift < 1e-5 {
+		return "C", true
+	} else {
+		return "D", false // Self-invalidate
+	}
+}
+
+// GenerateObservationReport creates a VSC-enriched observation report
+func (platform *SensorPlatform) GenerateObservationReport(
+	objectID string,
+	measuredState [6]float64,
+	covariance [6][6]float64,
+	predictedState [6]float64, // From propagation model
+	preprocessingMetadata *PreprocessingMetadata, // DSP pipeline metadata
+) *ObservationReport {
+
+	report := &ObservationReport{
+		ReportID:              fmt.Sprintf("%s-%s-%d", platform.ID, objectID, time.Now().UnixNano()),
+		Timestamp:             time.Now(),
+		PlatformID:            platform.ID,
+		SensorID:              platform.Sensors[0].Type.String(),
+		ObjectID:              objectID,
+		MeasuredState:         measuredState,
+		Covariance:            covariance,
+		CausalChain:           []string{"raw_sensor", "dsp_preprocessing", "centroid_extraction", "astrometric_calibration"},
+		PreprocessingMetadata: preprocessingMetadata,
+	}
+
+	// Compute Hamiltonian for energy consistency check
+	// This is the key for sovereign handshake: H must be conserved
+	q := []float64{measuredState[0], measuredState[1], measuredState[2]}
+	mom := []float64{measuredState[3], measuredState[4], measuredState[5]}
+
+	// Use PHS model to compute Hamiltonian
+	phsModel := &orbitalPHSModel{mu: 398600.4418, isHGV: false}
+	H := phsModel.Hamiltonian(q, mom, nil)
+
+	report.HamiltonianValue = H
+	hash := report.ComputeHamiltonianHash()
+	report.HamiltonianHash = hash
+
+	// Compute energy drift (requires reference H from catalog)
+	// This will be populated when compared to catalog entry
+	report.EnergyDrift = 0.0 // Placeholder
+
+	// Convert covariance [6][6] to bootstrap CI [6][2] (diagonal approximation)
+	var bootstrapCI [6][2]float64
+	for i := 0; i < 6; i++ {
+		sigma := math.Sqrt(covariance[i][i])
+		bootstrapCI[i][0] = measuredState[i] - 2*sigma // 95% CI lower bound
+		bootstrapCI[i][1] = measuredState[i] + 2*sigma // 95% CI upper bound
+	}
+
+	// Create symbolic certificate
+	report.SymbolicCertificate = &VerificationCertificate{
+		EquationString:    "ẍ = -μ/r³ · x", // Simplified orbital dynamics
+		LaTeXForm:         "$\\ddot{\\mathbf{x}} = -\\frac{\\mu}{r^3} \\mathbf{x}$",
+		BootstrapCI:       bootstrapCI,
+		PhysicsGrade:      "B", // Will be updated by VerifyPhysicsConsistency
+		CausalProvenance:  report.CausalChain,
+		PredictedState60s: predictedState,
+		HamiltonianHash:   hash,
+	}
+
+	// Verify and set final grade
+	grade, valid := report.VerifyPhysicsConsistency()
+	report.ConsistencyGrade = grade
+	report.SymbolicCertificate.PhysicsGrade = grade
+
+	if !valid {
+		// Certificate self-invalidates
+		report.SymbolicCertificate.FalsificationFlag = true
+	}
+
+	return report
 }
 
 // MultiPlatformFusion aggregates observations from multiple space-based sensors

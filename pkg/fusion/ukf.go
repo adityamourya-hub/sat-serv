@@ -233,11 +233,24 @@ func UKFUpdateWithGating(x []float64, p [][]float64, z []float64, r [][]float64,
 		return nil, nil, 0, 0, false, fmt.Errorf("safe mahalanobis failed: %w", err)
 	}
 	mahal := math.Sqrt(maxFloat64(mahal2, 0))
-	gate := 6.5
-	if float64(m) > 4 {
-		gate = 7.0
+	var gate float64
+	if cfg.AdaptiveGating {
+		gate = cfg.BaseGateThreshold + cfg.GateLearningRate*math.Sqrt(mahal2)
+	} else {
+		gate = 6.5
+		if float64(m) > 4 {
+			gate = 7.0
+		}
 	}
 	accepted := mahal <= gate
+
+	if cfg.EnableDetailedLogging {
+		if !accepted {
+			fmt.Printf("[UKF-REJECT] Mahal=%.3f > Gate=%.3f (dim=%d)\n", mahal, gate, m)
+		} else {
+			fmt.Printf("[UKF-ACCEPT] Mahal=%.3f <= Gate=%.3f (dim=%d)\n", mahal, gate, m)
+		}
+	}
 
 	nis := mahal2 / math.Max(float64(m), 1)
 	if !accepted {

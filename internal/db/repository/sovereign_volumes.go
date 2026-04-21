@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -148,7 +149,7 @@ func (r *SovereignVolumeRepo) ScanAllVolumes(ctx context.Context) (map[string][]
 	for _, volume := range volumes {
 		intrusions, err := r.ScanVolumeForAdversaries(ctx, volume)
 		if err != nil {
-			logf("Failed to scan volume %s: %v", volume.Name, err)
+			slog.Error("Failed to scan volume", "volume", volume.Name, "error", err)
 			continue
 		}
 		results[volume.Name] = intrusions
@@ -340,11 +341,6 @@ type SaturationAlert struct {
 	DetectedAt        time.Time
 }
 
-// logf helper to avoid circular import
-func logf(format string, v ...interface{}) {
-	fmt.Printf(format+"\n", v...)
-}
-
 // scanIntrusions reads intrusion results from rows
 func (r *SovereignVolumeRepo) scanIntrusions(rows pgx.Rows) ([]IntrusionResult, error) {
 	var intrusions []IntrusionResult
@@ -359,7 +355,8 @@ func (r *SovereignVolumeRepo) scanIntrusions(rows pgx.Rows) ([]IntrusionResult, 
 			&velSlice, &i.DetectedAt, &i.ThreatLevel,
 		)
 		if err != nil {
-			continue // Skip malformed rows
+			slog.Error("Failed to scan intrusion result", "error", err)
+			continue
 		}
 
 		if len(velSlice) >= 3 {
@@ -392,7 +389,8 @@ func (r *SovereignVolumeRepo) scanStateVectors(rows pgx.Rows) ([]*StateVector, e
 			&sv.LastUpdated, &sv.TLELine1, &sv.TLELine2,
 		)
 		if err != nil {
-			continue // Skip malformed rows
+			slog.Error("Failed to scan state vector", "error", err)
+			continue
 		}
 
 		sv.Position = [3]float64{lon, lat, alt}

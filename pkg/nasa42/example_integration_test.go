@@ -57,11 +57,7 @@ func Example_hybridPropagation() {
 
 		// Connect to 42 (would be running as separate process)
 		config := DefaultIPCConfig()
-		propagator, err := NewHighFidelityPropagator(config)
-		if err != nil {
-			fmt.Printf("Note: NASA 42 not running (demo mode): %v\n", err)
-			return
-		}
+		propagator := NewHighFidelityPropagator(config)
 		defer propagator.Close()
 
 		// Propagate both objects with high fidelity
@@ -76,8 +72,8 @@ func Example_hybridPropagation() {
 		}
 
 		// 42 uses Kane's Equations + flexible body dynamics
-		primaryFinal, _ := propagator.Propagate(primaryInitial, 3600.0) // 1 hour
-		_, _ = propagator.Propagate(secondaryInitial, 3600.0)
+		primaryFinal, _ := propagator.Propagate(primaryInitial, 1000.0, 3600.0) // 1 hour, 1000kg
+		_, _ = propagator.Propagate(secondaryInitial, 1000.0, 3600.0)
 
 		// Step 3: Validate ADITI against NASA 42
 		fmt.Println("\n=== Step 3: Validation ===")

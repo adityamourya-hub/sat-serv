@@ -1,0 +1,49 @@
+# SSIS Production Configuration Template
+# <plan_complexity>Low</plan_complexity>
+#
+# Usage: Copy to config.yaml for production deployment with GPU acceleration
+# WARNING: Requires NVIDIA GPU with CUDA 11.8+ and onnxruntime-gpu
+
+# Engine Performance (GPU Accelerated)
+engine:
+  batch_size: 64          # Increased for GPU memory
+  worker_count: 16        # Reduced - GPU parallelizes internally
+  provider: "CUDA"        # Production: CUDA for inference
+  max_queue_depth: 10000  # Higher throughput for operational SSA
+
+# Physics & Failover
+physics:
+  d_kl_threshold: 4.5    # Nats (Entropy threshold for model switching)
+  propagation_step: 60.0   # Seconds - standard TLE epoch step
+  sigma_position: 1.0    # km (Position uncertainty for D_KL)
+
+# Sensing (ATeena-IQNet Production)
+sensing:
+  p_det_threshold: 0.95   # Higher detection threshold for production
+  num_pulses: 256         # Increased pulse integration
+  fs: 100000000.0         # 100 MHz sampling
+
+# Security (Production Hardening)
+security:
+  mtls_enabled: true
+  jwt_expiration: "8h"    # Shorter expiration for operational security
+  audit_level: "VERBOSE"  # Full audit trail for sovereign operations
+
+# Proximity Analysis (Operational Thresholds)
+proximity:
+  # Screening parameters
+  default_threat_radius_km: 500.0
+  default_fov_half_angle_deg: 30.0
+  temporal_tolerance_sec: 0.5
+
+  # Reachability parameters
+  cw_horizon_threshold_sec: 1800.0   # 30 minutes - conjunction warning
+  stm_horizon_max_sec: 7200.0        # 2 hours - strategic timeline
+
+  # Coverage parameters
+  coverage_index_resolution_lat: 360   # Higher resolution for production
+  coverage_index_resolution_lon: 720
+
+  # Threat evaluation thresholds
+  tight_proximity_km: 100.0
+  critical_intercept_km: 20.0

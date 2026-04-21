@@ -19,6 +19,8 @@ class AsynchronousSpikeEngine:
         self.callbacks: Dict[int, Callable] = {}
 
     def schedule_spike(self, neuron_id: int, delay_steps: int):
+        if delay_steps < 0:
+            raise ValueError("delay_steps must be non-negative")
         target_step = (self.current_step + delay_steps) % self.buffer_size
         self.bins[target_step].append(neuron_id)
 

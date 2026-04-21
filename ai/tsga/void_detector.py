@@ -21,15 +21,23 @@ class TopologicalVoidDetector:
         """
         if len(satellite_positions) < 4:
             return []
-            
-        tri = Delaunay(satellite_positions)
+        
+        try:
+            tri = Delaunay(satellite_positions)
+        except Exception:
+            return []
         
         voids = []
         for i, simplex in enumerate(tri.simplices):
             # Calculate the circumradius of the tetrahedron (simplex).
             # A large circumradius indicates a 'void' in the point cloud.
-            centroid = satellite_positions[simplex].mean(axis=0)
-            dist = np.linalg.norm(satellite_positions[simplex] - centroid, axis=1).max()
+            points = satellite_positions[simplex]
+            centroid = points.mean(axis=0)
+            dist = np.linalg.norm(points - centroid, axis=1).max()
+            
+            # Skip degenerate simplices (very small volume)
+            if np.linalg.det(points - centroid) < 1e-10:
+                continue
             
             if dist > threshold:
                 voids.append(simplex)

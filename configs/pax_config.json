@@ -1,0 +1,32 @@
+{
+  "thermal": {
+    "upshift_threshold": 72.0,
+    "downshift_threshold": 80.0,
+    "cooldown_duration_sec": 30.0
+  },
+  "tier_switching": {
+    "up_threshold": 0.7,
+    "down_threshold": 0.85,
+    "cooldown_frames": 10
+  },
+  "conflict": {
+    "conflict_threshold": 0.5,
+    "resolution_timer": 50,
+    "conflict_safe": 0.2
+  },
+  "mode_probabilities": {
+    "ballistic_threshold": 0.92,
+    "hgv_glide_threshold": 0.5,
+    "maneuver_threshold": 0.4,
+    "maneuver_r2_threshold": 0.5
+  },
+  "forest_ruth": {
+    "gamma": 1.35120719195966
+  },
+  "hot_reload": {
+    "_comment": "WARNING: Automatic background reloading via interval_sec is NOT IMPLEMENTED. Use controller.ReloadConfig() manually or implement ticker in calling code.",
+    "enabled": true,
+    "interval_sec": 10,
+    "config_path": "configs/pax_config.json"
+  }
+}

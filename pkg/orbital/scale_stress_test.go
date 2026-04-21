@@ -7,15 +7,14 @@ import (
 	"math/rand"
 	"net/http"
 	"runtime"
-	"strings"
-	"testing"
-	"time"
-
 	"ssis/pkg/catalog"
 	"ssis/pkg/maneuver"
 	"ssis/pkg/octree"
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 	"ssis/pkg/proximity"
+	"strings"
+	"testing"
+	"time"
 
 	"github.com/cprosche/tle"
 )
@@ -102,11 +101,11 @@ func loadFullCatalog() {
 					mu := 398600.4418
 					a := math.Pow(mu/(n_rad_s*n_rad_s), 1.0/3.0)
 
-					k := proximity.Keplerian{
+					k := physics.Keplerian{
 						A: a, E: t.Eccentricity, I: t.InclinationDegrees * math.Pi / 180.0,
 						RAAN: t.RightAscensionDegrees * math.Pi / 180.0, ARGP: t.PerigeeArgumentDegrees * math.Pi / 180.0,
 					}
-					pos := proximity.KeplerToECI(k, t.MeanAnomalyDegrees*math.Pi/180.0, mu)
+					pos := physics.KeplerToECI(k, t.MeanAnomalyDegrees*math.Pi/180.0, mu)
 
 					name := t.Name
 					if name == "" || name == "0" {
@@ -142,8 +141,8 @@ func loadFullCatalog() {
 		rng := rand.New(rand.NewSource(0xAD1712026))
 		for i := 0; i < TotalTarget; i++ {
 			a := 6378.0 + 300.0 + rng.Float64()*35000.0
-			k := proximity.Keplerian{A: a, E: rng.Float64() * 0.1, I: rng.Float64() * math.Pi, RAAN: rng.Float64() * 2 * math.Pi, ARGP: rng.Float64() * 2 * math.Pi}
-			pos := proximity.KeplerToECI(k, rng.Float64()*2*math.Pi, 398600.4418)
+			k := physics.Keplerian{A: a, E: rng.Float64() * 0.1, I: rng.Float64() * math.Pi, RAAN: rng.Float64() * 2 * math.Pi, ARGP: rng.Float64() * 2 * math.Pi}
+			pos := physics.KeplerToECI(k, rng.Float64()*2*math.Pi, 398600.4418)
 			fullCatalog = append(fullCatalog, catalog.ObjectRecord{
 				ID: 100000 + i, Name: fmt.Sprintf("SYN-%d", i), CountryCode: "SYN", AssetType: "DEBRIS",
 				Pos: octree.Vector3{X: pos[0], Y: pos[1], Z: pos[2]},
@@ -164,7 +163,7 @@ func loadFullCatalog() {
 	for len(fullCatalog) < TotalTarget {
 		base := baseRecords[idx%len(baseRecords)]
 		// Convert to Keplerian then perturb
-		k := proximity.CartesianToKepler(orbital.State{X: base.Pos.X, Y: base.Pos.Y, Z: base.Pos.Z}, 398600.4418)
+		k := physics.CartesianToKepler(physics.State{Pos: physics.Vector3{base.Pos.X, base.Pos.Y, base.Pos.Z}}, 398600.4418)
 
 		// SMA: ±5 km Gaussian
 		k.A += rng.NormFloat64() * 5.0
@@ -176,7 +175,7 @@ func loadFullCatalog() {
 		k.RAAN += rng.NormFloat64() * 0.1 * (math.Pi / 180.0)
 		k.ARGP += rng.NormFloat64() * 0.1 * (math.Pi / 180.0)
 
-		pos := proximity.KeplerToECI(k, rng.Float64()*2*math.Pi, 398600.4418)
+		pos := physics.KeplerToECI(k, rng.Float64()*2*math.Pi, 398600.4418)
 		fullCatalog = append(fullCatalog, catalog.ObjectRecord{
 			ID:          100000 + len(fullCatalog),
 			Name:        fmt.Sprintf("%s-DEB-%d", base.Name, len(fullCatalog)),
@@ -234,8 +233,8 @@ func BenchmarkMOIDFullCatalog(b *testing.B) {
 			candidates := store.QueryRange(min, max, 0, 1e12)
 
 			for _, cand := range candidates {
-				s1 := orbital.State{X: asset.Pos.X, Y: asset.Pos.Y, Z: asset.Pos.Z}
-				s2 := orbital.State{X: cand.Pos.X, Y: cand.Pos.Y, Z: cand.Pos.Z}
+				s1 := physics.State{Pos: physics.Vector3{asset.Pos.X, asset.Pos.Y, asset.Pos.Z}}
+				s2 := physics.State{Pos: physics.Vector3{cand.Pos.X, cand.Pos.Y, cand.Pos.Z}}
 				_ = proximity.CalculateMOID(s1, s2)
 				conjunctions++
 			}
@@ -265,7 +264,7 @@ func TestScaleStressFullCatalog(t *testing.T) {
 	for h := 0; h < 24; h++ {
 		// Inject 1000 ballistic arcs
 		for i := 0; i < 1000; i++ {
-			s := orbital.State{X: 6378 + 50, Y: 0, Z: 0, VX: 1.0, VY: 3.0, VZ: 1.0}
+			s := physics.State{Pos: physics.Vector3{6378 + 50, 0, 0}, Vel: physics.Vector3{1.0, 3.0, 1.0}}
 			_ = maneuver.PredictSubOrbitalThreat(s, 1600000000)
 		}
 

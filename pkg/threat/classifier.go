@@ -5,7 +5,17 @@ package threat
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
+)
+
+var (
+	// Classifier thresholds - loaded from ThreatConfig
+	cfgClassifier = GetConfig()
+
+	InspectorDistanceKm    = cfgClassifier.InspectorDistanceKm
+	GrappleClosureRateKms  = cfgClassifier.GrappleClosureRateKms
+	JammerThermalThreshold = cfgClassifier.JammerThermalThreshold
 )
 
 // ThreatType categorizes RSO threat classification
@@ -88,6 +98,198 @@ type ThreatClassifier struct {
 
 	// Pattern detection state
 	behaviorLog map[int]*RSOBehavior
+}
+
+// PayloadIntent classifies the mission based on fused sensor signatures
+type PayloadIntent string
+
+const (
+	IntentJamming    PayloadIntent = "JAMMING"     // Disrupting ground-link
+	IntentCommsRelay PayloadIntent = "COMMS_RELAY" // Moving data
+	IntentELINT      PayloadIntent = "ELINT"       // Listening to ground signals
+	IntentKinetic    PayloadIntent = "KINETIC"     // ASAT/Interceptor threat
+	IntentRobotic    PayloadIntent = "ROBOTIC"     // RPO/Inspection
+	IntentISR        PayloadIntent = "ISR"         // Optical reconnaissance
+	IntentNavigation PayloadIntent = "NAVIGATION"  // PNT satellite
+	IntentUnknown    PayloadIntent = "UNKNOWN"
+)
+
+// FusedSignatureClassification determines intent from EM + Optical + Behavior
+// Implements the sensor fusion matrix for automated threat assessment
+func (tc *ThreatClassifier) ClassifyIntent(behavior *RSOBehavior) PayloadIntent {
+	// Priority 1: Kinetic/Robotic threats (most dangerous)
+	if behavior.RelativeMotion && behavior.ClosestApproachKm < 0.5 {
+		// Rapid closure + proximity = Kinetic threat
+		if behavior.EMSignalType == "" && behavior.AttitudeMode == "OFFSET" {
+			return IntentKinetic
+		}
+		return IntentRobotic
+	}
+
+	// Priority 2: EW/EM threats based on signature patterns
+	switch behavior.EMSignalType {
+	case "WIDE_BAND_NOISE":
+		// White noise + Nadir stable = Jamming
+		if behavior.AttitudeMode == "NADIR" && behavior.IsStabilized {
+			return IntentJamming
+		}
+
+	case "PERIODIC_PULSES":
+		// L-Band pulses + Star-pointing = Comms relay
+		if behavior.AttitudeMode == "STAR_POINTING" {
+			return IntentCommsRelay
+		}
+		// Could also be radar if different frequency
+
+	case "HIGH_HEAT", "THERMAL_PEAK":
+		// IR signature + Offset-pointing = ELINT
+		if behavior.AttitudeMode == "OFFSET" {
+			return IntentELINT
+		}
+		// High heat could also indicate active radar
+		if behavior.ThermalSignature > 400 {
+			return IntentISR // SAR satellite
+		}
+	}
+
+	// Priority 3: Optical-only classification
+	if behavior.EMSignalType == "" || behavior.EMSignalType == "UNKNOWN" {
+		switch behavior.AttitudeMode {
+		case "NADIR":
+			if behavior.IsStabilized && behavior.ThermalSignature < 300 {
+				return IntentISR // Optical reconnaissance
+			}
+		case "STAR_POINTING":
+			return IntentNavigation // Likely PNT
+		case "OFFSET":
+			// Pointing at specific ground target
+			return IntentISR
+		}
+	}
+
+	// Priority 4: Default based on architecture
+	if behavior.ArchitectureType == "HIGH_POWER_EW_SAR" {
+		return IntentISR
+	}
+	if behavior.ArrayToBusRatio > 0.7 {
+		// Large solar arrays = power-hungry payload
+		return IntentCommsRelay
+	}
+
+	return IntentUnknown
+}
+
+// AttitudePattern defines attitude behavior classification
+type AttitudePattern string
+
+const (
+	PatternNadirSteady     AttitudePattern = "NADIR_STEADY"     // 3-Axis stabilized
+	PatternRapidSlew       AttitudePattern = "RAPID_SLEW"       // High-torque control
+	PatternSpinStabilized  AttitudePattern = "SPIN_STABILIZED"  // Simple/older bus
+	PatternAperiodicJitter AttitudePattern = "APERIODIC_JITTER" // Station-keeping or fault
+)
+
+// AnalyzeAttitudePattern determines attitude behavior and tactical implications
+// Uses rotation rate history and slew rate analysis
+func (tc *ThreatClassifier) AnalyzeAttitudePattern(behavior *RSOBehavior) (AttitudePattern, string) {
+	switch {
+	// Pattern 1: Nadir-Steady (3-Axis Stabilized)
+	// Standard modern imaging satellites
+	case behavior.IsStabilized &&
+		behavior.AttitudeMode == "NADIR" &&
+		behavior.RotationRateHz < 0.001: // < 0.001 Hz = very stable
+		return PatternNadirSteady, "3-Axis Stabilized (Standard Bus) - Active ISR: Likely imaging or mapping"
+
+	// Pattern 2: Rapid Slew (High-Torque Control)
+	// Intelligence collection or targeting
+	case behavior.IsStabilized &&
+		behavior.RotationRateHz > 0.1: // > 0.1 Hz = rapid maneuvering
+		return PatternRapidSlew, "High-Torque Control (CMGs) - Target Handoff: Rapidly switching between targets"
+
+	// Pattern 3: Spin-Stabilized
+	// Older or simpler satellites
+	case !behavior.IsStabilized &&
+		behavior.RotationRateHz > 0.01 &&
+		behavior.RotationRateHz < 1.0: // 0.01-1 Hz = spin rate
+		return PatternSpinStabilized, "Simple/Older Bus - Communication Relay: Likely low-res/passive"
+
+	// Pattern 4: Aperiodic Jitter
+	// Maneuver preparation or control system activity
+	case behavior.IsManeuvering ||
+		(behavior.RotationRateHz > 0.001 && behavior.RotationRateHz < 0.01 && !behavior.IsStabilized):
+		return PatternAperiodicJitter, "Station-keeping or ACS fault - Maneuver Prep: Adjusting for new orbital slot"
+	}
+
+	return "UNKNOWN", "Insufficient attitude data for classification"
+}
+
+// CalculateThreatScore combines intent + proximity + capability for risk assessment
+func (tc *ThreatClassifier) CalculateThreatScore(behavior *RSOBehavior) (ThreatLevel, string) {
+	intent := tc.ClassifyIntent(behavior)
+	score := 0
+	reasons := make([]string, 0)
+
+	// Base score from intent
+	switch intent {
+	case IntentKinetic:
+		score += 10
+		reasons = append(reasons, "Kinetic threat detected")
+	case IntentRobotic:
+		score += 7
+		reasons = append(reasons, "Robotic inspection capability")
+	case IntentJamming:
+		score += 6
+		reasons = append(reasons, "Electronic warfare payload")
+	case IntentELINT:
+		score += 5
+		reasons = append(reasons, "Signals intelligence collection")
+	case IntentISR:
+		score += 4
+		reasons = append(reasons, "Optical surveillance")
+	}
+
+	// Proximity modifier
+	if behavior.ClosestApproachKm < 1.0 {
+		score += 3
+		reasons = append(reasons, fmt.Sprintf("Close approach: %.2f km", behavior.ClosestApproachKm))
+	}
+
+	// EM power modifier
+	if behavior.EMPowerDBm > 50 {
+		score += 2
+		reasons = append(reasons, fmt.Sprintf("High EM power: %.1f dBm", behavior.EMPowerDBm))
+	}
+
+	// Attitude pattern modifier
+	pattern, _ := tc.AnalyzeAttitudePattern(behavior)
+	switch pattern {
+	case PatternRapidSlew:
+		score += 3
+		reasons = append(reasons, "Rapid slew: Targeting activity detected")
+	case PatternAperiodicJitter:
+		score += 2
+		reasons = append(reasons, "Attitude jitter: Possible maneuver preparation")
+	case PatternNadirSteady:
+		// Standard behavior, no extra score
+		reasons = append(reasons, "Nadir-stable: Standard imaging operations")
+	}
+
+	// Convert to threat level
+	var level ThreatLevel
+	switch {
+	case score >= 9:
+		level = LevelCritical
+	case score >= 7:
+		level = LevelHigh
+	case score >= 5:
+		level = LevelElevated
+	case score >= 3:
+		level = LevelLow
+	default:
+		level = LevelNone
+	}
+
+	return level, strings.Join(reasons, "; ")
 }
 
 // NewThreatClassifier creates classifier with default thresholds

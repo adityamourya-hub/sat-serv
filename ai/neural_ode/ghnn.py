@@ -1,3 +1,25 @@
+"""
+DEPRECATED: Conservative-only GHNN (special case of Port-Hamiltonian System)
+
+This module implements the old conservative-only GHNN.
+GHNN is the special case of Port-Hamiltonian System with R=0, g=0.
+
+USE INSTEAD: port_hamiltonian_pytorch.PortHamiltonianSystem
+- Handles non-conservative dynamics (drag, thrust)
+- PSD dissipation matrix via Cholesky parameterization
+- Control coupling for active maneuvers
+- Latent conditioning for regime-aware dynamics
+
+Migration Guide:
+    OLD: from ghnn import GHNNVectorField, HamiltonianNet
+    NEW: from port_hamiltonian_pytorch import PortHamiltonianSystem
+    
+    OLD: ghnn = GHNNVectorField(HamiltonianNet())
+    NEW: phs = PortHamiltonianSystem(use_latent_conditioning=False)  # R=0, g=0 if not needed
+
+Kept for backwards compatibility only.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -50,6 +72,20 @@ class GHNNVectorField(nn.Module):
         super().__init__()
         self.h_net = h_net
         
+        # CRITICAL FIX: Training mode flag for memory leak prevention
+        self.training_mode = True  # Default to training mode
+        self.iteration_count = 0  # For periodic memory cleanup
+    
+    def set_training_mode(self, mode: bool):
+        """Set training mode for autograd graph retention."""
+        self.training_mode = mode
+    
+    def get_memory_usage(self):
+        """Return current GPU memory usage in MB."""
+        if torch.cuda.is_available():
+            return torch.cuda.max_memory_allocated() / 1024**2
+        return 0.0
+        
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Computes the Hamiltonian dynamics via automatic differentiation.
@@ -59,13 +95,48 @@ class GHNNVectorField(nn.Module):
             x = x.detach().requires_grad_(True)
             H = self.h_net(x)
             
-            # Compute dH/dx (Jacobian of scalar H is the gradient)
-            grad_H = torch.autograd.grad(
-                H, x, 
-                grad_outputs=torch.ones_like(H),
-                create_graph=True,
-                retain_graph=True
-            )[0]
+            # CRITICAL FIX: Use different autograd settings based on mode
+            if self.training_mode:
+                # Training: retain graph for higher-order derivatives
+                grad_H = torch.autograd.grad(
+                    H, x, 
+                    grad_outputs=torch.ones_like(H),
+                    create_graph=True,
+                    retain_graph=True
+                )[0]
+                
+                # Periodic memory cleanup every 100 iterations
+                self.iteration_count += 1
+                if self.iteration_count % 100 == 0 and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            else:
+                # Inference: don't retain graph to prevent memory leak
+                grad_H = torch.autograd.grad(
+                    H, x, 
+                    grad_outputs=torch.ones_like(H),
+                    create_graph=False,
+                    retain_graph=False
+                )[0]
+        
+        # CRITICAL FIX: NaN guards to prevent silent failure
+        if torch.isnan(grad_H).any():
+            print("[WARNING] NaN detected in Hamiltonian gradient, using fallback")
+            # Fallback: numerical gradient via finite differences
+            eps = 1e-6
+            grad_H_numerical = torch.zeros_like(x)
+            for i in range(x.shape[1]):
+                x_plus = x.clone()
+                x_plus[:, i] += eps
+                H_plus = self.h_net(x_plus)
+                grad_H_numerical[:, i] = (H_plus - H) / eps
+            grad_H = grad_H_numerical
+        
+        if torch.isinf(grad_H).any():
+            print("[WARNING] Inf detected in Hamiltonian gradient, clipping")
+            grad_H = torch.clamp(grad_H, -1e6, 1e6)
+        
+        # Gradient clipping to prevent exploding gradients
+        grad_H = torch.nn.utils.clip_grad_norm_(grad_H, max_norm=1.0)
             
         # Hamiltonian Equations:
         # q_dot =  dH/dp (velocity components)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -62,7 +63,7 @@ func (r *BlindSpotRepo) GetAdversarySatellites(ctx context.Context, sensorType s
 
 // GetSatellitesInVicinity uses PostGIS to find potential visibility candidates
 // This acts as a coarse filter to reduce computation
-func (r *BlindSpotRepo) GetSatellitesInVicinity(ctx context.Context, lat, lon, alt float64, radiusKm float64) ([]int32, error) {
+func (r *BlindSpotRepo) GetSatellitesInVicinity(ctx context.Context, lon, lat, alt float64, radiusKm float64) ([]int32, error) {
 	query := `
 		SELECT norad_cat_id
 		FROM current_states
@@ -205,7 +206,8 @@ func (r *BlindSpotRepo) scanAdversarySatellites(rows pgx.Rows) ([]*AdversarySate
 			&s.TLELine1, &s.TLELine2,
 		)
 		if err != nil {
-			continue // Skip bad rows
+			slog.Error("Failed to scan adversary satellite", "error", err)
+			continue
 		}
 		satellites = append(satellites, &s)
 	}

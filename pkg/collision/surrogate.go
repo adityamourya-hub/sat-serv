@@ -510,3 +510,85 @@ func EvaluateAccuracy(surrogate SurrogateModel, testData []TrainingSample) Surro
 
 	return m
 }
+
+// =============================================================================
+// ONNX Surrogate Implementation
+// =============================================================================
+
+/**
+ * ONNXSurrogate wraps an ONNX model for fast Pc prediction.
+ *
+ * Uses the ml/onnx package for inference. Falls back to MockSurrogate
+ * if ONNX runtime is not available or model fails to load.
+ */
+type ONNXSurrogate struct {
+	modelPath   string
+	session     interface{} // onnx.Inferrer (interface to avoid direct dependency)
+	fallback    SurrogateModel
+	inputShape  []int64
+	outputShape []int64
+}
+
+/**
+ * NewONNXSurrogate creates an ONNX-based surrogate.
+ *
+ * @param modelPath: Path to ONNX model file (e.g., "models/pc_surrogate.onnx")
+ * @return: SurrogateModel interface implementation
+ *
+ * The ONNX model expects:
+ *   Input:  [batch, 8] float32 tensor of dimensionless features
+ *   Output: [batch, 2] float32 tensor of [pc, uncertainty]
+ */
+func NewONNXSurrogate(modelPath string) (*ONNXSurrogate, error) {
+	if modelPath == "" {
+		return nil, fmt.Errorf("model path is required")
+	}
+
+	// Check if model file exists
+	if _, err := os.Stat(modelPath); err != nil {
+		return nil, fmt.Errorf("model file not found: %s", modelPath)
+	}
+
+	return &ONNXSurrogate{
+		modelPath:   modelPath,
+		fallback:    NewMockSurrogate(),
+		inputShape:  []int64{1, 8}, // batch=1, features=8
+		outputShape: []int64{1, 2}, // batch=1, [pc, uncertainty]
+	}, nil
+}
+
+func (o *ONNXSurrogate) Predict(features DimensionlessFeatures) (pc float64, uncertainty float64) {
+	// TODO: Implement ONNX inference once runtime is fully integrated
+	// For now, use fallback with telemetry
+	pc, uncertainty = o.fallback.Predict(features)
+	return pc, uncertainty
+}
+
+func (o *ONNXSurrogate) Confidence(features DimensionlessFeatures) float64 {
+	_, unc := o.Predict(features)
+	return 1.0 - unc
+}
+
+func (o *ONNXSurrogate) Type() string {
+	return fmt.Sprintf("ONNXSurrogate (%s)", o.modelPath)
+}
+
+/**
+ * IsAvailable checks if ONNX runtime is functional.
+ */
+func (o *ONNXSurrogate) IsAvailable() bool {
+	// TODO: Check onnx.InitializeONNXRuntime() == nil
+	return false // Stub: always returns false until runtime is bound
+}
+
+/**
+ * LoadModel attempts to initialize the ONNX session.
+ * Returns error if runtime unavailable or model invalid.
+ */
+func (o *ONNXSurrogate) LoadModel() error {
+	if !o.IsAvailable() {
+		return fmt.Errorf("ONNX runtime not available")
+	}
+	// TODO: Initialize session via ml/onnx package
+	return fmt.Errorf("ONNX session binding not yet implemented")
+}

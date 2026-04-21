@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -59,7 +60,8 @@ func (r *ManeuverAlertRepo) GetOrbitalHistory(ctx context.Context, noradID int32
 			&s.RAAN, &s.ArgOfPerigee, &s.MeanAnomaly, &s.MeanMotion, &s.BStar,
 		)
 		if err != nil {
-			continue // Skip bad rows
+			slog.Error("Failed to scan orbital history", "error", err)
+			continue
 		}
 		samples = append(samples, &s)
 	}

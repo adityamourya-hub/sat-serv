@@ -4,7 +4,10 @@ package analytics
 
 import (
 	"math"
+	"sort"
 	"time"
+
+	"ssis/pkg/orbital"
 )
 
 // GroundSite represents a strategic IAF location
@@ -18,19 +21,19 @@ type GroundSite struct {
 
 // AccessWindow defines a period when a satellite can see a ground site
 type AccessWindow struct {
-	SatelliteID  int32
+	SatelliteID   int32
 	SatelliteName string
-	StartTime    time.Time
-	EndTime      time.Time
-	MaxElevation float64 // degrees
-	SensorType   string  // "OPTICAL", "SAR", "ALL"
+	StartTime     time.Time
+	EndTime       time.Time
+	MaxElevation  float64 // degrees
+	SensorType    string  // "OPTICAL", "SAR", "ALL"
 }
 
 // BlindSpot represents a period when no adversary can see the site
 type BlindSpot struct {
-	StartTime    time.Time
-	EndTime      time.Time
-	Duration     time.Duration
+	StartTime     time.Time
+	EndTime       time.Time
+	Duration      time.Duration
 	ProtectedFrom string // "OPTICAL", "RADAR", "ALL"
 }
 
@@ -176,9 +179,9 @@ func FindBlindSpots(windows []AccessWindow, site GroundSite, duration time.Durat
 		// No windows means always blind (ideal case)
 		return []BlindSpot{
 			{
-				StartTime:    time.Now(),
-				EndTime:      time.Now().Add(duration),
-				Duration:     duration,
+				StartTime:     time.Now(),
+				EndTime:       time.Now().Add(duration),
+				Duration:      duration,
 				ProtectedFrom: sensorType,
 			},
 		}
@@ -190,6 +193,18 @@ func FindBlindSpots(windows []AccessWindow, site GroundSite, duration time.Durat
 	// Merge overlapping windows
 	merged := MergeAccessWindows(windows)
 
+	// Check if merged is empty after merging
+	if len(merged) == 0 {
+		return []BlindSpot{
+			{
+				StartTime:     time.Now(),
+				EndTime:       time.Now().Add(duration),
+				Duration:      duration,
+				ProtectedFrom: sensorType,
+			},
+		}
+	}
+
 	// Find gaps between merged windows
 	var blindSpots []BlindSpot
 	now := time.Now()
@@ -200,9 +215,9 @@ func FindBlindSpots(windows []AccessWindow, site GroundSite, duration time.Durat
 		gap := merged[0].StartTime.Sub(now)
 		if gap > time.Minute {
 			blindSpots = append(blindSpots, BlindSpot{
-				StartTime:    now,
-				EndTime:      merged[0].StartTime,
-				Duration:     gap,
+				StartTime:     now,
+				EndTime:       merged[0].StartTime,
+				Duration:      gap,
 				ProtectedFrom: sensorType,
 			})
 		}
@@ -213,9 +228,9 @@ func FindBlindSpots(windows []AccessWindow, site GroundSite, duration time.Durat
 		gap := merged[i+1].StartTime.Sub(merged[i].EndTime)
 		if gap > time.Minute {
 			blindSpots = append(blindSpots, BlindSpot{
-				StartTime:    merged[i].EndTime,
-				EndTime:      merged[i+1].StartTime,
-				Duration:     gap,
+				StartTime:     merged[i].EndTime,
+				EndTime:       merged[i+1].StartTime,
+				Duration:      gap,
 				ProtectedFrom: sensorType,
 			})
 		}
@@ -226,9 +241,9 @@ func FindBlindSpots(windows []AccessWindow, site GroundSite, duration time.Durat
 		gap := endTime.Sub(merged[len(merged)-1].EndTime)
 		if gap > time.Minute {
 			blindSpots = append(blindSpots, BlindSpot{
-				StartTime:    merged[len(merged)-1].EndTime,
-				EndTime:      endTime,
-				Duration:     gap,
+				StartTime:     merged[len(merged)-1].EndTime,
+				EndTime:       endTime,
+				Duration:      gap,
 				ProtectedFrom: sensorType,
 			})
 		}
@@ -240,14 +255,19 @@ func FindBlindSpots(windows []AccessWindow, site GroundSite, duration time.Durat
 // GeodeticToECEF converts lat/lon/alt to ECEF coordinates
 func GeodeticToECEF(lat, lon, alt float64) (x, y, z float64) {
 	// WGS84 parameters
-	const a = 6378.137              // Semi-major axis (km)
+	const a = 6378.137            // Semi-major axis (km)
 	const f = 1.0 / 298.257223563 // Flattening
 	const e2 = 2*f - f*f          // First eccentricity squared
 
 	latRad := lat * math.Pi / 180.0
 	lonRad := lon * math.Pi / 180.0
 
-	N := a / math.Sqrt(1.0-e2*math.Sin(latRad)*math.Sin(latRad))
+	// Prevent division by zero at poles by bounding denominator
+	denominator := 1.0 - e2*math.Sin(latRad)*math.Sin(latRad)
+	if denominator < 1e-10 {
+		denominator = 1e-10
+	}
+	N := a / math.Sqrt(denominator)
 
 	x = (N + alt) * math.Cos(latRad) * math.Cos(lonRad)
 	y = (N + alt) * math.Cos(latRad) * math.Sin(lonRad)
@@ -257,28 +277,69 @@ func GeodeticToECEF(lat, lon, alt float64) (x, y, z float64) {
 }
 
 // PropagateToECEF propagates TLE to ECEF coordinates at given time
-// Simplified placeholder - full implementation would use SGP4
+// Uses SGP4 for TEME propagation, then converts to ECEF using GMST
 func PropagateToECEF(tleLine1, tleLine2 string, t time.Time) (x, y, z float64) {
-	// This is a simplified placeholder
-	// Full implementation would:
-	// 1. Parse TLE
-	// 2. Use SGP4 to propagate to time t (TEME frame)
-	// 3. Convert TEME to ECEF using GMST
-	// 4. Return ECEF coordinates
+	// Parse TLE lines
+	tle, err := orbital.ParseTLE(tleLine1 + "\n" + tleLine2)
+	if err != nil {
+		// Return error indicator (invalid coordinates)
+		return 0, 0, 0
+	}
 
-	// For now, return example coordinates
-	return 6378.0, 0.0, 0.0
+	// Use SGP4 to propagate to TEME frame
+	prop := orbital.NewSGP4Propagator(tle)
+	if prop == nil {
+		return 0, 0, 0
+	}
+
+	// Calculate minutes since TLE epoch
+	epoch := time.Date(tle.EpochYear, 1, 1, 0, 0, 0, 0, time.UTC)
+	epoch = epoch.Add(time.Duration((tle.EpochDay - 1.0) * 24.0 * float64(time.Hour)))
+	deltaMin := t.Sub(epoch).Minutes()
+	state, err := prop.Propagate(deltaMin)
+	if err != nil {
+		return 0, 0, 0
+	}
+
+	// Convert TEME to ECEF using GMST (Greenwich Mean Sidereal Time)
+	temeX, temeY, temeZ := state.Pos[0], state.Pos[1], state.Pos[2]
+	gmst := calculateGMST(t)
+
+	// Rotation from TEME to ECEF (rotation around Z-axis by GMST)
+	cosGMST := math.Cos(gmst)
+	sinGMST := math.Sin(gmst)
+
+	x = cosGMST*temeX + sinGMST*temeY
+	y = -sinGMST*temeX + cosGMST*temeY
+	z = temeZ
+
+	return x, y, z
 }
 
-// SortAccessWindows sorts windows by start time
-func SortAccessWindows(windows []AccessWindow) {
-	for i := 0; i < len(windows); i++ {
-		for j := i + 1; j < len(windows); j++ {
-			if windows[j].StartTime.Before(windows[i].StartTime) {
-				windows[i], windows[j] = windows[j], windows[i]
-			}
-		}
+// calculateGMST computes Greenwich Mean Sidereal Time in radians
+func calculateGMST(t time.Time) float64 {
+	// Julian Date calculation
+	// Simplified formula: GMST = 280.46061837 + 360.98564736629*(JD - 2451545.0)
+	// Result in degrees, convert to radians
+
+	unixSec := t.Unix()
+	jd := float64(unixSec)/86400.0 + 2440587.5
+	d := jd - 2451545.0
+
+	gmstDeg := 280.46061837 + 360.98564736629*d
+	gmstDeg = math.Mod(gmstDeg, 360.0)
+	if gmstDeg < 0 {
+		gmstDeg += 360.0
 	}
+
+	return gmstDeg * math.Pi / 180.0
+}
+
+// SortAccessWindows sorts windows by start time using O(n log n) sort
+func SortAccessWindows(windows []AccessWindow) {
+	sort.Slice(windows, func(i, j int) bool {
+		return windows[i].StartTime.Before(windows[j].StartTime)
+	})
 }
 
 // MergeAccessWindows merges overlapping windows

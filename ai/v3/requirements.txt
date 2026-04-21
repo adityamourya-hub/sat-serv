@@ -6,8 +6,15 @@ numpy>=1.24.0
 scipy>=1.10.0
 
 # Astronomical data processing
-astropy>=5.3.0
-mpdaf>=3.5.0
+astropy>=5.3.0          # Coordinate transforms, time handling, FITS I/O
+mpdaf>=3.5.0            # Spectral cube handling
+
+# Photometry and Synthetic Spectra
+pysynphot>=1.3.0        # Synthetic photometry for intelligence baseline
+photutils>=1.8.0        # Centroiding, aperture photometry for glint extraction
+
+# Tactical Visualization
+ginga>=4.0.0            # Operator truth console, FITS viewer with overlays
 
 # Database connectivity
 psycopg2-binary>=2.9.0
@@ -26,10 +33,29 @@ scikit-image>=0.21.0  # Richardson-Lucy deconvolution, super-resolution
 jax[cpu]>=0.4.20  # Use jax[metal] on Mac host for GPU acceleration
 jaxlib>=0.4.20
 
+# Spatiotemporal Analysis (Challenge 37 - Hypersonic Detection)
+pydmd>=0.5.0      # Multi-Resolution DMD for HGV mode isolation
+scipy>=1.10.0     # Signal processing for tripwire filtering
+
+# RL and Optimization (for MBPO/Koopman)
+optax>=0.1.7      # Gradient-based optimization
+flax>=0.7.0       # Neural networks (optional, for advanced MBPO)
+
+# Data-driven dynamics (Brunton methods)
+# pysindy>=1.7.0  # Uncomment for PySINDy integration
+
 # Zero-Copy IPC (Go-Python Bridge)
 pyzmq>=25.0.0  # ZeroMQ Python bindings for Plasma notifications
-pyarrow>=14.0.0  # Apache Arrow (optional Plasma support)
+pyarrow>=14.0.0  # Apache Arrow with Plasma support
+# Note: Arrow Plasma deprecated in v2.0, use pyarrow.plasma in v14
 msgpack>=1.0.8   # MessagePack serialization for RNS mesh
+
+# Alternative: Redis for shared memory if Plasma unavailable
+redis>=5.0.0  # Fallback shared memory backend
+
+# Telescope Control
+pyindi-client>=0.2.4  # INDI protocol for Linux astronomical hardware
+alpyca>=2.0.0         # ASCOM Alpaca cross-platform telescope control
 
 # Optional: Deep learning for streak detection
 # torch>=2.0.0

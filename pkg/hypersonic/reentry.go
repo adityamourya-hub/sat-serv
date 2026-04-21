@@ -75,7 +75,7 @@ func SolveAerospace(mach, altitude float64) ReentryState {
 // DebrisFootprint estimates the impact ellipse for an uncontrolled re-entry.
 func DebrisFootprint(state ReentryState, bcMin, bcMax float64) FootprintEllipse {
 	majorAxis := (bcMax - bcMin) * state.Mach * 2.5
-	minorAxis := majorAxis * 0.15 
+	minorAxis := majorAxis * 0.15
 
 	return FootprintEllipse{
 		MajorAxisKm: majorAxis,
@@ -113,18 +113,18 @@ func PredictImpactFootprint(initial physics.State, ballisticCoeff float64, f107,
 		vx, vy, vz := x[3], x[4], x[5]
 		// r := math.Sqrt(rx*rx + ry*ry + rz*rz) (migrated to OrbitalAcceleration)
 		speed := math.Sqrt(vx*vx + vy*vy + vz*vz)
-		
+
 		ax, ay, az := physics.OrbitalAcceleration(rx, ry, rz, vx, vy, vz, baseJd, physics.PhysicsParams{Mass: 1000.0, Cd: 2.2, DragArea: 1000.0 / ballisticCoeff}) // BC = m/CdA
-		
+
 		rho := physics.GetDensityUnified(rx, ry, rz, baseJd)
 		// Unit conversion: rho [kg/m^3], speed [km/s], BC [kg/m^2]
 		// a [km/s^2] = 0.5 * rho * speed^2 * 1000 / BC
 		drag := 0.5 * rho * speed * speed * 1000.0 / ballisticCoeff
-		
+
 		ax -= drag * vx / speed
 		ay -= drag * vy / speed
 		az -= drag * vz / speed
-		
+
 		return []float64{vx, vy, vz, ax, ay, az}
 	}
 
@@ -134,23 +134,24 @@ func PredictImpactFootprint(initial physics.State, ballisticCoeff float64, f107,
 		if alt <= 0 {
 			break
 		}
-		
+
 		// HGV Lift Logic (Requirement i)
 		if alt > 30.0 && alt < 90.0 {
 			vRel := math.Sqrt(y[3]*y[3] + y[4]*y[4] + y[5]*y[5])
 			if vRel > 1.0 {
 				// n = (v x (r x v)) / |v x (r x v)|
 				nx, ny, nz := physics.CalculateLiftVectorECI(y[0], y[1], y[2], y[3], y[4], y[5])
-				
+
 				// a_lift = 0.5 * rho * v^2 * (A/m) * CL
 				// CL = (L/D) * CD
 				rho := physics.GetDensityUnified(y[0], y[1], y[2], baseJd+t/86400.0)
-				ldRatio := 3.0 // Default for df-17 class HGV
-				cl := ldRatio * 2.2
-				
+				ldRatio := 3.0 // Default for df-17 class HGV (should be configurable)
+				cd := 2.2      // Default drag coefficient (should be configurable)
+				cl := ldRatio * cd
+
 				// Accel in km/s^2 (0.5 * rho * v^2 * Area/Mass * CL) / 1000
 				accLift := 0.5 * rho * vRel * vRel * (1.0 / ballisticCoeff) * cl * 1000.0
-				
+
 				y[3] += accLift * nx * dt
 				y[4] += accLift * ny * dt
 				y[5] += accLift * nz * dt
@@ -164,9 +165,9 @@ func PredictImpactFootprint(initial physics.State, ballisticCoeff float64, f107,
 
 	// 3-sigma output (Physics-grounded terminus)
 	return ImpactArea{
-		LatDeg:     latFinal,
-		LonDeg:     lonFinal,
-		RadiusKm:   0,
+		LatDeg:      latFinal,
+		LonDeg:      lonFinal,
+		RadiusKm:    0,
 		MajorAxisKm: 0,
 		MinorAxisKm: 0,
 	}
@@ -178,10 +179,10 @@ func PredictImpactDispersion(initial physics.State, bc float64, f107, ap float64
 	if samples <= 0 {
 		samples = 100
 	}
-	
+
 	lats := make([]float64, samples)
 	lons := make([]float64, samples)
-	
+
 	for i := 0; i < samples; i++ {
 		u1 := haltonSequence(i+1, 2)
 		u2 := haltonSequence(i+1, 3)
@@ -194,12 +195,12 @@ func PredictImpactDispersion(initial physics.State, bc float64, f107, ap float64
 		pState := initial
 		pState.Pos[0] += z0 * stateSigma
 		pState.Pos[1] += z1 * stateSigma
-		pBC := bc + z2 * bcSigma
-		
+		pBC := bc + z2*bcSigma
+
 		res := PredictImpactFootprint(pState, pBC, f107, ap)
 		lats[i], lons[i] = res.LatDeg, res.LonDeg
 	}
-	
+
 	// Calculate centroid and dispersion via PCA (Eigen-decomposition)
 	var meanLat, meanLon float64
 	for i := 0; i < samples; i++ {
@@ -232,7 +233,7 @@ func JacchiaRobertsDensity(altKm, f107, ap float64) float64 {
 	tInf := tc * (1.0 + 0.03*math.Sin(math.Pi/4.0))
 	hx, tx := 100.0, 373.0
 	t := tInf - (tInf-tx)*math.Exp(-0.02*(altKm-hx))
-	
+
 	// rhoBase at 100km is approx 5.0e-7 kg/m^3
 	rhoBase := 5.0e-7
 	// Scale height refined for LEO drag (7km at low alt, increasing with temp)

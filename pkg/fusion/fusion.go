@@ -17,6 +17,10 @@ type UKFConfig struct {
 	ProcessNoiseAccelKmSec2 float64 `json:"process_noise_accel"`
 	SNCGaussMarkovTauSec    float64 `json:"snc_tau_sec"`
 	MinNumericalJitter      float64 `json:"min_numerical_jitter"`
+	AdaptiveGating          bool    `json:"adaptive_gating"`
+	BaseGateThreshold       float64 `json:"base_gate_threshold"`
+	GateLearningRate        float64 `json:"gate_learning_rate"`
+	EnableDetailedLogging   bool    `json:"enable_detailed_logging"`
 }
 
 func DefaultUKFConfig() UKFConfig {
@@ -27,6 +31,10 @@ func DefaultUKFConfig() UKFConfig {
 		ProcessNoiseAccelKmSec2: 1e-9,
 		SNCGaussMarkovTauSec:    1800,
 		MinNumericalJitter:      1e-9,
+		AdaptiveGating:          true,
+		BaseGateThreshold:       6.5,
+		GateLearningRate:        0.1,
+		EnableDetailedLogging:   false,
 	}
 }
 
@@ -48,15 +56,44 @@ type TLEMeasurement struct {
 	VelocityStdKm float64       `json:"velocity_std_km"`
 }
 
+type OpticalMeasurement struct {
+	StationID     int        `json:"station_id"`
+	TimestampUnix int64      `json:"timestamp_unix"`
+	RADec         [2]float64 `json:"ra_dec_deg"` // Right Ascension, Declination in degrees
+	RADecStd      [2]float64 `json:"ra_dec_std_deg"`
+	Magnitude     float64    `json:"magnitude"`
+	Confidence    float64    `json:"confidence"`
+}
+
+type SARMeasurement struct {
+	PlatformID    int        `json:"platform_id"`
+	TimestampUnix int64      `json:"timestamp_unix"`
+	PositionECI   [3]float64 `json:"position_eci_km"`
+	PositionStd   [3]float64 `json:"position_std_km"`
+	VelocityECI   [3]float64 `json:"velocity_eci_km_s"`
+	VelocityStd   [3]float64 `json:"velocity_std_km_s"`
+	SignalQuality float64    `json:"signal_quality"`
+}
+
 type FusionInput struct {
-	ObjectID         int                  `json:"object_id"`
-	EventType        string               `json:"event_type"`
-	PriorState       physics.State        `json:"prior_state"`
-	PriorCovariance  [][]float64          `json:"prior_covariance"`
-	DeltaTimeSec     float64              `json:"delta_time_sec"`
-	RadarMeasurement *RadarMeasurement    `json:"radar_measurement,omitempty"`
-	TLEMeasurement   *TLEMeasurement      `json:"tle_measurement,omitempty"`
-	Signer           *cryptography.Signer `json:"-"`
+	ObjectID           int                  `json:"object_id"`
+	EventType          string               `json:"event_type"`
+	PriorState         physics.State        `json:"prior_state"`
+	PriorCovariance    [][]float64          `json:"prior_covariance"`
+	DeltaTimeSec       float64              `json:"delta_time_sec"`
+	RadarMeasurement   *RadarMeasurement    `json:"radar_measurement,omitempty"`
+	TLEMeasurement     *TLEMeasurement      `json:"tle_measurement,omitempty"`
+	OpticalMeasurement *OpticalMeasurement  `json:"optical_measurement,omitempty"`
+	SARMeasurement     *SARMeasurement      `json:"sar_measurement,omitempty"`
+	Signer             *cryptography.Signer `json:"-"`
+	FractionalRefiner  FractionalRefiner    `json:"-"`
+}
+
+// FractionalRefiner interface for DPHNO/fractional Laplacian refinements
+// Used for HGV tracking in transitional flow regime (30-80km) to anticipate
+// position based on wake memory using fractional-order dynamics
+type FractionalRefiner interface {
+	RefineWithFractionalDynamics(state []float64, covariance [][]float64, dtSec float64, altitudeKm float64) ([]float64, [][]float64, error)
 }
 
 type Ellipsoid3Sigma struct {
@@ -75,14 +112,16 @@ type FusionResult struct {
 }
 
 type UncertaintyAlert struct {
-	ObjectID       int             `json:"object_id"`
-	AlertType      string          `json:"alert_type"`
-	TimestampUTC   string          `json:"timestamp_utc"`
-	State          physics.State   `json:"state"`
-	ThreeSigma     Ellipsoid3Sigma `json:"three_sigma"`
-	Signature      string          `json:"signature"`
-	SignatureValid bool            `json:"signature_valid"`
-	PublicKeyHex   string          `json:"public_key_hex"`
+	ObjectID         int             `json:"object_id"`
+	AlertType        string          `json:"alert_type"`
+	TimestampUTC     string          `json:"timestamp_utc"`
+	State            physics.State   `json:"state"`
+	ThreeSigma       Ellipsoid3Sigma `json:"three_sigma"`
+	HamiltonianHash  string          `json:"hamiltonian_hash"`
+	HamiltonianValid bool            `json:"hamiltonian_valid"`
+	Signature        string          `json:"signature"`
+	SignatureValid   bool            `json:"signature_valid"`
+	PublicKeyHex     string          `json:"public_key_hex"`
 }
 
 type RadarSite struct {
@@ -113,6 +152,20 @@ func FuseWithUKF(input FusionInput, cfg UKFConfig) (FusionResult, error) {
 	jd := float64(time.Now().Unix())/86400.0 + 2440587.5
 	if input.DeltaTimeSec > 0 {
 		x = physics.PropagateCartesianState(x, input.DeltaTimeSec, jd, physics.PhysicsParams{})
+
+		// Apply fractional Laplacian/DPHNO refinements for HGV tracking in transitional flow regime (30-80km)
+		if input.FractionalRefiner != nil {
+			px, py, pz := x[0], x[1], x[2]
+			altitudeKm := math.Sqrt(px*px+py*py+pz*pz) - physics.RE_KM
+			if altitudeKm >= 30 && altitudeKm <= 80 {
+				refinedX, refinedP, err := input.FractionalRefiner.RefineWithFractionalDynamics(x, p, input.DeltaTimeSec, altitudeKm)
+				if err == nil {
+					x = refinedX
+					p = refinedP
+				}
+			}
+		}
+
 		// Propagate covariance with SNC
 		q := buildSNCCovariance(input.DeltaTimeSec, cfg)
 		p = safemath.MatrixAdd(p, q)
@@ -146,6 +199,30 @@ func FuseWithUKF(input FusionInput, cfg UKFConfig) (FusionResult, error) {
 		if err == nil && ok {
 			x, p = xNew, pNew
 			res.SensorsUsed = append(res.SensorsUsed, "tle")
+		}
+	}
+
+	if input.OpticalMeasurement != nil {
+		z := OpticalMeasurementVector(*input.OpticalMeasurement)
+		r := OpticalMeasurementNoise(*input.OpticalMeasurement)
+		h := func(s []float64) []float64 { return OpticalMeasurementFromState(s, jd) }
+
+		xNew, pNew, _, _, ok, err := UKFUpdateWithGating(x, p, z, r, h, cfg)
+		if err == nil && ok {
+			x, p = xNew, pNew
+			res.SensorsUsed = append(res.SensorsUsed, "optical")
+		}
+	}
+
+	if input.SARMeasurement != nil {
+		z := SARMeasurementVector(*input.SARMeasurement)
+		r := SARMeasurementNoise(*input.SARMeasurement)
+		h := func(s []float64) []float64 { return []float64{s[0], s[1], s[2], s[3], s[4], s[5]} }
+
+		xNew, pNew, _, _, ok, err := UKFUpdateWithGating(x, p, z, r, h, cfg)
+		if err == nil && ok {
+			x, p = xNew, pNew
+			res.SensorsUsed = append(res.SensorsUsed, "sar")
 		}
 	}
 
@@ -196,11 +273,81 @@ func BuildSignedUncertaintyAlert(objectID int, alertType string, state physics.S
 		ThreeSigma:   ts,
 		PublicKeyHex: signer.PublicKeyHex(),
 	}
+
+	// Compute Hamiltonian invariant hash for sovereign handshake
+	hHash, hValid := computeHamiltonianInvariant(state, cov)
+	alert.HamiltonianHash = hHash
+	alert.HamiltonianValid = hValid
+
 	tsUnix := time.Now().Unix()
 	alert.Signature = signer.GenerateProof(objectID, alertType, tsUnix)
 	payload := fmt.Sprintf("%d:%s:%d", objectID, alertType, tsUnix)
 	alert.SignatureValid = signer.Verify([]byte(payload), alert.Signature)
 	return alert
+}
+
+// computeHamiltonianInvariant calculates the Hamiltonian invariant hash and validates it
+// per sovereign handshake protocol: if σ_H / H_avg >= 10^-7, certificate self-invalidates
+func computeHamiltonianInvariant(state physics.State, cov [][]float64) (string, bool) {
+	// Compute specific orbital energy (Hamiltonian for Keplerian dynamics)
+	// H = v^2/2 - μ/r
+	px, py, pz := state.Pos[0], state.Pos[1], state.Pos[2]
+	vx, vy, vz := state.Vel[0], state.Vel[1], state.Vel[2]
+
+	r2 := px*px + py*py + pz*pz
+	r := math.Sqrt(r2)
+	if r < 1e-6 {
+		r = 1e-6
+	}
+
+	v2 := vx*vx + vy*vy + vz*vz
+	mu := 398600.4418 // Earth's gravitational parameter (km^3/s^2)
+
+	hamiltonian := v2/2.0 - mu/r
+
+	// Compute uncertainty in Hamiltonian from covariance
+	// Using first-order error propagation: σ_H^2 = (∂H/∂x)^T * P * (∂H/∂x)
+	// ∂H/∂r = μ/r^2, ∂H/∂v = v
+	// Convert to Cartesian coordinates for covariance propagation
+
+	// Simplified uncertainty estimate from position/velocity covariances
+	varPosCov := cov[0][0] + cov[1][1] + cov[2][2]
+	varVelCov := cov[3][3] + cov[4][4] + cov[5][5]
+
+	// Propagate to Hamiltonian uncertainty
+	dH_dr := mu / (r * r)
+	dH_dv := math.Sqrt(v2)
+
+	hamiltonianVar := (dH_dr*dH_dr)*varPosCov + (dH_dv*dH_dv)*varVelCov
+	sigmaH := math.Sqrt(math.Max(hamiltonianVar, 0))
+
+	// Validate: σ_H / |H_avg| < 10^-7 for certificate to be valid
+	hAbs := math.Abs(hamiltonian)
+	if hAbs < 1e-12 {
+		hAbs = 1e-12
+	}
+
+	validityRatio := sigmaH / hAbs
+	valid := validityRatio < 1e-7
+
+	// Create hash from Hamiltonian and its uncertainty
+	hashInput := fmt.Sprintf("%.15f:%.15f:%.15f", hamiltonian, sigmaH, validityRatio)
+	// Simple FNV-1a hash for the Hamiltonian invariant
+	hash := fnv1aHash(hashInput)
+
+	return hash, valid
+}
+
+// fnv1aHash computes a simple FNV-1a hash for the Hamiltonian invariant
+func fnv1aHash(s string) string {
+	const prime uint64 = 1099511628211
+	const offset uint64 = 14695981039346656037
+	hash := offset
+	for _, c := range s {
+		hash ^= uint64(c)
+		hash *= prime
+	}
+	return fmt.Sprintf("%016x", hash)
 }
 
 func buildSNCCovariance(dtSec float64, cfg UKFConfig) [][]float64 {
@@ -337,5 +484,65 @@ func TLEMeasurementNoise(m TLEMeasurement) [][]float64 {
 	r[3][3] = vStd * vStd
 	r[4][4] = vStd * vStd
 	r[5][5] = vStd * vStd
+	return r
+}
+
+func OpticalMeasurementVector(m OpticalMeasurement) []float64 {
+	return []float64{
+		m.RADec[0] * physics.RAD_PER_DEG,
+		m.RADec[1] * physics.RAD_PER_DEG,
+	}
+}
+
+func OpticalMeasurementNoise(m OpticalMeasurement) [][]float64 {
+	raStd := m.RADecStd[0] * physics.RAD_PER_DEG
+	decStd := m.RADecStd[1] * physics.RAD_PER_DEG
+	if raStd <= 0 {
+		raStd = 0.001 * physics.RAD_PER_DEG
+	}
+	if decStd <= 0 {
+		decStd = 0.001 * physics.RAD_PER_DEG
+	}
+	r := safemath.ZeroMatrix(2, 2)
+	r[0][0] = raStd * raStd
+	r[1][1] = decStd * decStd
+	return r
+}
+
+func OpticalMeasurementFromState(x []float64, jd float64) []float64 {
+	px, py, pz := x[0], x[1], x[2]
+	rng := math.Sqrt(px*px + py*py + pz*pz)
+	if rng < 1e-9 {
+		rng = 1e-9
+	}
+	ra := math.Atan2(py, px)
+	if ra < 0 {
+		ra += 2.0 * math.Pi
+	}
+	dec := math.Asin(safemath.Clamp(pz/rng, -1, 1))
+	return []float64{ra, dec}
+}
+
+func SARMeasurementVector(m SARMeasurement) []float64 {
+	return []float64{
+		m.PositionECI[0], m.PositionECI[1], m.PositionECI[2],
+		m.VelocityECI[0], m.VelocityECI[1], m.VelocityECI[2],
+	}
+}
+
+func SARMeasurementNoise(m SARMeasurement) [][]float64 {
+	r := safemath.ZeroMatrix(6, 6)
+	for i := 0; i < 3; i++ {
+		posStd := m.PositionStd[i]
+		if posStd <= 0 {
+			posStd = 0.1
+		}
+		velStd := m.VelocityStd[i]
+		if velStd <= 0 {
+			velStd = 0.01
+		}
+		r[i][i] = posStd * posStd
+		r[i+3][i+3] = velStd * velStd
+	}
 	return r
 }

@@ -25,30 +25,30 @@ import (
 
 // TCAResult holds the computed Time of Closest Approach and associated parameters
 type TCAResult struct {
-	TCA              float64   // Julian Date of closest approach
-	MissDistance     float64   // km, scalar miss distance at TCA
-	RelPosition      [3]float64 // km, relative position at TCA (secondary - primary)
-	RelVelocity      [3]float64 // km/s, relative velocity at TCA
-	Converged        bool      // Whether the iteration converged
-	Iterations       int       // Number of iterations performed
-	Method           string    // "newton_raphson" or "bisection"
+	TCA          float64    // Julian Date of closest approach
+	MissDistance float64    // km, scalar miss distance at TCA
+	RelPosition  [3]float64 // km, relative position at TCA (secondary - primary)
+	RelVelocity  [3]float64 // km/s, relative velocity at TCA
+	Converged    bool       // Whether the iteration converged
+	Iterations   int        // Number of iterations performed
+	Method       string     // "newton_raphson" or "bisection"
 }
 
 // TCAFinderConfig controls the iterative search behavior
 type TCAFinderConfig struct {
-	MaxIterations    int
-	ToleranceKm      float64   // Stop when miss distance changes less than this
-	MaxStepSec       float64   // Maximum time step per iteration
-	TimeWindowSec    float64   // Search window around initial guess (+/-)
+	MaxIterations int
+	ToleranceKm   float64 // Stop when miss distance changes less than this
+	MaxStepSec    float64 // Maximum time step per iteration
+	TimeWindowSec float64 // Search window around initial guess (+/-)
 }
 
 // DefaultTCAFinderConfig returns standard configuration for orbital conjunctions
 func DefaultTCAFinderConfig() TCAFinderConfig {
 	return TCAFinderConfig{
 		MaxIterations: 50,
-		ToleranceKm:   1e-6,     // 1 mm precision
-		MaxStepSec:    3600.0,   // 1 hour max step
-		TimeWindowSec: 86400.0,  // ±1 day search window
+		ToleranceKm:   1e-6,    // 1 mm precision
+		MaxStepSec:    3600.0,  // 1 hour max step
+		TimeWindowSec: 86400.0, // ±1 day search window
 	}
 }
 
@@ -225,8 +225,12 @@ func bisectionTCA(primary, secondary physics.State, t0 float64, cfg TCAFinderCon
 			fRight = fMid
 		}
 
-		// Check convergence
-		if math.Abs(tRight-tLeft) < cfg.ToleranceKm*86400.0 {
+		// Check convergence in time (seconds)
+		// Convert distance tolerance (km) to time tolerance (seconds)
+		// Assuming typical LEO relative velocity ~1 km/s for conservative bound
+		// t_tolerance = d_tolerance / v_rel ≈ ToleranceKm * 86400 (since 1 km/s * 86400 s/day = 86400 km/day)
+		timeToleranceSec := cfg.ToleranceKm * 86400.0
+		if math.Abs(tRight-tLeft) < timeToleranceSec {
 			// Converged in time - now compute final state
 			pState := propagateState(primary, t0, t0+tMid/86400.0, params)
 			sState := propagateState(secondary, t0, t0+tMid/86400.0, params)

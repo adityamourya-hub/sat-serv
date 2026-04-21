@@ -25,3 +25,22 @@ security:
   mtls_enabled: true
   jwt_expiration: "24h"
   audit_level: "VERBOSE"
+
+# Proximity Analysis
+proximity:
+  # Screening parameters
+  default_threat_radius_km: 500.0
+  default_fov_half_angle_deg: 30.0
+  temporal_tolerance_sec: 0.5
+
+  # Reachability parameters
+  cw_horizon_threshold_sec: 1800.0  # 30 minutes
+  stm_horizon_max_sec: 7200.0       # 2 hours
+
+  # Coverage parameters
+  coverage_index_resolution_lat: 180
+  coverage_index_resolution_lon: 360
+
+  # Threat evaluation thresholds
+  tight_proximity_km: 100.0
+  critical_intercept_km: 20.0

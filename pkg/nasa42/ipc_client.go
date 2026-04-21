@@ -31,7 +31,10 @@ package nasa42
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
+	"math"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -56,6 +59,10 @@ func DefaultIPCConfig() *IPCConfig {
 // TelemetryPacket matches NASA 42 SCType binary layout
 // This must be kept in sync with 42's C struct definition
 // Size: ~128 bytes (depending on alignment)
+//
+// Padding assumption: 7-byte padding after GpsValid to align GPS position
+// to 8-byte boundary. This assumes C compiler uses default alignment.
+// Verify with: pack(pragma) or manual alignment in C code.
 type TelemetryPacket struct {
 	// Time
 	Time float64 // Simulation time (seconds from epoch)
@@ -288,6 +295,7 @@ type IPCClient struct {
 	config *IPCConfig
 	conn   net.Conn
 	active bool
+	mu     sync.RWMutex
 }
 
 // NewIPCClient creates client with configuration
@@ -297,8 +305,61 @@ func NewIPCClient(config *IPCConfig) *IPCClient {
 	}
 }
 
+// readFull reads exactly n bytes from connection with timeout
+func (c *IPCClient) readFull(buf []byte) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if !c.active || c.conn == nil {
+		return fmt.Errorf("not connected")
+	}
+
+	// Set read deadline
+	err := c.conn.SetReadDeadline(time.Now().Add(c.config.Timeout))
+	if err != nil {
+		return fmt.Errorf("set read deadline failed: %v", err)
+	}
+
+	_, err = io.ReadFull(c.conn, buf)
+	if err != nil {
+		return fmt.Errorf("read failed: %v", err)
+	}
+
+	// Clear deadline
+	c.conn.SetReadDeadline(time.Time{})
+	return nil
+}
+
+// writeAll writes all bytes to connection with timeout
+func (c *IPCClient) writeAll(data []byte) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if !c.active || c.conn == nil {
+		return fmt.Errorf("not connected")
+	}
+
+	// Set write deadline
+	err := c.conn.SetWriteDeadline(time.Now().Add(c.config.Timeout))
+	if err != nil {
+		return fmt.Errorf("set write deadline failed: %v", err)
+	}
+
+	_, err = c.conn.Write(data)
+	if err != nil {
+		return fmt.Errorf("write failed: %v", err)
+	}
+
+	// Clear deadline
+	c.conn.SetWriteDeadline(time.Time{})
+	return nil
+}
+
 // Connect establishes connection to NASA 42
 func (c *IPCClient) Connect() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	addr := net.JoinHostPort(c.config.Host, fmt.Sprintf("%d", c.config.Port))
 
 	conn, err := net.DialTimeout(c.config.SocketType, addr, c.config.Timeout)
@@ -314,6 +375,9 @@ func (c *IPCClient) Connect() error {
 
 // Disconnect closes connection
 func (c *IPCClient) Disconnect() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.active = false
 	if c.conn != nil {
 		return c.conn.Close()
@@ -323,16 +387,12 @@ func (c *IPCClient) Disconnect() error {
 
 // SendTelemetry transmits state to NASA 42
 func (c *IPCClient) SendTelemetry(packet *TelemetryPacket) error {
-	if !c.active {
-		return fmt.Errorf("not connected")
-	}
-
 	data, err := packet.ToBytes()
 	if err != nil {
 		return fmt.Errorf("serialization failed: %v", err)
 	}
 
-	_, err = c.conn.Write(data)
+	err = c.writeAll(data)
 	if err != nil {
 		return fmt.Errorf("send failed: %v", err)
 	}
@@ -342,14 +402,10 @@ func (c *IPCClient) SendTelemetry(packet *TelemetryPacket) error {
 
 // ReceiveTelemetry reads propagated state from NASA 42
 func (c *IPCClient) ReceiveTelemetry() (*TelemetryPacket, error) {
-	if !c.active {
-		return nil, fmt.Errorf("not connected")
-	}
-
 	packet := &TelemetryPacket{}
 	buf := make([]byte, packet.Size())
 
-	_, err := c.conn.Read(buf)
+	err := c.readFull(buf)
 	if err != nil {
 		return nil, fmt.Errorf("receive failed: %v", err)
 	}
@@ -394,13 +450,13 @@ func (c *IPCClient) HandoffObject(
 	// Send to 42
 	err := c.SendTelemetry(initial)
 	if err != nil {
-		return nil, fmt.Errorf("handoff failed for %s: %v", id, err)
+		return nil, fmt.Errorf("handoff failed for object %s: %v", id, err)
 	}
 
 	// Wait for propagated result
 	result, err := c.ReceiveTelemetry()
 	if err != nil {
-		return nil, fmt.Errorf("receive failed for %s: %v", id, err)
+		return nil, fmt.Errorf("receive failed for object %s: %v", id, err)
 	}
 
 	return result, nil
@@ -427,13 +483,12 @@ func (c *IPCClient) ValidateAgainstADITI(
 	return
 }
 
-// sqrt helper
+// sqrt helper uses math.Sqrt for accurate distance calculations
 func sqrt(x float64) float64 {
 	if x < 0 {
 		return 0
 	}
-	// Simple approximation
-	return x // Use math.Sqrt in production
+	return math.Sqrt(x)
 }
 
 // HighFidelityPropagator wraps 42 as a physics engine
@@ -441,20 +496,21 @@ type HighFidelityPropagator struct {
 	client *IPCClient
 }
 
-// NewHighFidelityPropagator creates 42-backed propagator
-func NewHighFidelityPropagator(config *IPCConfig) (*HighFidelityPropagator, error) {
+// NewHighFidelityPropagator creates 42-backed propagator (not connected)
+func NewHighFidelityPropagator(config *IPCConfig) *HighFidelityPropagator {
 	client := NewIPCClient(config)
-	err := client.Connect()
-	if err != nil {
-		return nil, err
-	}
+	return &HighFidelityPropagator{client: client}
+}
 
-	return &HighFidelityPropagator{client: client}, nil
+// Connect establishes the IPC connection
+func (hfp *HighFidelityPropagator) Connect() error {
+	return hfp.client.Connect()
 }
 
 // Propagate uses NASA 42 for high-fidelity orbit propagation
 func (hfp *HighFidelityPropagator) Propagate(
 	initialState [6]float64, // [x,y,z,vx,vy,vz] km, km/s
+	mass float64, // kg - spacecraft mass for drag/perturbation modeling
 	duration float64, // seconds
 ) ([6]float64, error) {
 
@@ -462,7 +518,7 @@ func (hfp *HighFidelityPropagator) Propagate(
 	vel := [3]float64{initialState[3], initialState[4], initialState[5]}
 	quat := [4]float64{1, 0, 0, 0} // Identity quaternion
 
-	result, err := hfp.client.HandoffObject("temp", pos, vel, quat, 1000.0, duration)
+	result, err := hfp.client.HandoffObject("temp", pos, vel, quat, mass, duration)
 	if err != nil {
 		return [6]float64{}, err
 	}

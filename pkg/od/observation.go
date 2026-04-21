@@ -144,41 +144,53 @@ func (om *ObservationModel) ComputeExpected(state physics.State, jd float64) flo
 
 	case ObsRangeRate:
 		// Range rate = relative velocity dot LOS unit vector
-		dvx := state.Vel[0] - 0.0 // Station velocity ~0 (Earth rotation neglected for ground)
-		dvy := state.Vel[1] - 0.0
-		dvz := state.Vel[2] - 0.0
+		// Compute station velocity from Earth rotation (ω = 7.2921e-5 rad/s)
+		omega := 7.2921159e-5                 // Earth rotation rate (rad/s)
+		stationVelX := -omega * stationECI[1] // ω × r in ECI
+		stationVelY := omega * stationECI[0]
+		stationVelZ := 0.0 // No Z rotation in ECI frame
+
+		dvx := state.Vel[0] - stationVelX
+		dvy := state.Vel[1] - stationVelY
+		dvz := state.Vel[2] - stationVelZ
 
 		return (dx*dvx + dy*dvy + dz*dvz) / range_km
 
 	case ObsAzimuth, ObsElevation:
-		// Convert to topocentric coordinates
-		// Simplified: return elevation angle
-		// Full implementation needs topocentric conversion
-		zenith := [3]float64{stationECI[0], stationECI[1], stationECI[2]}
-		zenithMag := math.Sqrt(zenith[0]*zenith[0] + zenith[1]*zenith[1] + zenith[2]*zenith[2])
-		zenith[0] /= zenithMag
-		zenith[1] /= zenithMag
-		zenith[2] /= zenithMag
+		// Convert to topocentric coordinates (East-North-Up frame)
+		// Compute unit vectors for ENU frame at station location
+		latRad := om.Station.Latitude * math.Pi / 180.0
+		lonRad := om.Station.Longitude * math.Pi / 180.0
 
-		// LOS unit vector
+		// ENU basis vectors in ECI
+		// East: [-sin(lon), cos(lon), 0]
+		// North: [-sin(lat)*cos(lon), -sin(lat)*sin(lon), cos(lat)]
+		// Up: [cos(lat)*cos(lon), cos(lat)*sin(lon), sin(lat)]
+		east := [3]float64{-math.Sin(lonRad), math.Cos(lonRad), 0}
+		north := [3]float64{-math.Sin(latRad) * math.Cos(lonRad), -math.Sin(latRad) * math.Sin(lonRad), math.Cos(latRad)}
+		up := [3]float64{math.Cos(latRad) * math.Cos(lonRad), math.Cos(latRad) * math.Sin(lonRad), math.Sin(latRad)}
+
+		// LOS unit vector in ECI
 		los := [3]float64{dx / range_km, dy / range_km, dz / range_km}
 
-		// Elevation = 90° - angle from zenith
-		cosZenith := los[0]*zenith[0] + los[1]*zenith[1] + los[2]*zenith[2]
-		if cosZenith > 1.0 {
-			cosZenith = 1.0
-		}
-		if cosZenith < -1.0 {
-			cosZenith = -1.0
-		}
-		elevation := 90.0 - math.Acos(cosZenith)*180.0/math.Pi
+		// Project LOS onto ENU frame
+		losEast := los[0]*east[0] + los[1]*east[1] + los[2]*east[2]
+		losNorth := los[0]*north[0] + los[1]*north[1] + los[2]*north[2]
+		losUp := los[0]*up[0] + los[1]*up[1] + los[2]*up[2]
+
+		// Elevation = arcsin(losUp)
+		elevation := math.Asin(losUp) * 180.0 / math.Pi
 
 		if om.ObsType == ObsElevation {
 			return elevation
 		}
 
-		// For azimuth, need more complex topocentric conversion
-		return elevation // Simplified: return elevation for both
+		// Azimuth = atan2(losEast, losNorth)
+		azimuth := math.Atan2(losEast, losNorth) * 180.0 / math.Pi
+		if azimuth < 0 {
+			azimuth += 360.0
+		}
+		return azimuth
 
 	case ObsRightAscension:
 		// RA = atan2(y, x) in equatorial coordinates

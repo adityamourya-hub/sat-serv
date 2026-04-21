@@ -3,11 +3,11 @@ package proximity
 import (
 	"fmt"
 	"math"
-	"time"
 	"ssis/pkg/catalog"
 	"ssis/pkg/orbital"
 	"ssis/pkg/physics"
 	"ssis/pkg/types"
+	"time"
 )
 
 type RegionOfInterest struct {
@@ -34,7 +34,7 @@ func ScanGroundRegion(roi RegionOfInterest, store *catalog.Store, epoch time.Tim
 
 	// 1. Convert Ground Site to Unit Vector in ECI
 	phi := roi.LatDeg * physics.RAD_PER_DEG
-	lambda := roi.LonDeg * physics.RAD_PER_DEG + gst
+	lambda := roi.LonDeg*physics.RAD_PER_DEG + gst
 	siteUnit := [3]float64{
 		math.Cos(phi) * math.Cos(lambda),
 		math.Cos(phi) * math.Sin(lambda),
@@ -46,11 +46,11 @@ func ScanGroundRegion(roi RegionOfInterest, store *catalog.Store, epoch time.Tim
 	maxR := 45000.0
 	centerR := (physics.EARTH_R_EQUATORIAL + maxR) / 2.0
 	halfDepth := (maxR - physics.EARTH_R_EQUATORIAL) / 2.0
-	
+
 	theta := roi.RadiusKm / physics.EARTH_R_EQUATORIAL
 	sideLength := maxR * math.Tan(theta)
 	if theta > math.Pi/4 {
-		sideLength = maxR 
+		sideLength = maxR
 	}
 
 	min := types.Vector3{
@@ -66,7 +66,7 @@ func ScanGroundRegion(roi RegionOfInterest, store *catalog.Store, epoch time.Tim
 
 	// 3. Query SVO for 4D space-time candidates
 	epochF := float64(epoch.Unix())
-	candidates := store.QueryRange(min, max, epochF-3600, epochF+3600) 
+	candidates := store.QueryRange(min, max, epochF-3600, epochF+3600)
 	results := make([]catalog.SDAObject, 0)
 
 	cosTheta := math.Cos(theta)
@@ -82,14 +82,14 @@ func ScanGroundRegion(roi RegionOfInterest, store *catalog.Store, epoch time.Tim
 
 		// 4. Narrow phase: Horizon Mask / Earth Occlusion
 		distSite := [3]float64{p[0] - siteUnit[0]*physics.EARTH_R_EQUATORIAL, p[1] - siteUnit[1]*physics.EARTH_R_EQUATORIAL, p[2] - siteUnit[2]*physics.EARTH_R_EQUATORIAL}
-		if distSite[0]*siteUnit[0] + distSite[1]*siteUnit[1] + distSite[2]*siteUnit[2] <= 0 {
-			continue 
+		if distSite[0]*siteUnit[0]+distSite[1]*siteUnit[1]+distSite[2]*siteUnit[2] <= 0 {
+			continue
 		}
 
 		// 5. Narrow phase 2: Angular distance check (ROI Conical Shell)
 		pUnit := [3]float64{p[0] / rmag, p[1] / rmag, p[2] / rmag}
 		dot := pUnit[0]*siteUnit[0] + pUnit[1]*siteUnit[1] + pUnit[2]*siteUnit[2]
-		
+
 		if dot >= cosTheta {
 			results = append(results, rec)
 		}
@@ -114,7 +114,7 @@ func ScanGroundRegionWithAxiom(roi RegionOfInterest, store *catalog.Store, kerne
 	gst := physics.GreenwichSiderealTime(jd)
 
 	phi := roi.LatDeg * physics.RAD_PER_DEG
-	lambda := roi.LonDeg * physics.RAD_PER_DEG + gst
+	lambda := roi.LonDeg*physics.RAD_PER_DEG + gst
 	siteUnit := [3]float64{
 		math.Cos(phi) * math.Cos(lambda),
 		math.Cos(phi) * math.Sin(lambda),
@@ -148,19 +148,19 @@ func ScanGroundRegionWithAxiom(roi RegionOfInterest, store *catalog.Store, kerne
 	cosTheta := math.Cos(theta)
 	for _, rec := range candidates {
 		var p [3]float64
-		
+
 		// 1. Initialize High-Fidelity State
 		init := physics.State{
 			Pos:     physics.Vector3{rec.Pos.X, rec.Pos.Y, rec.Pos.Z},
 			Vel:     physics.Vector3{rec.Vel.X, rec.Vel.Y, rec.Vel.Z},
 			EpochJD: rec.EpochTT,
 		}
-		
+
 		deltaMins := (epochF/60.0 - rec.EpochTT*1440.0/60.0) // simplified delta
 		if rec.EpochTT == 0 {
 			deltaMins = 0
 		}
-		
+
 		// 2. High-Precision Axial Propagation
 		axProp := orbital.NewAxiomPropagator(kernel, init, time.Unix(int64(rec.EpochTT*86400-2440587.5*86400), 0), physics.PhysicsParams{Mass: 1000, Cd: 2.2, DragArea: 1.0})
 		state, err := axProp.Propagate(deltaMins)
@@ -168,7 +168,7 @@ func ScanGroundRegionWithAxiom(roi RegionOfInterest, store *catalog.Store, kerne
 			continue
 		}
 		p = [3]float64{state.Pos[0], state.Pos[1], state.Pos[2]}
-		rec.Pos = octree.Vector3{X: p[0], Y: p[1], Z: p[2]}
+		rec.Pos = types.Vector3{X: p[0], Y: p[1], Z: p[2]}
 
 		rmag := math.Sqrt(p[0]*p[0] + p[1]*p[1] + p[2]*p[2])
 		if rmag < physics.EARTH_R_EQUATORIAL || rmag > maxR {

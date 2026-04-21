@@ -4,6 +4,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,23 +12,23 @@ import (
 
 // AssetMetadata represents static satellite information
 type AssetMetadata struct {
-	NoradCatID            int32
-	IntlDesignator        string
-	ObjectName            string
-	ObjectType            string
-	CountryCode           string
-	LaunchDate            string // ISO 8601 date format
-	LaunchSite            string
-	Owner                 string
-	MassKg                float64
-	DragAreaM2            float64
-	SRPAreaM2             float64
-	ReflectivityCoeff     float64
-	IsIndianAsset         bool
-	PriorityLevel         int32
-	MissionType           string
-	ITUFilingRef          string
-	OrbitalSlotDeg        float64
+	NoradCatID        int32
+	IntlDesignator    string
+	ObjectName        string
+	ObjectType        string
+	CountryCode       string
+	LaunchDate        string // ISO 8601 date format
+	LaunchSite        string
+	Owner             string
+	MassKg            float64
+	DragAreaM2        float64
+	SRPAreaM2         float64
+	ReflectivityCoeff float64
+	IsIndianAsset     bool
+	PriorityLevel     int32
+	MissionType       string
+	ITUFilingRef      string
+	OrbitalSlotDeg    float64
 }
 
 // AssetMetadataRepo provides data access for asset_metadata table
@@ -212,7 +213,8 @@ func (r *AssetMetadataRepo) scanAssets(rows pgx.Rows) ([]*AssetMetadata, error) 
 			&am.ITUFilingRef, &am.OrbitalSlotDeg,
 		)
 		if err != nil {
-			continue // Skip malformed rows
+			slog.Error("Failed to scan asset metadata", "error", err)
+			continue
 		}
 
 		assets = append(assets, &am)

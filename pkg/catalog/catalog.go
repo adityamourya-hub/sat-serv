@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"ssis/pkg/octree"
 	"ssis/pkg/spatial"
 	"ssis/pkg/types"
 )
@@ -23,62 +22,62 @@ const (
 type ObjectStatus string
 
 const (
-	StatusActive ObjectStatus = "ACTIVE"
+	StatusActive  ObjectStatus = "ACTIVE"
 	StatusDecayed ObjectStatus = "DECAYED"
 	StatusLost    ObjectStatus = "LOST"
 )
 
 /**
- * SDAObject defines the mission-ready persistent state and analytical metadata 
+ * SDAObject defines the mission-ready persistent state and analytical metadata
  * of a tracked space object, compliant with the iDEX ADITI 4.0 industry hardening.
  */
 type SDAObject struct {
-	ID             int             `json:"object_id"`
-	Name           string          `json:"name"`
-	CountryCode    string          `json:"country_code"`
-	AssetType      string          `json:"type"` // e.g., PAYLOAD, ROCKET_BODY, DEBRIS
-	Status         ObjectStatus    `json:"status"`
-	
+	ID          int          `json:"object_id"`
+	Name        string       `json:"name"`
+	CountryCode string       `json:"country_code"`
+	AssetType   string       `json:"type"` // e.g., PAYLOAD, ROCKET_BODY, DEBRIS
+	Status      ObjectStatus `json:"status"`
+
 	// State & Uncertainty
-	Pos            types.Vector3  `json:"position"` // ECI km
-	Vel            types.Vector3  `json:"velocity"` // ECI km/s
-	Covariance     [6][6]float64   `json:"covariance"`
-	EpochTT        float64         `json:"epoch_tt"` // Terrestrial Time Julian Date
-	Frame          CoordinateFrame `json:"frame"`
+	Pos        types.Vector3   `json:"position"` // ECI km
+	Vel        types.Vector3   `json:"velocity"` // ECI km/s
+	Covariance [6][6]float64   `json:"covariance"`
+	EpochTT    float64         `json:"epoch_tt"` // Terrestrial Time Julian Date
+	Frame      CoordinateFrame `json:"frame"`
 
 	// Physical Characteristics (Environment Interactions)
-	MassKg         float64 `json:"mass_kg"`
-	DragArea       float64 `json:"drag_area_m2"`
-	SRPArea        float64 `json:"srp_area_m2"`
-	Cd             float64 `json:"drag_coeff"`
-	Cr             float64 `json:"reflectivity_coeff"`
-	RCS            float64 `json:"rcs_m2"`
-	
+	MassKg   float64 `json:"mass_kg"`
+	DragArea float64 `json:"drag_area_m2"`
+	SRPArea  float64 `json:"srp_area_m2"`
+	Cd       float64 `json:"drag_coeff"`
+	Cr       float64 `json:"reflectivity_coeff"`
+	RCS      float64 `json:"rcs_m2"`
+
 	// Provenance & Quality
 	LastUpdateUnix int64   `json:"last_updated"`
 	Version        int     `json:"version"`
 	ODQualityScore float64 `json:"od_quality"`
 	SensorID       string  `json:"sensor_id"`
-	
+
 	// Uncertainty (State Sigma)
-	PosSigmaKm     float64 `json:"pos_sigma_km"`
-	VelSigmaKmS    float64 `json:"vel_sigma_kms"`
-	
+	PosSigmaKm  float64 `json:"pos_sigma_km"`
+	VelSigmaKmS float64 `json:"vel_sigma_kms"`
+
 	// Legacy Support
-	TLELine1       string `json:"tle_l1,omitempty"`
-	TLELine2       string `json:"tle_l2,omitempty"`
-	
+	TLELine1 string `json:"tle_l1,omitempty"`
+	TLELine2 string `json:"tle_l2,omitempty"`
+
 	// Alias for BVH alignment
-	Timestamp      float64 `json:"-"`
+	Timestamp float64 `json:"-"`
 }
 
-// ObjectRecord is a legacy alias for SDAObject to support BVH indexing 
+// ObjectRecord is a legacy alias for SDAObject to support BVH indexing
 // and internal structural consistency during the Phase 1.7 migration.
 type ObjectRecord = SDAObject
 
 func (r SDAObject) GetPosition() types.Vector3 { return r.Pos }
-func (r SDAObject) GetID() int                { return r.ID }
-func (r SDAObject) GetTimestamp() float64     { return r.EpochTT }
+func (r SDAObject) GetID() int                 { return r.ID }
+func (r SDAObject) GetTimestamp() float64      { return r.EpochTT }
 
 type TrackObservation struct {
 	TrackID       int

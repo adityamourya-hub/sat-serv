@@ -1,0 +1,58 @@
+# Sensor Registry Configuration
+# SSIS Optical and Radar Sensor Network
+
+sensors:
+  # Northern Optical Sensor - Leh
+  - id: leh_optical
+    type: optical
+    lat: 34.1526
+    lon: 77.5771
+    alt_km: 3.500
+    max_range_km: 36000
+    min_elevation_deg: 15
+    cloud_blind_threshold: 0.40
+    status: active
+    
+  # Southern Optical Sensor - Mount Abu
+  - id: mount_abu_optical
+    type: optical
+    lat: 24.5925
+    lon: 72.7156
+    alt_km: 1.722
+    max_range_km: 36000
+    min_elevation_deg: 15
+    cloud_blind_threshold: 0.40
+    status: active
+    
+  # LEO Radar - Nellore
+  - id: nellore_radar
+    type: radar
+    lat: 13.4348
+    lon: 79.9197
+    alt_km: 0.020
+    max_range_km: 2000
+    min_elevation_deg: 10
+    rain_degrade_threshold: 5.0
+    status: active
+    
+  # Eastern Optical - Tawang
+  - id: tawang_optical
+    type: optical
+    lat: 27.5859
+    lon: 91.8634
+    alt_km: 2.800
+    max_range_km: 36000
+    min_elevation_deg: 15
+    cloud_blind_threshold: 0.40
+    status: standby
+    
+  # Southern Radar - Sriharikota
+  - id: sriharikota_radar
+    type: radar
+    lat: 13.7331
+    lon: 80.2000
+    alt_km: 0.015
+    max_range_km: 2500
+    min_elevation_deg: 5
+    rain_degrade_threshold: 8.0
+    status: maintenance

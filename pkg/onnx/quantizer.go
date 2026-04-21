@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/exec"
 )
 
 // QuantizationMode defines the quantization strategy
@@ -76,7 +75,7 @@ func (mo *ModelOptimizer) Optimize() (*QuantizationResult, error) {
 	result.InputSizeBytes = inputInfo.Size()
 
 	// Step 1: ONNX optimization (graph optimization)
-	if err := mo.optimizeGraph(); err != nil {
+	if err := mo.optimizeModel(); err != nil {
 		result.Error = fmt.Sprintf("Graph optimization failed: %v", err)
 		return result, err
 	}

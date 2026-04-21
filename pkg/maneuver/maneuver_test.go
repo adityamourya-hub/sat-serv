@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"ssis/pkg/orbital"
+	"ssis/pkg/physics"
 )
 
 type mockManeuverModel struct {
@@ -35,13 +35,13 @@ func TestDetectManeuvers(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatalf("Expected at least one maneuver event")
 	}
-	if events[0].Type != ManeuverImpulsive {
+	if events[0].Type != physics.ManeuverImpulsive {
 		t.Fatalf("Expected impulsive maneuver, got %s", events[0].Type)
 	}
 }
 
 func TestDetectManeuversHybridUsesModel(t *testing.T) {
-	model := mockManeuverModel{prob: 0.92, conf: 0.81, typ: ManeuverImpulsive, dv: 0.11}
+	model := mockManeuverModel{prob: 0.92, conf: 0.81, typ: physics.ManeuverImpulsive, dv: 0.11}
 	hybrid := NewHybridManeuverDetector(model)
 	hybrid.WindowSize = 4
 	hybrid.MinProbability = 0.5
@@ -54,7 +54,7 @@ func TestDetectManeuversHybridUsesModel(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatalf("Expected model-driven maneuver events")
 	}
-	if events[0].Type != ManeuverImpulsive {
+	if events[0].Type != physics.ManeuverImpulsive {
 		t.Fatalf("Expected model to classify impulsive maneuver, got %s", events[0].Type)
 	}
 	if events[0].Score <= 0 {
@@ -74,17 +74,17 @@ func TestHeuristicSHAP(t *testing.T) {
 }
 
 func TestCharacterizeManeuverFromTracks(t *testing.T) {
-	prior := []orbital.State{
-		{X: 7000, Y: 0, Z: 0, VX: 0, VY: 7.50, VZ: 0.00},
-		{X: 6998, Y: 20, Z: 0, VX: -0.02, VY: 7.49, VZ: 0.00},
+	prior := []physics.State{
+		{Pos: physics.Vector3{7000, 0, 0}, Vel: physics.Vector3{0, 7.50, 0.00}},
+		{Pos: physics.Vector3{6998, 20, 0}, Vel: physics.Vector3{-0.02, 7.49, 0.00}},
 	}
-	post := []orbital.State{
-		{X: 6998, Y: 20, Z: 0, VX: -0.02, VY: 7.56, VZ: 0.01},
-		{X: 6995, Y: 38, Z: 0.2, VX: -0.04, VY: 7.56, VZ: 0.01},
+	post := []physics.State{
+		{Pos: physics.Vector3{6998, 20, 0}, Vel: physics.Vector3{-0.02, 7.56, 0.01}},
+		{Pos: physics.Vector3{6995, 38, 0.2}, Vel: physics.Vector3{-0.04, 7.56, 0.01}},
 	}
 	tPrior := []float64{100, 110}
 	tPost := []float64{111, 120}
-	assets := []orbital.State{{X: 7020, Y: 0, Z: 0, VX: 0, VY: 7.48, VZ: 0.0}}
+	assets := []physics.State{{Pos: physics.Vector3{7020, 0, 0}, Vel: physics.Vector3{0, 7.48, 0}}}
 
 	c := CharacterizeManeuverFromTracks(prior, post, tPrior, tPost, assets)
 	if c.ManeuverTimeSec <= 0 {
@@ -93,7 +93,7 @@ func TestCharacterizeManeuverFromTracks(t *testing.T) {
 	if math.Abs(c.DeltaVRSW[1]) < 1e-6 {
 		t.Fatalf("expected non-zero along-track delta-v in RSW")
 	}
-	if c.BurnType == ManeuverNone {
+	if c.BurnType == physics.ManeuverNone {
 		t.Fatalf("expected burn classification")
 	}
 	if c.Confidence <= 0 || c.Confidence > 1 {
@@ -126,7 +126,7 @@ func TestDetectManeuversCovarianceAwareDetectsTrueEvent(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatalf("expected covariance-aware detector to catch strong maneuver event")
 	}
-	if events[0].Type == ManeuverNone {
+	if events[0].Type == physics.ManeuverNone {
 		t.Fatalf("expected classified maneuver type")
 	}
 }

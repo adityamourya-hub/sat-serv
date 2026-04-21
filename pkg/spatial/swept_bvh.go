@@ -27,21 +27,30 @@ import (
 	"ssis/pkg/physics"
 )
 
+// ManeuverDetector interface for detecting non-ballistic deviations
+// Implemented by pkg/maneuver.HybridManeuverDetector
+type ManeuverDetector interface {
+	// DetectManeuver returns true if object has deviated from ballistic trajectory
+	DetectManeuver(objectID int, state physics.State) bool
+	// GetManeuverProbability returns confidence level of recent maneuver detection
+	GetManeuverProbability(objectID int) float64
+}
+
 // SweptAABB represents a bounding box that encompasses motion over time
 type SweptAABB struct {
 	// Current AABB (at t=0)
 	Min, Max [3]float64
-	
+
 	// Swept bounds (encompassing t ∈ [0, T_lookahead])
 	SweptMin, SweptMax [3]float64
-	
+
 	// Motion prediction
 	Velocity     [3]float64
 	LookaheadSec float64 // Time horizon for sweeping
-	
+
 	// Validity flag
-	IsBallistic  bool    // True if no maneuver detected
-	LastUpdate   float64 // Julian date of last verification
+	IsBallistic bool    // True if no maneuver detected
+	LastUpdate  float64 // Julian date of last verification
 }
 
 // NewSweptAABB creates swept volume from state and velocity
@@ -50,7 +59,7 @@ func NewSweptAABB(pos, vel [3]float64, lookaheadSec float64) SweptAABB {
 	epsilon := 0.001 // 1m safety margin
 	min := [3]float64{pos[0] - epsilon, pos[1] - epsilon, pos[2] - epsilon}
 	max := [3]float64{pos[0] + epsilon, pos[1] + epsilon, pos[2] + epsilon}
-	
+
 	// Swept bounds: current ± velocity × lookahead
 	sweptMin := [3]float64{
 		min[0] + math.Min(0, vel[0]*lookaheadSec),
@@ -62,7 +71,7 @@ func NewSweptAABB(pos, vel [3]float64, lookaheadSec float64) SweptAABB {
 		max[1] + math.Max(0, vel[1]*lookaheadSec),
 		max[2] + math.Max(0, vel[2]*lookaheadSec),
 	}
-	
+
 	return SweptAABB{
 		Min:          min,
 		Max:          max,
@@ -111,14 +120,15 @@ func (s SweptAABB) VolumeSwept() float64 {
 type LazyBVHNode struct {
 	// Bounding volume
 	Bounds SweptAABB
-	
+
 	// Children
 	Left, Right *LazyBVHNode
-	
+	Parent      *LazyBVHNode // Parent pointer for bubble-up propagation
+
 	// Leaf data
-	ObjectID     int
-	IsLeaf       bool
-	
+	ObjectID int
+	IsLeaf   bool
+
 	// Update tracking
 	NeedsUpdate  bool
 	LastManeuver float64 // Julian date of last detected maneuver
@@ -126,22 +136,84 @@ type LazyBVHNode struct {
 
 // LazyBVH implements temporal coherence BVH
 type LazyBVH struct {
-	Root           *LazyBVHNode
-	Objects        map[int]*LazyBVHNode // Object ID → leaf node
-	ManeuverFlags  map[int]bool         // Objects needing full rebuild
-	
+	Root          *LazyBVHNode
+	Objects       map[int]*LazyBVHNode // Object ID → leaf node
+	ManeuverFlags map[int]bool         // Objects needing full rebuild
+
+	// Maneuver detection integration
+	maneuverDetector ManeuverDetector
+
 	// Configuration
-	LookaheadSec   float64 // Sweep time horizon
+	LookaheadSec     float64 // Sweep time horizon
 	RebuildThreshold float64 // Fraction of objects requiring rebuild
+
+	// Maneuver-based expansion factor (covariance multiplier)
+	ManeuverSigmaScale float64 // Default 3.0 (3-sigma containment)
 }
 
 // NewLazyBVH creates BVH with temporal coherence
 func NewLazyBVH(lookaheadSec float64) *LazyBVH {
 	return &LazyBVH{
-		Objects:          make(map[int]*LazyBVHNode),
-		ManeuverFlags:    make(map[int]bool),
-		LookaheadSec:     lookaheadSec,
-		RebuildThreshold: 0.1, // Rebuild if >10% objects maneuver
+		Objects:            make(map[int]*LazyBVHNode),
+		ManeuverFlags:      make(map[int]bool),
+		LookaheadSec:       lookaheadSec,
+		RebuildThreshold:   0.1, // Rebuild if >10% objects maneuver
+		ManeuverSigmaScale: 3.0, // 3-sigma containment
+	}
+}
+
+// SetManeuverDetector wires the maneuver detection system for non-ballistic handling
+func (lbvh *LazyBVH) SetManeuverDetector(detector ManeuverDetector) {
+	lbvh.maneuverDetector = detector
+}
+
+// UpdateWithManeuverDetection performs linear update with maneuver-aware bounds expansion
+func (lbvh *LazyBVH) UpdateWithManeuverDetection(states map[int]physics.State) {
+	for id, state := range states {
+		node, exists := lbvh.Objects[id]
+		if !exists {
+			continue // New object, will be added in full rebuild
+		}
+
+		if node.IsLeaf {
+			// Check for maneuver using detector if available
+			isManeuvering := false
+			maneuverProb := 0.0
+			if lbvh.maneuverDetector != nil {
+				isManeuvering = lbvh.maneuverDetector.DetectManeuver(id, state)
+				maneuverProb = lbvh.maneuverDetector.GetManeuverProbability(id)
+			}
+
+			// Update swept AABB with maneuver-aware expansion
+			pos := [3]float64{state.Pos[0], state.Pos[1], state.Pos[2]}
+			vel := [3]float64{state.Vel[0], state.Vel[1], state.Vel[2]}
+			node.Bounds = NewSweptAABB(pos, vel, lbvh.LookaheadSec)
+
+			// Expand bounds for maneuvering objects (covariance inflation)
+			if isManeuvering {
+				node.Bounds.IsBallistic = false
+				maneuverExpansion := lbvh.ManeuverSigmaScale * (1.0 + maneuverProb)
+				node.Bounds.ExpandForManeuver(maneuverExpansion)
+			}
+
+			// Propagate update up tree (bubble up)
+			lbvh.bubbleUpdate(node)
+		}
+	}
+}
+
+// ExpandForManeuver expands swept bounds to account for maneuver uncertainty
+func (s *SweptAABB) ExpandForManeuver(sigmaScale float64) {
+	// Expand current bounds by sigmaScale × velocity uncertainty
+	uncertainty := [3]float64{
+		s.Velocity[0] * s.LookaheadSec * sigmaScale * 0.1, // 10% velocity uncertainty
+		s.Velocity[1] * s.LookaheadSec * sigmaScale * 0.1,
+		s.Velocity[2] * s.LookaheadSec * sigmaScale * 0.1,
+	}
+
+	for i := 0; i < 3; i++ {
+		s.SweptMin[i] -= math.Abs(uncertainty[i])
+		s.SweptMax[i] += math.Abs(uncertainty[i])
 	}
 }
 
@@ -149,22 +221,22 @@ func NewLazyBVH(lookaheadSec float64) *LazyBVH {
 type UpdateMode int
 
 const (
-	LinearUpdate UpdateMode = iota // Update leaf bounds only (fast)
-	PartialRebuild                 // Rebuild subtrees with maneuvers
-	FullRebuild                    // Complete rebuild (slow)
+	LinearUpdate   UpdateMode = iota // Update leaf bounds only (fast)
+	PartialRebuild                   // Rebuild subtrees with maneuvers
+	FullRebuild                      // Complete rebuild (slow)
 )
 
 // ChooseUpdateMode selects strategy based on maneuver count
 func (lbvh *LazyBVH) ChooseUpdateMode() UpdateMode {
 	maneuverCount := len(lbvh.ManeuverFlags)
 	totalCount := len(lbvh.Objects)
-	
+
 	if totalCount == 0 {
 		return FullRebuild
 	}
-	
+
 	fraction := float64(maneuverCount) / float64(totalCount)
-	
+
 	if fraction < 0.01 {
 		// <1% maneuvers: Linear update (fastest)
 		return LinearUpdate
@@ -185,13 +257,13 @@ func (lbvh *LazyBVH) LinearUpdate(states map[int]physics.State) {
 		if !exists {
 			continue // New object, will be added in full rebuild
 		}
-		
+
 		if node.IsLeaf {
 			// Update swept AABB for this leaf
 			pos := [3]float64{state.Pos[0], state.Pos[1], state.Pos[2]}
 			vel := [3]float64{state.Vel[0], state.Vel[1], state.Vel[2]}
 			node.Bounds = NewSweptAABB(pos, vel, lbvh.LookaheadSec)
-			
+
 			// Propagate update up tree (bubble up)
 			lbvh.bubbleUpdate(node)
 		}
@@ -206,10 +278,9 @@ func (lbvh *LazyBVH) bubbleUpdate(leaf *LazyBVHNode) {
 			// Update internal node bounds to encompass children
 			node.Bounds = mergeSweptAABB(node.Left.Bounds, node.Right.Bounds)
 		}
-		
-		// Move to parent (need parent pointer or traverse from root)
-		// Simplified: In production, add parent pointer to node
-		node = nil // Placeholder
+
+		// Move to parent for next iteration
+		node = node.Parent
 	}
 }
 
@@ -223,10 +294,67 @@ func mergeSweptAABB(a, b SweptAABB) SweptAABB {
 	}
 }
 
+// BuildFromLeaves constructs BVH from leaf nodes with parent pointer assignment
+func (lbvh *LazyBVH) BuildFromLeaves(leaves []*LazyBVHNode) {
+	if len(leaves) == 0 {
+		lbvh.Root = nil
+		return
+	}
+
+	// Build tree recursively with parent assignment
+	lbvh.Root = lbvh.buildRecursive(leaves, nil)
+
+	// Register all leaves in Objects map
+	lbvh.Objects = make(map[int]*LazyBVHNode)
+	for _, leaf := range leaves {
+		if leaf.IsLeaf {
+			lbvh.Objects[leaf.ObjectID] = leaf
+		}
+	}
+}
+
+// buildRecursive constructs tree and assigns parent pointers
+func (lbvh *LazyBVH) buildRecursive(nodes []*LazyBVHNode, parent *LazyBVHNode) *LazyBVHNode {
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	if len(nodes) == 1 {
+		nodes[0].Parent = parent
+		nodes[0].Left = nil
+		nodes[0].Right = nil
+		return nodes[0]
+	}
+
+	// Find split point by swept volume
+	mid := len(nodes) / 2
+
+	// Create internal node
+	internal := &LazyBVHNode{
+		IsLeaf: false,
+		Parent: parent,
+	}
+
+	// Recursively build children
+	internal.Left = lbvh.buildRecursive(nodes[:mid], internal)
+	internal.Right = lbvh.buildRecursive(nodes[mid:], internal)
+
+	// Compute bounds from children
+	if internal.Left != nil && internal.Right != nil {
+		internal.Bounds = mergeSweptAABB(internal.Left.Bounds, internal.Right.Bounds)
+	} else if internal.Left != nil {
+		internal.Bounds = internal.Left.Bounds
+	} else if internal.Right != nil {
+		internal.Bounds = internal.Right.Bounds
+	}
+
+	return internal
+}
+
 // FlagManeuver marks object for special handling
 func (lbvh *LazyBVH) FlagManeuver(objectID int) {
 	lbvh.ManeuverFlags[objectID] = true
-	
+
 	if node, exists := lbvh.Objects[objectID]; exists {
 		node.NeedsUpdate = true
 		node.Bounds.IsBallistic = false
@@ -246,17 +374,17 @@ func (lbvh *LazyBVH) queryRecursive(node *LazyBVHNode, query SweptAABB, results 
 	if node == nil {
 		return
 	}
-	
+
 	// Check if query intersects this node's bounds
 	if !node.Bounds.IntersectsSwept(query) {
 		return // Prune this branch
 	}
-	
+
 	if node.IsLeaf {
 		*results = append(*results, node.ObjectID)
 		return
 	}
-	
+
 	// Recurse to children
 	lbvh.queryRecursive(node.Left, query, results)
 	lbvh.queryRecursive(node.Right, query, results)
@@ -266,44 +394,44 @@ func (lbvh *LazyBVH) queryRecursive(node *LazyBVHNode, query SweptAABB, results 
 func PerformanceComparison() (standardComplexity, lazyComplexity string, speedup float64) {
 	standardComplexity = "O(N log N) every cycle"
 	lazyComplexity = "O(N) for 90% of cycles"
-	
+
 	// With 100k objects and 1% maneuver rate:
 	// Standard: 100k × log2(100k) ≈ 1.7M operations
 	// Lazy: 100k + (0.01 × 100k) × log2(100k) ≈ 120k operations
 	// Speedup: ~14×
-	
+
 	speedup = 14.0
 	return
 }
 
 // ComplexityAnalysis for different catalog sizes
 func ComplexityAnalysis() map[int]struct {
-	StandardOps  int
-	LazyOps      int
-	Speedup      float64
+	StandardOps int
+	LazyOps     int
+	Speedup     float64
 } {
 	result := make(map[int]struct {
-		StandardOps  int
-		LazyOps      int
-		Speedup      float64
+		StandardOps int
+		LazyOps     int
+		Speedup     float64
 	})
-	
+
 	sizes := []int{10000, 30000, 100000}
-	
+
 	for _, n := range sizes {
 		standard := float64(n) * math.Log2(float64(n))
 		lazy := float64(n) + 0.01*float64(n)*math.Log2(float64(n))
-		
+
 		result[n] = struct {
-			StandardOps  int
-			LazyOps      int
-			Speedup      float64
+			StandardOps int
+			LazyOps     int
+			Speedup     float64
 		}{
-			StandardOps:  int(standard),
-			LazyOps:      int(lazy),
-			Speedup:      standard / lazy,
+			StandardOps: int(standard),
+			LazyOps:     int(lazy),
+			Speedup:     standard / lazy,
 		}
 	}
-	
+
 	return result
 }

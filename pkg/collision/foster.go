@@ -60,8 +60,10 @@ func AdaptiveFosterPcWithMetadata(missR, missI, sigmaR, sigmaI, sigmaRI, R, rela
 
 	// Alfano upper-bound short-circuit: if miss distance >> combined sigma, Pc is negligible
 	missDist := math.Sqrt(missR*missR + missI*missI)
-	combinedSigma := math.Sqrt(math.Max(sigmaR, sigmaI)) // max eigenvalue proxy (sigmaR/sigmaI are variances)
-	if combinedSigma > 0 && missDist/(combinedSigma) > 50.0 {
+	// Use actual maximum eigenvalue (lambdaMax) from principal frame transformation
+	// NOT max(sigmaR, sigmaI) which can be wrong for elongated/rotated covariances
+	combinedSigma := math.Sqrt(lambdaMax)
+	if combinedSigma > 0 && missDist/combinedSigma > 50.0 {
 		meta.Method = "alfano_bound"
 		meta.ConvergenceDiag = "miss_distance_exceeds_50_sigma"
 		meta.Converged = true
