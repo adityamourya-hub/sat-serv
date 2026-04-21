@@ -137,7 +137,7 @@ func (t *SpectralToFuelTable) IdentifyPropulsion(detectedLines []SpectralLine) (
 }
 
 // scoreSignature calculates the match score between detected lines and a signature
-func (t *SpectralToFuelTable) scoreSignature(detectedLines []SpectralLine, signature PropulsionSignature, element string) float32 {
+func (t *SpectralToFuelTable) scoreSignature(detectedLines []SpectralLine, signature PropulsionSignature, _element string) float32 {
 	if len(detectedLines) == 0 || len(signature.SpectralLines) == 0 {
 		return 0.0
 	}
