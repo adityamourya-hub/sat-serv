@@ -14,13 +14,13 @@ package sda
 type MaterialType int
 
 const (
-	MaterialUnknown MaterialType = iota
-	MaterialGaAsSolar    // Gallium Arsenide solar cells
-	MaterialSiliconSolar  // Silicon solar cells
-	MaterialMLI          // Multi-layer insulation
-	MaterialAluminum     // Aluminum structure
-	MaterialCarbonFiber  // Carbon fiber composite
-	MaterialTitanium     // Titanium structure
+	MaterialUnknown      MaterialType = iota
+	MaterialGaAsSolar                 // Gallium Arsenide solar cells
+	MaterialSiliconSolar              // Silicon solar cells
+	MaterialMLI                       // Multi-layer insulation
+	MaterialAluminum                  // Aluminum structure
+	MaterialCarbonFiber               // Carbon fiber composite
+	MaterialTitanium                  // Titanium structure
 )
 
 func (mt MaterialType) String() string {
@@ -77,8 +77,8 @@ func (t *MaterialIDTable) initializeDefaultSignatures() {
 			{WavelengthNm: 871.2, Intensity: 0.85, Element: "As"},
 		},
 		DensityKgM3:  5320.0, // GaAs density
-		AreaToMass:   0.02,    // High A/m for solar arrays
-		Reflectivity: 0.3,     // Dark solar cells
+		AreaToMass:   0.02,   // High A/m for solar arrays
+		Reflectivity: 0.3,    // Dark solar cells
 		Confidence:   0.9,
 	}
 
@@ -91,8 +91,8 @@ func (t *MaterialIDTable) initializeDefaultSignatures() {
 			{WavelengthNm: 288.2, Intensity: 0.75, Element: "Si"},
 		},
 		DensityKgM3:  2330.0, // Silicon density
-		AreaToMass:   0.015,   // Moderate A/m
-		Reflectivity: 0.25,    // Moderate reflectivity
+		AreaToMass:   0.015,  // Moderate A/m
+		Reflectivity: 0.25,   // Moderate reflectivity
 		Confidence:   0.85,
 	}
 
@@ -106,8 +106,8 @@ func (t *MaterialIDTable) initializeDefaultSignatures() {
 			{WavelengthNm: 350.0, Intensity: 0.6, Element: "C-N"},
 		},
 		DensityKgM3:  1420.0, // Kapton density
-		AreaToMass:   0.05,    // Very high A/m (thin films)
-		Reflectivity: 0.8,     // High reflectivity
+		AreaToMass:   0.05,   // Very high A/m (thin films)
+		Reflectivity: 0.8,    // High reflectivity
 		Confidence:   0.8,
 	}
 
@@ -120,8 +120,8 @@ func (t *MaterialIDTable) initializeDefaultSignatures() {
 			{WavelengthNm: 669.6, Intensity: 0.8, Element: "Al"},
 		},
 		DensityKgM3:  2700.0, // Aluminum density
-		AreaToMass:   0.005,   // Low A/m (structural)
-		Reflectivity: 0.9,     // Very high reflectivity
+		AreaToMass:   0.005,  // Low A/m (structural)
+		Reflectivity: 0.9,    // Very high reflectivity
 		Confidence:   0.85,
 	}
 
@@ -134,8 +134,8 @@ func (t *MaterialIDTable) initializeDefaultSignatures() {
 			{WavelengthNm: 422.0, Intensity: 0.7, Element: "C"},
 		},
 		DensityKgM3:  1600.0, // Carbon fiber density
-		AreaToMass:   0.01,    // Moderate A/m
-		Reflectivity: 0.4,     // Moderate reflectivity
+		AreaToMass:   0.01,   // Moderate A/m
+		Reflectivity: 0.4,    // Moderate reflectivity
 		Confidence:   0.75,
 	}
 }
@@ -157,7 +157,7 @@ func (t *MaterialIDTable) IdentifyMaterial(detectedLines []SpectralLine) (Materi
 }
 
 // scoreMaterial calculates the match score between detected lines and a material signature
-func (t *MaterialIDTable) scoreMaterial(detectedLines []SpectralLine, signature MaterialSignature, element string) float32 {
+func (t *MaterialIDTable) scoreMaterial(detectedLines []SpectralLine, signature MaterialSignature, _element string) float32 {
 	if len(detectedLines) == 0 || len(signature.SpectralLines) == 0 {
 		return 0.0
 	}
@@ -204,36 +204,36 @@ func (t *MaterialIDTable) scoreMaterial(detectedLines []SpectralLine, signature 
 // This is the "Golden Key" for drag equation: F_drag = 0.5 * ρ * v² * C_d * A
 func (t *MaterialIDTable) CalculateAreaToMass(detectedLines []SpectralLine) (float32, MaterialType) {
 	signature, confidence := t.IdentifyMaterial(detectedLines)
-	
+
 	if confidence < 0.7 {
 		// Default to moderate A/m if no confident match
 		return 0.01, MaterialUnknown
 	}
-	
+
 	return signature.AreaToMass, signature.MaterialType
 }
 
 // UpdateMetadataWithMaterial updates asset metadata with material properties
 func (t *MaterialIDTable) UpdateMetadataWithMaterial(targetID uint32, detectedLines []SpectralLine, metadataStore *MetadataStore) bool {
 	signature, confidence := t.IdentifyMaterial(detectedLines)
-	
+
 	if confidence < 0.7 {
 		return false // Low confidence, don't update
 	}
-	
+
 	meta := metadataStore.Get(targetID)
-	
+
 	// Store material type in platform class for tracking
 	// In production: add dedicated MaterialType field
 	if meta.PlatformClass == "Unknown" || meta.PlatformClass == "" {
 		meta.PlatformClass = signature.MaterialType.String()
 	}
-	
+
 	// Update mass estimate based on material density
 	// In production: calculate from observed dimensions
 	// For now: use existing mass estimate
-	
+
 	metadataStore.Set(meta)
-	
+
 	return true
 }

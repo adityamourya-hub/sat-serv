@@ -135,17 +135,18 @@ func (ms *MetadataStore) EstimateFromConvNeXt(obj catalog.SDAObject, platformCla
 	switch obj.AssetType {
 	case "PAYLOAD":
 		// Active satellites have propulsion
-		if platformClass == "Inspector" || platformClass == "RPO" {
+		switch platformClass {
+		case "Inspector", "RPO":
 			meta.EngineType = EngineChemical
 			meta.Isp = 300.0         // Typical monoprop
 			meta.BurnRate = 0.05     // m/s²
 			meta.EstimatedDV = 500.0 // m/s
-		} else if platformClass == "HeavyBus" {
+		case "HeavyBus":
 			meta.EngineType = EngineChemical
 			meta.Isp = 320.0          // Biprop
 			meta.BurnRate = 0.1       // m/s²
 			meta.EstimatedDV = 1000.0 // m/s
-		} else {
+		default:
 			meta.EngineType = EngineChemical
 			meta.Isp = 300.0
 			meta.BurnRate = 0.05

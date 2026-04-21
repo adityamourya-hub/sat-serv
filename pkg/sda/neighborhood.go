@@ -180,7 +180,7 @@ func (nw *NeighborhoodWatch) detectManeuver(sec Secondary, obj catalog.SDAObject
 }
 
 // buildTrajectoryStates constructs state trajectory for SINDy analysis
-func (nw *NeighborhoodWatch) buildTrajectoryStates(obj catalog.SDAObject, window TimeWindow) [][6]float64 {
+func (nw *NeighborhoodWatch) buildTrajectoryStates(obj catalog.SDAObject, _window TimeWindow) [][6]float64 {
 	samples := 50
 	states := make([][6]float64, samples)
 
