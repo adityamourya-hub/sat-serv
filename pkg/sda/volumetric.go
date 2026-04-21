@@ -149,7 +149,7 @@ func (e *VolumetricEngine) transformECEFToECI(region Region, window TimeWindow) 
 }
 
 // build4DIndex constructs the 4D BVH index from the catalog
-func (e *VolumetricEngine) build4DIndex(window TimeWindow) {
+func (e *VolumetricEngine) build4DIndex(_window TimeWindow) {
 	records := e.Catalog.Snapshot()
 
 	objects := make([]spatial.BVH4DObject, len(records))
