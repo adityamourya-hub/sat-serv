@@ -40,7 +40,7 @@ gcloud compute instances create $VM_NAME \
     --zone=$ZONE \
     --machine-type=n1-standard-8 \
     --accelerator=type=nvidia-tesla-v100,count=1 \
-    --image-family=pytorch-latest-gpu \
+    --image-family=pytorch-2-9-cu129-ubuntu-2204-nvidia-580 \
     --image-project=deeplearning-platform-release \
     --boot-disk-size=300GB \
     --boot-disk-type=pd-ssd \
@@ -65,7 +65,7 @@ Save as `~/train_all_sequential.sh`:
 #!/bin/bash
 set -e
 
-export BUCKET="YOUR_BUCKET"
+export BUCKET="ssis-training-1776624951"
 export HOME_DIR=$(pwd)
 export CHECKPOINT_DIR="./checkpoints"
 export WEIGHTS_DIR="./weights"
@@ -82,18 +82,69 @@ echo "Bucket: $BUCKET"
 echo "================================================"
 echo ""
 
-# Setup Python environment
+# Install NVIDIA drivers (if not present)
+install_nvidia_driver() {
+    echo "[DRIVER] Checking NVIDIA driver..."
+    if ! nvidia-smi &>/dev/null; then
+        echo "[DRIVER] Installing NVIDIA drivers..."
+        apt-get update -qq
+        apt-get install -y -qq linux-headers-$(uname -r)
+        
+        # Add NVIDIA package repositories
+        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
+        dpkg -i cuda-keyring_1.0-1_all.deb
+        apt-get update -qq
+        
+        # Install driver
+        apt-get install -y -qq nvidia-driver-550
+        
+        # Load driver
+        modprobe nvidia
+        
+        echo "[DRIVER] Waiting for driver to initialize..."
+        for i in {1..30}; do
+            if nvidia-smi &>/dev/null; then
+                echo "[DRIVER] NVIDIA driver ready!"
+                nvidia-smi
+                return 0
+            fi
+            echo "[DRIVER] Waiting... ($i/30)"
+            sleep 10
+        done
+        
+        echo "[ERROR] NVIDIA driver failed to load. Rebooting VM may help."
+        exit 1
+    else
+        echo "[DRIVER] NVIDIA driver already installed"
+        nvidia-smi
+    fi
+}
+
+# Setup Python virtual environment
 setup_env() {
-    echo "[SETUP] Installing dependencies..."
+    echo "[SETUP] Creating Python virtual environment..."
+    
+    # Install python3-venv if not present
+    apt-get update -qq && apt-get install -y -qq python3-venv python3-pip
+    
+    # Create and activate venv
+    python3 -m venv ~/ssis-venv
+    source ~/ssis-venv/bin/activate
+    
+    echo "[SETUP] Installing dependencies into venv..."
+    pip install --upgrade pip -q
     pip install -q torch==2.1.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
     pip install -q torch-geometric torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.1.0+cu118.html 2>/dev/null || true
-    pip install -q pandas numpy scikit-learn tqdm tensorboard gcsfs matplotlib
+    pip install -q pandas numpy scikit-learn tqdm tensorboard gcsfs matplotlib google-cloud-storage
     
     # Clone repo if not exists
     if [ ! -d "idex" ]; then
+        echo "[SETUP] Cloning repository..."
         git clone https://github.com/your-org/idex.git
     fi
     cd idex
+    
+    echo "[SETUP] Environment ready"
 }
 
 # Upload checkpoint to GCS
@@ -271,7 +322,10 @@ phase4_collision() {
 # ============================================================
 
 main() {
-    # Setup
+    # Install NVIDIA driver first
+    install_nvidia_driver
+    
+    # Setup Python environment
     setup_env
     
     # Check GPU
