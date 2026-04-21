@@ -173,10 +173,27 @@ def implicit_midpoint_step(model, z, dt, max_iter=10, tol=1e-10):
     return z_next
 
 
-# For backwards compatibility, alias forest_ruth_step to implicit_midpoint_step
-# Note: This is a temporary fix. The proper solution is to move training to JAX
-# or restructure the PyTorch model to use separable Hamiltonians.
-forest_ruth_step = implicit_midpoint_step
+# DEPRECATED: PyTorch GHNN path is deprecated.
+# The JAX Port-Hamiltonian System in ai/v3/port_hamiltonian.py is now the canonical
+# training backend. See ai/v3/train_phs_jax.py for the correct implementation
+# with Forest-Ruth 4th-order symplectic integrator (q/p split with proper c/d coefficients).
+#
+# This PyTorch path uses implicit midpoint which is NOT symplectic for non-separable
+# Hamiltonians and lacks the proper q/p alternation of Forest-Ruth.
+def forest_ruth_step(model, z, dt, max_iter=10, tol=1e-10):
+    """
+    DEPRECATED: Use JAX PHS implementation instead.
+    
+    This function is kept for backwards compatibility but will be removed.
+    It does NOT implement actual Forest-Ruth integration - it uses implicit midpoint.
+    """
+    import warnings
+    warnings.warn(
+        "PyTorch GHNN forest_ruth_step is deprecated. "
+        "Use JAX PortHamiltonianSystem in ai/v3/train_phs_jax.py for correct Yoshida-4 integration.",
+        DeprecationWarning, stacklevel=2
+    )
+    return implicit_midpoint_step(model, z, dt, max_iter, tol)
 
 
 def get_symplectic_form(device):
