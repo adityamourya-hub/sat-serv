@@ -63,7 +63,7 @@ func (s *SRTMDataSource) GetElevation(lat, lon float64) (float64, error) {
 
 	// Check cache
 	if tile, ok := s.cache[tileName]; ok {
-		return s.interpolate(tile, lat, lon), nil
+		return s.interpolate(tile), nil
 	}
 
 	// Load tile from file (placeholder - would read actual .hgt file)
@@ -72,7 +72,7 @@ func (s *SRTMDataSource) GetElevation(lat, lon float64) (float64, error) {
 }
 
 // interpolate performs bilinear interpolation on DEM tile
-func (s *SRTMDataSource) interpolate(tile [][]int16, _lat, _lon float64) float64 {
+func (s *SRTMDataSource) interpolate(tile [][]int16) float64 {
 	// Convert lat/lon to tile coordinates
 	// latFrac := lat - math.Floor(lat)
 	// lonFrac := lon - math.Floor(lon)
