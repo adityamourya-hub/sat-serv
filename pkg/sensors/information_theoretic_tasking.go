@@ -376,7 +376,7 @@ func (m *orbitalPHSModel) Hamiltonian(q, p, z []float64) float64 {
 
 // updateSTMSymplectic updates STM using symplectic flow
 // Maintains covariance realism while preserving energy constraints
-func (obj *TrackedObject) updateSTMSymplectic(dt float64, _qOld, _pOld, _qNew, _pNew []float64) {
+func (obj *TrackedObject) updateSTMSymplectic(dt float64, _qOld, _pOld, qNew, _pNew []float64) {
 	// Compute state transition matrix using finite differences along symplectic flow
 	// This is more accurate than linearized Keplerian approximation for HGV dynamics
 
