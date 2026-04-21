@@ -275,7 +275,7 @@ func (pod *PoDEngine) Compute(
 func (pod *PoDEngine) computeSensorPoD(
 	sensor SensorPayload,
 	geo ObservationGeometry,
-	target physics.State,
+	_target physics.State,
 ) float64 {
 
 	switch sensor.Type {
@@ -381,7 +381,7 @@ func (pod *PoDEngine) computeIRPoD(
 
 // computeRadarPoD for space-based radar (rare but possible)
 func (pod *PoDEngine) computeRadarPoD(
-	sensor SensorPayload,
+	_sensor SensorPayload,
 	geo ObservationGeometry,
 ) float64 {
 
@@ -407,7 +407,7 @@ func (pod *PoDEngine) computeRadarPoD(
 
 // computeLidarPoD for laser ranging
 func (pod *PoDEngine) computeLidarPoD(
-	sensor SensorPayload,
+	_sensor SensorPayload,
 	geo ObservationGeometry,
 ) float64 {
 
