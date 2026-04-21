@@ -4,6 +4,7 @@ package onnx
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -63,7 +64,7 @@ func (mo *ModelOptimizer) Optimize() (*QuantizationResult, error) {
 	// Check input model exists
 	if _, err := os.Stat(mo.config.InputModelPath); os.IsNotExist(err) {
 		result.Error = fmt.Sprintf("Input model not found: %s", mo.config.InputModelPath)
-		return result, fmt.Errorf(result.Error)
+		return result, errors.New(result.Error)
 	}
 
 	// Get input model size

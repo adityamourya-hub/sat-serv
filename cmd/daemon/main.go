@@ -440,7 +440,7 @@ func logDashboard(
 		status = "MANEUVER"
 	}
 
-	log.Printf("[%s] Alt=%.1fkm Mach=%.1f ρ=%.3e | SINDy: %s Conf=%.0f%% Mag=%.3f",
+	log.Printf("[%s] Alt=%.1fkm Mach=%.1f ρ=%.3e | SINDy: %v Conf=%.0f%% Mag=%.3f",
 		status,
 		state.Position[2]-6371.0,
 		atm.Mach,
@@ -599,7 +599,7 @@ func main() {
 	defer ticker.Stop()
 
 	log.Printf("[RUN] Starting %dHz cognitive loop...\n", LoopFrequencyHz)
-	log.Println("Press Ctrl+C to stop\n")
+	log.Println("Press Ctrl+C to stop")
 
 	// 4. Main loop
 	iteration := 0

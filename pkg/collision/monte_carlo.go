@@ -17,13 +17,14 @@ import (
 
 // Statistics holds empirical distribution metrics for MC conjunctions.
 type Statistics struct {
-	Mean     float64 `json:"mean"`
-	Median   float64 `json:"median"`
-	StdDev   float64 `json:"std_dev"`
-	P05      float64 `json:"p05"`
-	P95      float64 `json:"p95"`
-	Skewness float64 `json:"skewness"`
-	Kurtosis float64 `json:"kurtosis"`
+	Mean          float64 `json:"mean"`
+	Median        float64 `json:"median"`
+	StdDev        float64 `json:"std_dev"`
+	P05           float64 `json:"p05"`
+	P95           float64 `json:"p95"`
+	Skewness      float64 `json:"skewness"`
+	Kurtosis      float64 `json:"kurtosis"`
+	IsNonGaussian bool    `json:"is_non_gaussian"`
 }
 
 // MonteCarloConjunctionResult encapsulates the full statistical characterization of a risk event.
@@ -268,11 +269,21 @@ func computeStats(data []float64) Statistics {
 	mean := stat.Mean(data, nil)
 	std := stat.StdDev(data, nil)
 
+	// Compute skewness and kurtosis for non-Gaussian detection
+	skew := stat.Skew(data, nil)
+	kurt := stat.ExKurtosis(data, nil)
+
+	// Non-Gaussian if excess kurtosis > 0.5 (heavy-tailed distribution)
+	isNonGaussian := math.Abs(kurt) > 0.5
+
 	return Statistics{
-		Mean:   mean,
-		Median: data[len(data)/2],
-		StdDev: std,
-		P05:    data[int(0.05*float64(len(data)))],
-		P95:    data[int(0.95*float64(len(data)))],
+		Mean:          mean,
+		Median:        data[len(data)/2],
+		StdDev:        std,
+		P05:           data[int(0.05*float64(len(data)))],
+		P95:           data[int(0.95*float64(len(data)))],
+		Skewness:      skew,
+		Kurtosis:      kurt,
+		IsNonGaussian: isNonGaussian,
 	}
 }

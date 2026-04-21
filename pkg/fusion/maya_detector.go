@@ -10,12 +10,12 @@ import (
 type DeceptionType string
 
 const (
-	DeceptionNone             DeceptionType = "none"
-	DeceptionSpoofing        DeceptionType = "spoofing"
-	DeceptionDecoy           DeceptionType = "decoy"
-	DeceptionCamouflage      DeceptionType = "camouflage"
-	DeceptionTrajectoryMask  DeceptionType = "trajectory_mask"
-	DeceptionCatalogPoison   DeceptionType = "catalog_poison"
+	DeceptionNone           DeceptionType = "none"
+	DeceptionSpoofing       DeceptionType = "spoofing"
+	DeceptionDecoy          DeceptionType = "decoy"
+	DeceptionCamouflage     DeceptionType = "camouflage"
+	DeceptionTrajectoryMask DeceptionType = "trajectory_mask"
+	DeceptionCatalogPoison  DeceptionType = "catalog_poison"
 )
 
 // DeceptionEvidence holds one check result.
@@ -42,15 +42,19 @@ type MayaAssessment struct {
 // ObjectState represents a single orbital state vector.
 type ObjectState struct {
 	EpochJD          float64 `json:"epoch_jd"`
-	X, Y, Z          float64 `json:"x,y,z"`       // km ECI
-	VX, VY, VZ       float64 `json:"vx,vy,vz"`    // km/s ECI
+	X                float64 `json:"x"`  // km ECI
+	Y                float64 `json:"y"`  // km ECI
+	Z                float64 `json:"z"`  // km ECI
+	VX               float64 `json:"vx"` // km/s ECI
+	VY               float64 `json:"vy"` // km/s ECI
+	VZ               float64 `json:"vz"` // km/s ECI
 	DetectedManeuver bool    `json:"detected_maneuver"`
 }
 
 // ManeuverEvent represents a detected maneuver.
 type ManeuverEvent struct {
 	EpochJD      float64    `json:"epoch_jd"`
-	DeltaVMS     float64    `json:"delta_v_ms"`     // m/s
+	DeltaVMS     float64    `json:"delta_v_ms"` // m/s
 	DirectionECI [3]float64 `json:"direction_eci"`
 	DurationS    float64    `json:"duration_s"`
 }
@@ -173,7 +177,7 @@ func (d *MayaDetector) checkHamiltonian(states []ObjectState) DeceptionEvidence 
 		severity := math.Min(maxDE/1.0, 1.0)
 		return DeceptionEvidence{
 			CheckName: "hamiltonian", Triggered: true, Severity: severity,
-			Description: fmt.Sprintf("%d unexplained energy jump(s), max ΔE=%.3f km²/s²", unexplained, maxDE),
+			Description:  fmt.Sprintf("%d unexplained energy jump(s), max ΔE=%.3f km²/s²", unexplained, maxDE),
 			PhysicsBasis: "H = ½v² - μ/r is conserved; unexplained changes indicate hidden maneuver or spoofed data",
 			Metrics:      map[string]float64{"n_jumps": float64(unexplained), "max_dE": maxDE},
 		}

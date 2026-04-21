@@ -231,8 +231,8 @@ class PhysicsGuidedReentryNet(nn.Module):
         corr_penalty = torch.relu(-alt_decay_corr)  # Penalize if not negatively correlated
         
         # 2. Ballistic coefficient must be in realistic range for object type
-        mass = inputs[:, 6]
-        area = inputs[:, 5]
+        area = inputs[:, 6]  # Cross-sectional area (m²)
+        mass = inputs[:, 7]  # Mass (kg)
         expected_beta = area / mass  # Simple proxy
         beta_penalty = F.mse_loss(beta.squeeze(), expected_beta * 2.2)  # C_d ≈ 2.2
         

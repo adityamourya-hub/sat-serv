@@ -44,7 +44,7 @@ func (s *IngestionServer) StreamObservations(stream pb.SpaceEngine_IngestObserva
 		}
 		// Convert protobuf to internal type
 		internalObs := convertProtoToObservation(obs)
-		if err := s.Engine.SubmitIngest(context.Background(), internalObs); err != nil {
+		if err := s.Engine.SubmitIngest(stream.Context(), internalObs); err != nil {
 			return err
 		}
 		// Send acknowledgment
@@ -149,7 +149,6 @@ func (s *SSISServer) QueryCatalog(ctx context.Context, req *pb.CatalogQuery) (*p
 
 	for _, obj := range snapshot {
 		// Apply filters if specified
-		countryMatch := true
 		typeMatch := true
 		if len(req.ObjectTypes) > 0 {
 			typeMatch = false
@@ -160,7 +159,8 @@ func (s *SSISServer) QueryCatalog(ctx context.Context, req *pb.CatalogQuery) (*p
 				}
 			}
 		}
-		if !countryMatch || !typeMatch {
+		// TODO: Add CountryCode filter when proto definition is updated
+		if !typeMatch {
 			continue
 		}
 
@@ -262,7 +262,9 @@ func (g *RESTGateway) handleScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		http.Error(w, "encode error", http.StatusInternalServerError)
+	}
 }
 
 /**

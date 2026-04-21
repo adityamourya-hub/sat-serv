@@ -73,11 +73,14 @@ func (d *DMD) Fit(X *mat.Dense) error {
 	}
 
 	// Get singular values and determine rank
-	sVals := make([]float64, min(d.Rank, nSnapshots-1))
+	// gonum requires the slice to be exactly min(nFeatures, nSnapshots-1) in length
+	fullK := min(nFeatures, nSnapshots-1)
+	sVals := make([]float64, fullK)
 	svd.Values(sVals)
 
 	// Truncate to desired rank
-	r := min(d.Rank, len(sVals))
+	r := min(d.Rank, fullK)
+	sVals = sVals[:r]
 
 	// Compute reduced operators
 	U := mat.NewDense(nFeatures, r, nil)

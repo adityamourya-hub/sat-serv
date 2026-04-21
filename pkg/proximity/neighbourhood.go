@@ -72,8 +72,10 @@ func ScreenIndianAssets(store *catalog.Store, threatRadiusKm float64) []Proximit
 		max := types.Vector3{X: asset.Pos.X + threatRadiusKm, Y: asset.Pos.Y + threatRadiusKm, Z: asset.Pos.Z + threatRadiusKm}
 
 		// Use a tight temporal window around the asset's current timestamp
-		tMin := asset.EpochTT - cfg.TemporalToleranceSec
-		tMax := asset.EpochTT + cfg.TemporalToleranceSec
+		// EpochTT is in Julian Days; convert seconds tolerance to JD (1 day = 86400 seconds)
+		tolJD := cfg.TemporalToleranceSec / 86400.0
+		tMin := asset.EpochTT - tolJD
+		tMax := asset.EpochTT + tolJD
 
 		nearby := bvh.QueryRange(min, max, tMin, tMax)
 

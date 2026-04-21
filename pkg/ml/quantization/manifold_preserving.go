@@ -345,7 +345,7 @@ func (mpq *ManifoldPreservingQuantizer) PrintQuantizationSummary() {
 
 	savings := mpq.GetThermalSavings()
 	fmt.Printf("Estimated Thermal Savings: %.2fW (of 8W budget)\n", savings)
-	fmt.Println("===============================================\n")
+	fmt.Println("===============================================")
 }
 
 // String representation of Precision

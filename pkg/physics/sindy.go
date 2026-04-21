@@ -362,8 +362,24 @@ func sortFloats(arr []float64) {
 // stlsq performs Sequential Thresholded Least Squares regression
 // This is the core SINDy algorithm for sparse coefficient discovery
 func (s *SINDy) stlsq(theta, xDot *mat.Dense, threshold float64) []float64 {
-	nSamples, nTerms := theta.Dims()
-	_, nDims := xDot.Dims()
+	tRows, nTerms := theta.Dims()
+	dRows, nDims := xDot.Dims()
+
+	// Align row counts: buildLibrary returns N rows, computeResiduals returns N-1 rows
+	// Take the minimum to prevent gonum panic on dimension mismatch
+	nSamples := tRows
+	if dRows < nSamples {
+		nSamples = dRows
+	}
+	if nSamples == 0 {
+		return make([]float64, nTerms*nDims)
+	}
+
+	// Slice matrices to aligned row count if needed
+	if tRows != nSamples || dRows != nSamples {
+		theta = theta.Slice(0, nSamples, 0, nTerms).(*mat.Dense)
+		xDot = xDot.Slice(0, nSamples, 0, nDims).(*mat.Dense)
+	}
 
 	// Initialize with least squares solution
 	coefficients := make([]float64, nTerms*nDims)
