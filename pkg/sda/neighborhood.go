@@ -232,7 +232,7 @@ func (nw *NeighborhoodWatch) classifyManeuverType(result *physics.ManeuverResult
 }
 
 // classifyThreatLevel assigns threat level based on RIC proximity and maneuver
-func (nw *NeighborhoodWatch) classifyThreatLevel(sec Secondary, obj catalog.SDAObject, result *physics.ManeuverResult) string {
+func (nw *NeighborhoodWatch) classifyThreatLevel(sec Secondary, obj catalog.SDAObject, _result *physics.ManeuverResult) string {
 	// Critical: Foreign object with active maneuver in close proximity
 	if sec.ManeuverDetected && obj.CountryCode != "IN" && sec.MinDistanceKm < 5.0 {
 		return "CRITICAL"
