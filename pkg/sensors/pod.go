@@ -429,8 +429,8 @@ func (pod *PoDEngine) computeLidarPoD(
 // computeCovarianceDilution reduces PoD based on target position uncertainty
 // Based on Poore et al. (2016) covariance realism
 func (pod *PoDEngine) computeCovarianceDilution(
-	geo ObservationGeometry,
-	target physics.State,
+	_geo ObservationGeometry,
+	_target physics.State,
 ) float64 {
 
 	// If target has covariance, compute dilution factor
