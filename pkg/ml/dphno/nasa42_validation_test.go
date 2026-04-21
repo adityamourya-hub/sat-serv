@@ -47,10 +47,7 @@ func TestDPHNOAgainstNASA42(t *testing.T) {
 
 	// Connect to NASA 42
 	config := nasa42.DefaultIPCConfig()
-	propagator, err := nasa42.NewHighFidelityPropagator(config)
-	if err != nil {
-		t.Fatalf("Failed to connect to NASA 42: %v", err)
-	}
+	propagator := nasa42.NewHighFidelityPropagator(config)
 	defer propagator.Close()
 
 	// Define validation scenarios
@@ -66,29 +63,29 @@ func TestDPHNOAgainstNASA42(t *testing.T) {
 			Name:      "HGV_skip_glide",
 			Initial:   [6]float64{6500.0, 0, 50.0, 0, 6.5, 0.5}, // HGV corridor
 			Mass:      1000.0,
-			Duration:  300.0,  // 5 minutes
-			Tolerance: 500.0,  // 500m (more lenient for HGV)
+			Duration:  300.0, // 5 minutes
+			Tolerance: 500.0, // 500m (more lenient for HGV)
 		},
 		{
 			Name:      "L2_halo_orbit",
 			Initial:   [6]float64{384400.0 * 1.155, 0, 0, 0, 0.5, 0}, // L2 point
 			Mass:      1000.0,
 			Duration:  86400.0 * 14, // 14 days (Halo period)
-			Tolerance: 1000.0, // 1km (cislunar tolerance)
+			Tolerance: 1000.0,       // 1km (cislunar tolerance)
 		},
 		{
 			Name:      "GEO_drift_1day",
 			Initial:   [6]float64{42164.0, 0, 0, 0, 3.07, 0}, // GEO
 			Mass:      1000.0,
 			Duration:  86400.0, // 24 hours
-			Tolerance: 0.1,    // 0.1° longitude (~74km)
+			Tolerance: 0.1,     // 0.1° longitude (~74km)
 		},
 		{
 			Name:      "Drag_decay_1month",
 			Initial:   [6]float64{6678.0, 0, 0, 0, 7.8, 0}, // LEO 300km
-			Mass:      100.0,  // Low mass (more drag effect)
-			Duration:  86400.0 * 30, // 30 days
-			Tolerance: 100.0,  // 100m altitude
+			Mass:      100.0,                               // Low mass (more drag effect)
+			Duration:  86400.0 * 30,                        // 30 days
+			Tolerance: 100.0,                               // 100m altitude
 		},
 	}
 

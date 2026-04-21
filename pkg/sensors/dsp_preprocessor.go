@@ -338,7 +338,7 @@ func (dp *DSPPreprocessor) applyWaveletDenoising(samples []float64) []float64 {
 
 	// Copy approximation back to output
 	for i := 0; i < len(samples)/2; i++ {
-		output[i] = output[i]
+		output[i] = samples[i]
 	}
 
 	return output

@@ -57,11 +57,7 @@ func Example_hybridPropagation() {
 
 		// Connect to 42 (would be running as separate process)
 		config := DefaultIPCConfig()
-		propagator, err := NewHighFidelityPropagator(config)
-		if err != nil {
-			fmt.Printf("Note: NASA 42 not running (demo mode): %v\n", err)
-			return
-		}
+		propagator := NewHighFidelityPropagator(config)
 		defer propagator.Close()
 
 		// Propagate both objects with high fidelity
