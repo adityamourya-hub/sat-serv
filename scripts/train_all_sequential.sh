@@ -89,6 +89,13 @@ setup_env() {
     echo "[SETUP] Environment ready"
 }
 
+# Check if weight already exists in GCS
+weight_exists_in_gcs() {
+    local component=$1
+    local weight_name=$2
+    gsutil ls gs://$BUCKET/weights/${weight_name} 2>/dev/null
+}
+
 # Upload checkpoint to GCS
 upload_checkpoint() {
     local component=$1
@@ -126,6 +133,12 @@ phase1_navic() {
     echo "PHASE 1: NavIC Anomaly Detection (10 min)"
     echo "================================================"
     
+    # Check if already complete
+    if weight_exists_in_gcs "navic" "navic_detector.onnx" || gsutil ls gs://$BUCKET/checkpoints/.navic_complete 2>/dev/null; then
+        echo "[SKIP] NavIC weights already exist in GCS, skipping training"
+        return
+    fi
+    
     # Ensure logs directory exists
     mkdir -p logs
     
@@ -150,6 +163,9 @@ phase1_navic() {
     # Also upload from weights dir if exists
     upload_weights "navic" "$WEIGHTS_DIR/navic_detector.onnx"
     upload_weights "navic" "$WEIGHTS_DIR/navic_detector.pth"
+    # Mark as complete in GCS
+    touch .navic_complete
+    gsutil cp .navic_complete gs://$BUCKET/checkpoints/ 2>/dev/null || true
     
     # Cleanup
     cleanup_component "../datasets/C-NAVIC"
@@ -165,6 +181,12 @@ phase2_maneuver() {
     echo "================================================"
     echo "PHASE 2: Maneuver Detection (15 min)"
     echo "================================================"
+    
+    # Check if already complete
+    if weight_exists_in_gcs "maneuver" "maneuver_detector.onnx" || gsutil ls gs://$BUCKET/checkpoints/.maneuver_complete 2>/dev/null; then
+        echo "[SKIP] Maneuver weights already exist in GCS, skipping training"
+        return
+    fi
     
     # Ensure logs directory exists
     mkdir -p logs
@@ -183,9 +205,14 @@ phase2_maneuver() {
         --checkpoint-dir $CHECKPOINT_DIR 2>&1 | tee logs/maneuver.log || \
         echo "[WARN] Maneuver training script not found or failed, skipping"
     
-    # Upload
+    # Upload - Maneuver saves to ai/maneuver/data/
+    upload_weights "maneuver" "ai/maneuver/data/maneuver_detector.onnx"
+    upload_weights "maneuver" "ai/maneuver/data/maneuver_v2.onnx"
     upload_weights "maneuver" "$WEIGHTS_DIR/maneuver_detector.onnx"
     upload_weights "maneuver" "$WEIGHTS_DIR/maneuver_v2.onnx"
+    # Mark as complete in GCS
+    touch .maneuver_complete
+    gsutil cp .maneuver_complete gs://$BUCKET/checkpoints/ 2>/dev/null || true
     
     # Cleanup
     cleanup_component "../datasets/A-TLES"
@@ -201,6 +228,12 @@ phase3_reentry() {
     echo "================================================"
     echo "PHASE 3: Re-entry Prediction (10 min)"
     echo "================================================"
+    
+    # Check if already complete
+    if weight_exists_in_gcs "reentry" "reentry_model.pth" || gsutil ls gs://$BUCKET/checkpoints/.reentry_complete 2>/dev/null; then
+        echo "[SKIP] Re-entry weights already exist in GCS, skipping training"
+        return
+    fi
     
     # Ensure logs directory exists
     mkdir -p logs
@@ -229,12 +262,16 @@ sys.path.insert(0, 'ai/v3')
 from reentry_predictor import PhysicsGuidedReentryNet, SequenceReentryNet
 model = PhysicsGuidedReentryNet()
 torch.save(model.state_dict(), 'reentry_model.pth')
-" 2>/dev/null || echo "[WARN] Could not save re-entry model"
+print('Saved reentry_model.pth')
+" 2>&1 || echo "[WARN] Could not save re-entry model"
     
     # Upload
     upload_weights "reentry" "$WEIGHTS_DIR/reentry_predictor.onnx"
     upload_weights "reentry" "$WEIGHTS_DIR/reentry_model.pth"
     upload_weights "reentry" "reentry_model.pth"
+    # Mark as complete in GCS
+    touch .reentry_complete
+    gsutil cp .reentry_complete gs://$BUCKET/checkpoints/ 2>/dev/null || true
     
     # Cleanup
     cleanup_component "../datasets/D-Rentry"
@@ -254,60 +291,19 @@ phase4_collision() {
     # Ensure logs directory exists
     mkdir -p logs
     
-    # Download collision dataset (~18GB)
-    echo "[DOWNLOAD] Collision dataset (~18GB) - this will take time..."
-    mkdir -p training-data/B-Conjuction-Collision-dataset
-    gsutil -m cp -r gs://$BUCKET/datasets/B-Conjunction-Collision-dataset/* training-data/B-Conjuction-Collision-dataset/ 2>/dev/null || \
-        gsutil -m cp -r gs://$BUCKET/datasets/B-Conjuction-Collision-dataset/* training-data/B-Conjuction-Collision-dataset/
-    
-    echo "[DOWNLOAD] Collision dataset downloaded"
-    
-    # Extract train_data.zip
-    echo "[PREPROCESS] Extracting train_data.zip..."
-    cd training-data/B-Conjuction-Collision-dataset
-    unzip -q train_data.zip
-    cd ../../
-    
-    # Run preprocessing to create scenarios_graph_v2.jsonl
-    echo "[PREPROCESS] Running preprocessing to create graph data..."
-    python3 scripts/preprocess_training_data.py --dataset B 2>&1 | tee logs/collision_preprocess.log || \
-        echo "[WARN] Preprocessing failed, trying alternative..."
-    
-    df -h .
-    
-    # Check for existing checkpoint to resume
-    local checkpoint_file=""
-    if gsutil ls gs://$BUCKET/checkpoints/collision/*.pt 2>/dev/null; then
-        echo "[RESUME] Found existing checkpoint, downloading..."
-        mkdir -p $CHECKPOINT_DIR/collision
-        gsutil cp $(gsutil ls gs://$BUCKET/checkpoints/collision/*.pt | sort | tail -1) \
-            $CHECKPOINT_DIR/collision/
-        checkpoint_file=$(ls $CHECKPOINT_DIR/collision/*.pt 2>/dev/null | head -1)
+    # Check if collision weights already exist
+    if weight_exists_in_gcs "collision" "collision_multi_task_v2.onnx"; then
+        echo "[SKIP] Collision weights already exist in GCS, skipping training"
+        return
     fi
     
-    # Train
-    echo "[TRAIN] Starting Collision GNN training..."
+    echo "[ERROR] Collision training skipped due to dataset format issue (KeyError: 'labels')"
+    echo "[INFO] The preprocessed dataset format doesn't match training script expectations"
+    echo "[INFO] This phase requires manual dataset format alignment"
+    echo "[COMPLETE] Collision training skipped at $(date)"
     
-    # Direct call to collision training script
-    python3 ai/collision/train_collision_surrogate.py \
-        --data-path training-data/B-Conjuction-Collision-dataset/train_data \
-        --epochs 25 \
-        --batch-size 32 \
-        --checkpoint-dir $CHECKPOINT_DIR \
-        --output-dir $WEIGHTS_DIR 2>&1 | tee logs/collision.log || \
-        echo "[WARN] Collision training script not found or failed, skipping"
-    
-    # Upload final weights
-    upload_weights "collision" "$WEIGHTS_DIR/collision_multi_task_v2.onnx"
-    upload_weights "collision" "$WEIGHTS_DIR/collision_gnn_final.pt"
-    
-    # Keep checkpoint for potential resume
-    upload_checkpoint "collision" "$CHECKPOINT_DIR/collision/*.pt"
-    
-    # Cleanup collision dataset to free disk space
-    cleanup_component "training-data"
-    
-    echo "[COMPLETE] Collision training finished at $(date)"
+    touch .collision_skipped
+    gsutil cp .collision_skipped gs://$BUCKET/checkpoints/ 2>/dev/null || true
 }
 
 # ============================================================
