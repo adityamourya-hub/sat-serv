@@ -304,22 +304,33 @@ func (dmf *DiscoveryModeFilter) discoverControl() {
 // =============================================================================
 
 // DiscoveryIMM extends standard IMM with SINDy-based discovery mode
+//
+// SDE Optimization (<2ms Reasoning Target):
+// - Flattened TransMatrix to []float64 for cache locality (stride indexing: i*N + j)
+// - LatentForces as []float64 mapped via Enum (0=Drag, 1=ThrustX, etc.) - NO MAPS
+// - Avoids pointer-chasing and map re-hashing in 100Hz filter loop
 type DiscoveryIMM struct {
 	StandardModes  []*ModeFilter
 	DiscoveryMode  *DiscoveryModeFilter
-	ModeProbs      [TotalModes]float64
-	TransMatrix    [TotalModes][TotalModes]float64
-	Residuals      [TotalModes]float64
+	ModeProbs      []float64 // Flattened mode probabilities
+	TransMatrix    []float64 // Flattened NxN matrix (stride indexing: i*N + j)
+	Residuals      []float64 // Flattened residuals
+	LatentForces   []float64 // Mapped via Enum (0=Drag, 1=ThrustX, 2=ThrustY, 3=ThrustZ, etc.)
 	HGV            HGVConstants
 	Tier3Triggered bool
 }
 
 // NewDiscoveryIMM creates the zero-day capable IMM filter
 func NewDiscoveryIMM(hgv HGVConstants) *DiscoveryIMM {
+	n := TotalModes
 	dimm := &DiscoveryIMM{
 		StandardModes: make([]*ModeFilter, 3),
 		DiscoveryMode: NewDiscoveryModeFilter(hgv),
 		HGV:           hgv,
+		ModeProbs:     make([]float64, n),
+		TransMatrix:   make([]float64, n*n), // Flattened NxN
+		Residuals:     make([]float64, n),
+		LatentForces:  make([]float64, 8), // 8 latent force channels
 	}
 
 	for i := 0; i < 3; i++ {
@@ -328,15 +339,31 @@ func NewDiscoveryIMM(hgv HGVConstants) *DiscoveryIMM {
 		}
 	}
 
-	for i := 0; i < TotalModes; i++ {
-		dimm.ModeProbs[i] = 1.0 / float64(TotalModes)
+	for i := 0; i < n; i++ {
+		dimm.ModeProbs[i] = 1.0 / float64(n)
 	}
 
-	// Transition matrix
-	dimm.TransMatrix[0] = [4]float64{0.85, 0.10, 0.03, 0.02}
-	dimm.TransMatrix[1] = [4]float64{0.15, 0.75, 0.07, 0.03}
-	dimm.TransMatrix[2] = [4]float64{0.25, 0.35, 0.30, 0.10}
-	dimm.TransMatrix[3] = [4]float64{0.20, 0.20, 0.20, 0.40}
+	// Transition matrix (flattened indexing: TransMatrix[i*n + j])
+	// Row 0 (Ballistic)
+	dimm.TransMatrix[0*n+0] = 0.85
+	dimm.TransMatrix[0*n+1] = 0.10
+	dimm.TransMatrix[0*n+2] = 0.03
+	dimm.TransMatrix[0*n+3] = 0.02
+	// Row 1 (Glide)
+	dimm.TransMatrix[1*n+0] = 0.15
+	dimm.TransMatrix[1*n+1] = 0.75
+	dimm.TransMatrix[1*n+2] = 0.07
+	dimm.TransMatrix[1*n+3] = 0.03
+	// Row 2 (Maneuver)
+	dimm.TransMatrix[2*n+0] = 0.25
+	dimm.TransMatrix[2*n+1] = 0.35
+	dimm.TransMatrix[2*n+2] = 0.30
+	dimm.TransMatrix[2*n+3] = 0.10
+	// Row 3 (Discovery)
+	dimm.TransMatrix[3*n+0] = 0.20
+	dimm.TransMatrix[3*n+1] = 0.20
+	dimm.TransMatrix[3*n+2] = 0.20
+	dimm.TransMatrix[3*n+3] = 0.40
 
 	return dimm
 }
@@ -359,10 +386,10 @@ func (dimm *DiscoveryIMM) Update(obs HGVState, dt float64) {
 		dimm.DiscoveryMode.Innovation[1]*dimm.DiscoveryMode.Innovation[1] +
 		dimm.DiscoveryMode.Innovation[2]*dimm.DiscoveryMode.Innovation[2])
 
-	// Update mode probabilities
+	// Update mode probabilities (using flattened array)
 	dimm.updateModeProbs()
 
-	// Learn transitions
+	// Learn transitions (using flattened TransMatrix)
 	dimm.learnTransitions()
 
 	// Check Tier 3
@@ -392,11 +419,12 @@ func (dimm *DiscoveryIMM) updateModeProbs() {
 		}
 	}
 
-	newProbs := [TotalModes]float64{}
+	newProbs := make([]float64, TotalModes)
+	n := TotalModes
 	for j := 0; j < TotalModes; j++ {
 		weightedSum := 0.0
 		for i := 0; i < TotalModes; i++ {
-			weightedSum += dimm.TransMatrix[i][j] * dimm.ModeProbs[i]
+			weightedSum += dimm.TransMatrix[i*n+j] * dimm.ModeProbs[i] // Flattened indexing
 		}
 		newProbs[j] = likelihoods[j] * weightedSum
 	}
@@ -416,14 +444,15 @@ func (dimm *DiscoveryIMM) updateModeProbs() {
 // learnTransitions updates transition matrix
 func (dimm *DiscoveryIMM) learnTransitions() {
 	if dimm.ModeProbs[ModeIndexDiscovery] > DiscoveryThresholdLow {
+		n := TotalModes
 		for i := 0; i < 3; i++ {
-			dimm.TransMatrix[i][ModeIndexDiscovery] = math.Min(0.30, dimm.TransMatrix[i][ModeIndexDiscovery]+0.01)
+			dimm.TransMatrix[i*n+ModeIndexDiscovery] = math.Min(0.30, dimm.TransMatrix[i*n+ModeIndexDiscovery]+0.01)
 			sum := 0.0
 			for j := 0; j < TotalModes; j++ {
-				sum += dimm.TransMatrix[i][j]
+				sum += dimm.TransMatrix[i*n+j]
 			}
 			for j := 0; j < TotalModes; j++ {
-				dimm.TransMatrix[i][j] /= sum
+				dimm.TransMatrix[i*n+j] /= sum
 			}
 		}
 	}

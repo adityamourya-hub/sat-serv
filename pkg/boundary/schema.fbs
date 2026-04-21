@@ -1,0 +1,43 @@
+// pkg/boundary/schema.fbs - Axiom-Zero Boundary Protocol
+//
+// Zero-Copy Serialization for Sovereign SDA Operations
+// Designed for C-struct memory alignment and zero GC allocations
+//
+// Key Features:
+// - FlatBuffers enable zero-copy reads (no deserialization)
+// - GateSig provides cryptographic actuation authentication
+// - Integer IDs avoid string allocations in hot path
+// - UnixNano timestamps for deterministic integer time
+
+namespace AxiomZero.Boundary;
+
+// =============================================================================
+// INGEST: High-Frequency Telescope Telemetry (100Hz)
+// =============================================================================
+
+table TelemetryPacket {
+  device_id: uint32;        // Mapped integer ID (avoids string allocations)
+  timestamp_ns: int64;      // UnixNano
+  azimuth_measured: double; // rad
+  elevation_measured: double; // rad
+  temperature_c: float;     // Mount thermal state
+  is_tracking: bool;
+}
+
+// =============================================================================
+// ACTUATION: Predictive Slew Command (<50ms limit)
+// =============================================================================
+
+table SlewCommand {
+  target_id: uint32;        // RSO NORAD ID or internal catalog ID
+  timestamp_ns: int64;      // Execution epoch
+  azimuth_cmd: double;      // Target Azimuth [rad]
+  elevation_cmd: double;    // Target Elevation [rad]
+  tilt_rate: double;        // Angular velocity [rad/s]
+  tilt_accel: double;       // Angular acceleration [rad/s^2]
+  priority: int32;          // 0=Routine, 9=Critical
+  gate_sig: [ubyte];        // 8-byte Truncated Hessian Hash (Authentication)
+}
+
+// Set SlewCommand as root type
+root_type SlewCommand;
