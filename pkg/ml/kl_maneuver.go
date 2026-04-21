@@ -305,11 +305,12 @@ func ThresholdRecommendation(desiredFPR float64) float64 {
 	// 99%: 16.81
 	// 99.9%: 22.46
 
-	if desiredFPR == 0.05 {
+	switch desiredFPR {
+	case 0.05:
 		return 12.59 / 2.0 // ~6.3
-	} else if desiredFPR == 0.01 {
+	case 0.01:
 		return 16.81 / 2.0 // ~8.4
-	} else if desiredFPR == 0.001 {
+	case 0.001:
 		return 22.46 / 2.0 // ~11.2
 	}
 
