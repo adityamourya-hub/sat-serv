@@ -77,7 +77,7 @@ func NewVolumetricEngine(cat *catalog.Store) *VolumetricEngine {
 // 4. Intent analysis via SINDy for detected threats
 func (e *VolumetricEngine) ScanVolume(region Region, window TimeWindow) []Threat {
 	// 1. Build 4D BVH from catalog
-	e.build4DIndex(window)
+	e.build4DIndex()
 
 	// 2. Transform ECEF region to ECI bounding box
 	eciBounds := e.transformECEFToECI(region, window)
@@ -149,7 +149,7 @@ func (e *VolumetricEngine) transformECEFToECI(region Region, window TimeWindow) 
 }
 
 // build4DIndex constructs the 4D BVH index from the catalog
-func (e *VolumetricEngine) build4DIndex(_window TimeWindow) {
+func (e *VolumetricEngine) build4DIndex() {
 	records := e.Catalog.Snapshot()
 
 	objects := make([]spatial.BVH4DObject, len(records))
