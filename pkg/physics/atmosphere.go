@@ -451,7 +451,7 @@ func (a *AtmosphereEngine) predictFNO(h, f107, ap, lat, lon float64, doy int) fl
 // projectHydrostatic enforces hydrostatic equilibrium dp/dh = -ρg
 // ADITI 4.0: Projects density predictions onto hydrostatic manifold
 // This prevents the FNO from hallucinating unphysical density profiles
-func (a *AtmosphereEngine) projectHydrostatic(rho, h, lat, lon float64) float64 {
+func (a *AtmosphereEngine) projectHydrostatic(rho, h, _lat, _lon float64) float64 {
 	// Hydrostatic equilibrium: dp/dh = -ρg
 	// Approximate pressure: P = ρ * R_specific * T
 	// For thermosphere (h > 100km), use scale height approximation
