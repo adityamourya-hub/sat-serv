@@ -1,9 +1,19 @@
 """
-Sovereign Training Pipeline for Axiom-Zero GHNN.
+Sovereign Training Pipeline for Axiom-Zero.
+
+⚠️  DEPRECATION NOTICE: This PyTorch training pipeline is deprecated.
+    JAX Port-Hamiltonian System (ai/v3/train_phs_jax.py) is now the canonical
+    training backend for structural correctness (Forest-Ruth 4th-order symplectic).
+    
+    This PyTorch version is maintained for:
+    - Backwards compatibility
+    - Deployment/ONNX export path
+    - Users without JAX/CUDA support
+
 Enforces physical invariants via:
 1. Canonical DU/TU Normalization (µ=1.0)
-2. Poisson Bracket Loss ({q, p} = 1)
-3. Hamiltonian Energy Conservation
+2. Port-Hamiltonian dynamics with learned dissipation R(x)
+3. Augmented Lagrangian hard constraints (energy, momentum)
 """
 
 import torch
@@ -16,14 +26,26 @@ import logging
 import argparse
 from pathlib import Path
 import json
+import warnings
 
-# NOTE: Port-Hamiltonian System is now the default (unified architecture)
-# GHNN is deprecated as the special case R=0, g=0
+# UNIFIED ARCHITECTURE: Port-Hamiltonian System is the default
+# Both PyTorch (deployment) and JAX (training) versions exist
+# JAX version in ai/v3/port_hamiltonian.py is canonical for training
+# PyTorch version below is for deployment compatibility
 from port_hamiltonian_pytorch import (
     PortHamiltonianSystem,
     create_port_hamiltonian_system,
-    GHNNVectorField,  # Deprecated, kept for backwards compatibility
-    HamiltonianNet,  # Deprecated, kept for backwards compatibility
+    GHNNVectorField,  # DEPRECATED: Use PortHamiltonianSystem instead
+    HamiltonianNet,  # DEPRECATED: Use PortHamiltonianSystem instead
+)
+
+# Emit deprecation warning for training usage
+warnings.warn(
+    "PyTorch training pipeline is deprecated. "
+    "Use ai/v3/train_phs_jax.py for canonical JAX training with correct Yoshida-4 integrator. "
+    "This PyTorch version is maintained for deployment/ONNX export only.",
+    DeprecationWarning,
+    stacklevel=2
 )
 
 # Re-export constants from ghnn for backwards compatibility

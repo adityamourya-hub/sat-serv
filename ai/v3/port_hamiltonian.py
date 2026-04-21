@@ -1090,5 +1090,49 @@ def demo_port_hamiltonian():
     print(f"{'='*70}")
 
 
+def create_port_hamiltonian_system(
+    state_dim: int = 6,
+    control_dim: int = 3,
+    latent_dim: int = 64,
+    use_film: bool = True,
+    R_conditioned: bool = True,
+    g_conditioned: bool = True,
+    key: jax.random.PRNGKey = None,
+) -> PortHamiltonianSystem:
+    """
+    Factory function to create a Port-Hamiltonian System (JAX canonical version).
+    
+    This is the JAX equivalent of ai/neural_ode/port_hamiltonian_pytorch.py
+    create_port_hamiltonian_system(). Both APIs are unified for consistency.
+    
+    ⚠️  CANONICAL BACKEND: This JAX version is the canonical training backend.
+       Use ai/neural_ode/port_hamiltonian_pytorch.py for deployment/ONNX only.
+    
+    Args:
+        state_dim: Dimension of state space (default 6 for orbital)
+        control_dim: Dimension of control input (default 3 for thrust)
+        latent_dim: Dimension of latent code for regime conditioning
+        use_film: Use Feature-wise Linear Modulation for H_net conditioning
+        R_conditioned: Condition R_net on latent code
+        g_conditioned: Condition g_net on latent code
+        key: JAX random key (default: PRNGKey(42))
+        
+    Returns:
+        PortHamiltonianSystem instance (JAX/Equinox)
+    """
+    if key is None:
+        key = jax.random.PRNGKey(42)
+    
+    return PortHamiltonianSystem(
+        state_dim=state_dim,
+        control_dim=control_dim,
+        latent_dim=latent_dim,
+        use_film=use_film,
+        R_conditioned=R_conditioned,
+        g_conditioned=g_conditioned,
+        key=key,
+    )
+
+
 if __name__ == "__main__":
     demo_port_hamiltonian()
