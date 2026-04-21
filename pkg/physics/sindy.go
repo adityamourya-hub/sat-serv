@@ -262,7 +262,7 @@ func (s *SINDy) computeResiduals(states [][6]float64, dt float64) *mat.Dense {
 // bootstrapCI computes 95% confidence intervals via bootstrap resampling
 func (s *SINDy) bootstrapCI(
 	coeffs []float64,
-	states [][6]float64,
+	_states [][6]float64,
 	theta, residuals *mat.Dense,
 	nBootstraps int,
 ) (lower, upper []float64) {
@@ -543,7 +543,7 @@ func (s *SINDy) buildEquationString(coeffs []float64, termNames []string) string
 	return strings.Join(parts, "; ")
 }
 
-func (s *SINDy) computeRSquared(coeffs []float64, states [][6]float64, theta, xDot *mat.Dense) float64 {
+func (s *SINDy) computeRSquared(coeffs []float64, _states [][6]float64, theta, xDot *mat.Dense) float64 {
 	// Calculate R² (coefficient of determination) from predicted vs observed
 	// R² = 1 - SS_res / SS_tot
 	// where SS_res = sum of squared residuals, SS_tot = total sum of squares
