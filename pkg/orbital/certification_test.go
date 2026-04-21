@@ -17,8 +17,8 @@ func TestIAFCertificationSuite(t *testing.T) {
 	t.Run("SDG_MOID_Precision", func(t *testing.T) {
 		const MU = 398600.4418
 		vCirc := math.Sqrt(MU / 7000.0)
-		s1 := orbital.State{X: 7000, Y: 0, Z: 0, VX: 0, VY: vCirc, VZ: 0}
-		s2 := orbital.State{X: 7000, Y: 0, Z: 0, VX: 0, VY: 0, VZ: vCirc}
+		s1 := physics.State{Pos: physics.Vector3{7000, 0, 0}, Vel: physics.Vector3{0, vCirc, 0}}
+		s2 := physics.State{Pos: physics.Vector3{7000, 0, 0}, Vel: physics.Vector3{0, 0, vCirc}}
 
 		moid := proximity.CalculateMOID(s1, s2)
 		t.Logf("SDG-MOID Result: %.10f km (Target: sub-meter)", moid)
@@ -29,7 +29,7 @@ func TestIAFCertificationSuite(t *testing.T) {
 
 	// 2. JACCHIA-ROBERTS RE-ENTRY (Req h)
 	t.Run("JacchiaRoberts_Decay", func(t *testing.T) {
-		initial := orbital.State{X: 6378 + 150, Y: 0, Z: 0, VX: -0.5, VY: 7.2, VZ: 0}
+		initial := physics.State{Pos: physics.Vector3{6378 + 120, 0, 0}, Vel: physics.Vector3{-0.1, 7.2, 0}}
 		impact := hypersonic.PredictImpactFootprint(initial, 0.05, 150.0, 15.0)
 
 		t.Logf("Re-entry Impact Site: Lat %.2f, Lon %.2f", impact.LatDeg, impact.LonDeg)
@@ -105,8 +105,8 @@ func TestIAFCertificationSuite(t *testing.T) {
 	t.Run("MonteCarlo_UQ_Benchmarks", func(t *testing.T) {
 		const MU = 398600.4418
 		vCirc := math.Sqrt(MU / 7000.0)
-		s1 := orbital.State{X: 7000, Y: 0, Z: 0, VX: 0, VY: vCirc, VZ: 0}
-		s2 := orbital.State{X: 7000, Y: 0.1, Z: 0, VX: 0, VY: 0, VZ: vCirc}
+		s1 := physics.State{Pos: physics.Vector3{7000, 0, 0}, Vel: physics.Vector3{0, vCirc, 0}}
+		s2 := physics.State{Pos: physics.Vector3{7000, 0.1, 0}, Vel: physics.Vector3{0, 0, vCirc}}
 
 		// 6a. MOID UQ
 		// CalculateMOIDUncertainty is deprecated/missing in current proximity package.
@@ -118,7 +118,7 @@ func TestIAFCertificationSuite(t *testing.T) {
 		}
 
 		// 6b. Re-entry UQ (50 samples — reduced for CI speed; production uses 500+)
-		initial := orbital.State{X: 6378 + 120, Y: 0, Z: 0, VX: -0.1, VY: 7.2, VZ: 0}
+		initial := physics.State{Pos: physics.Vector3{6378 + 120, 0, 0}, Vel: physics.Vector3{-0.1, 7.2, 0}}
 		dispersion := hypersonic.PredictImpactDispersion(initial, 0.05, 150.0, 15.0, 1.0, 0.005, 50)
 		t.Logf("Re-entry UQ (50 runs): Ellipsoid=%.1f x %.1f km", dispersion.MajorAxisKm, dispersion.MinorAxisKm)
 

@@ -17,12 +17,38 @@ import argparse
 from pathlib import Path
 import json
 
-from ghnn import (
-    HamiltonianNet,
-    GHNNVectorField,
-    export_ghnn_to_onnx,
-    RE_KM, TU_SEC, MU_KM
+# NOTE: Port-Hamiltonian System is now the default (unified architecture)
+# GHNN is deprecated as the special case R=0, g=0
+from port_hamiltonian_pytorch import (
+    PortHamiltonianSystem,
+    create_port_hamiltonian_system,
+    GHNNVectorField,  # Deprecated, kept for backwards compatibility
+    HamiltonianNet,  # Deprecated, kept for backwards compatibility
 )
+
+# Re-export constants from ghnn for backwards compatibility
+RE_KM = 6378.137
+TU_SEC = 806.8116
+MU_KM = 398600.4418
+
+def export_ghnn_to_onnx(model, output_path):
+    """Export model to ONNX (wrapper for compatibility)."""
+    # For PHS, we would need a more sophisticated export
+    # This is a placeholder for now
+    import torch
+    model.eval()
+    dummy_input = torch.randn(1, 6)
+    torch.onnx.export(
+        model,
+        dummy_input,
+        output_path,
+        input_names=['state'],
+        output_names=['dynamics'],
+        dynamic_axes={'state': {0: 'batch'}, 'dynamics': {0: 'batch'}},
+        opset_version=15,
+        do_constant_folding=True
+    )
+    print(f"Model exported to {output_path}")
 
 # Import physics constraints with learned Lagrange multipliers (ADITI 4.0)
 import sys
@@ -96,60 +122,61 @@ def collate_fn(batch: List[Dict]) -> Dict:
     }
 
 # NOTE: AugmentedLagrangianLoss imported from physics_constraints.py (ai/v3/)
-# which uses learned Lagrange multipliers (nn.Parameter) for proper gradient optimization.
-# Keeping alias for backwards compatibility.
+# Uses dual variables (μ) updated via dual ascent, NOT learned parameters.
+# Formula: L(θ, μ, ρ) = L_obs(θ) + μᵀ c(θ) + (ρ/2) ‖c(θ)‖²
+# Dual ascent: μ_{k+1} = μ_k + ρ · c(θ_k)
+# Call loss.dual_ascent_update() after each training epoch.
 AugmentedLagrangianLoss = PhysicsAugmentedLagrangianLoss
 
-def forest_ruth_step(model, z, dt):
+def implicit_midpoint_step(model, z, dt, max_iter=10, tol=1e-10):
     """
-    Forest-Ruth (Yoshida-4) 4th-order symplectic integrator.
+    Implicit midpoint rule - symplectic for general (non-separable) Hamiltonians.
     
-    Implements operator splitting for separable Hamiltonian H(q,p) = T(p) + V(q).
-    Preserves the symplectic 2-form ω = Σ dq_i ∧ dp_i.
+    For non-separable H(q,p), Forest-Ruth doesn't apply. Implicit midpoint is
+    symplectic for general Hamiltonians and preserves energy well.
     
-    Coefficients:
-        theta = 1 / (2 - 2^(1/3)) ≈ 1.35120719195966
-        a = [theta/2, (1-theta)/2, (1-theta)/2, theta/2]
-        b = [theta, 1-2*theta, theta, 0.0]
+    Algorithm: z_{n+1} = z_n + dt * J * grad(H(z_mid))
+    where z_mid = (z_n + z_{n+1}) / 2
+    
+    Solved via fixed-point iteration for z_mid.
     
     Args:
         model: GHNNVectorField providing dz/dt = [dH/dp, -dH/dq]
         z: State tensor [batch, 6] = [q, p]
-        dt: Time step (in canonical units)
+        dt: Time step
+        max_iter: Maximum fixed-point iterations
+        tol: Convergence tolerance
         
     Returns:
         z_next: Next state [batch, 6]
     """
-    # Forest-Ruth coefficients (Yoshida-4)
-    theta = 1.3512071919596576  # 1 / (2 - 2^(1/3))
-    a = [theta/2, (1-theta)/2, (1-theta)/2, theta/2]
-    b = [theta, 1-2*theta, theta, 0.0]
+    z_n = z.clone()
+    z_mid = z_n.clone()  # Initial guess: z_mid = z_n
     
-    q = z[:, :3].clone()  # Position
-    p = z[:, 3:6].clone()  # Momentum
-    
-    # 4-stage symplectic integration
-    for stage in range(4):
-        # Stage 1 & 3: Position update, then momentum update
-        # Stage 2: Momentum update (negative coefficient), then position
-        # Stage 4: Final position update (b4 = 0, so no momentum update)
+    for _ in range(max_iter):
+        z_mid_prev = z_mid.clone()
         
-        if stage < 3:  # Stages 0, 1, 2 have momentum updates
-            # Position half-step (or full-step for stage 2)
-            x_stage = torch.cat([q, p], dim=1)
-            dq = model(x_stage)[:, :3]  # dH/dp
-            q = q + a[stage] * dt * dq
-            
-            # Momentum step
-            x_stage = torch.cat([q, p], dim=1)
-            dp = model(x_stage)[:, 3:6]  # -dH/dq
-            p = p + b[stage] * dt * dp
-        else:  # Stage 3: Final position update only
-            x_stage = torch.cat([q, p], dim=1)
-            dq = model(x_stage)[:, :3]
-            q = q + a[stage] * dt * dq
+        # Compute vector field at midpoint
+        dz_dt = model(z_mid)  # [dH/dp, -dH/dq]
+        
+        # Fixed-point update: z_mid = z_n + (dt/2) * dz_dt
+        z_mid = z_n + (dt / 2.0) * dz_dt
+        
+        # Check convergence
+        if torch.max(torch.abs(z_mid - z_mid_prev)) < tol:
+            break
     
-    return torch.cat([q, p], dim=1)
+    # Final step: z_{n+1} = z_n + dt * dz_dt(z_mid)
+    dz_dt_mid = model(z_mid)
+    z_next = z_n + dt * dz_dt_mid
+    
+    return z_next
+
+
+# For backwards compatibility, alias forest_ruth_step to implicit_midpoint_step
+# Note: This is a temporary fix. The proper solution is to move training to JAX
+# or restructure the PyTorch model to use separable Hamiltonians.
+forest_ruth_step = implicit_midpoint_step
 
 
 def get_symplectic_form(device):
@@ -571,8 +598,15 @@ def main():
     dataset = CanonicalTrajectoryDataset(args.data)
     loader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=collate_fn)
     
-    h_net = HamiltonianNet(hidden_dim=128, num_layers=4)
-    model = GHNNVectorField(h_net)
+    # Use Port-Hamiltonian System by default (unified architecture)
+    # This handles non-conservative dynamics (drag, thrust) via R and g
+    # For conservative-only behavior, use latent_conditioning=False
+    model = create_port_hamiltonian_system(
+        state_dim=6,
+        control_dim=3,
+        latent_dim=64,
+        use_latent_conditioning=False,  # Set False for conservative-only (equivalent to GHNN)
+    )
     
     trainer = GHNNTrainer(model, device)
     

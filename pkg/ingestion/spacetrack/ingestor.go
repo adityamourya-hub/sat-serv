@@ -7,7 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"ssis/pkg/catalog"
 	"ssis/pkg/physics"
+	"ssis/pkg/sda"
+	"ssis/pkg/types"
 )
 
 /**
@@ -50,6 +53,9 @@ type Ingestor struct {
 
 	// Catalog lookup for determining new/updated/decayed objects
 	LookupCatalog func(noradID int) (*physics.TLE, bool) // Returns existing TLE if found
+
+	// ADITI 4.0: Hamiltonian Invariant Firewall for anti-spoof verification
+	HamiltonianValidator *sda.HamiltonianValidator
 }
 
 /**
@@ -63,6 +69,11 @@ type IngestionMetrics struct {
 	TotalProcessed int
 	QueryDuration  time.Duration
 	Errors         []string
+
+	// ADITI 4.0: Hamiltonian validation metrics
+	HamiltonianValidated int
+	HamiltonianRejected  int
+	HamiltonianDriftSum  float64 // Sum of σ_H / H_avg for all validated objects
 }
 
 /**
@@ -78,12 +89,13 @@ func NewIngestor(username, password string, pollInterval time.Duration) (*Ingest
 	}
 
 	return &Ingestor{
-		client:       client,
-		username:     username,
-		password:     password,
-		minInterval:  3 * time.Second, // 20 requests per minute max
-		pollInterval: pollInterval,
-		windowHours:  4.0, // 4 hour lookback by default
+		client:               client,
+		username:             username,
+		password:             password,
+		minInterval:          3 * time.Second, // 20 requests per minute max
+		pollInterval:         pollInterval,
+		windowHours:          4.0,                           // 4 hour lookback by default
+		HamiltonianValidator: sda.NewHamiltonianValidator(), // ADITI 4.0: Anti-spoof protection
 	}, nil
 }
 
@@ -192,6 +204,33 @@ func (i *Ingestor) processTLEBatch(tles []*physics.TLE, metrics *IngestionMetric
 
 		processed++
 
+		// ADITI 4.0: Hamiltonian Invariant Firewall - Anti-spoof validation
+		// Every TLE must pass physics-based energy conservation check
+		if i.HamiltonianValidator != nil {
+			// Convert TLE orbital elements to state vectors for validation
+			obj := tleToSDAObject(tle)
+
+			window := sda.TimeWindow{
+				Start: time.Now().Add(-1 * time.Hour),
+				End:   time.Now().Add(1 * time.Hour),
+			}
+
+			// Validate against Hamiltonian invariants
+			result := i.HamiltonianValidator.ValidateTrack(obj, window, false) // No plume for TLE data
+
+			if result.Valid {
+				metrics.HamiltonianValidated++
+				metrics.HamiltonianDriftSum += result.DriftSigma
+			} else {
+				// SPOOF DETECTED: Reject this TLE
+				metrics.HamiltonianRejected++
+				metrics.Errors = append(metrics.Errors,
+					fmt.Sprintf("Hamiltonian validation failed for NORAD %d: %s (drift=%.2e)",
+						tle.SatelliteNumber, result.Reason, result.DriftSigma))
+				continue // Skip this TLE - do not enter catalog
+			}
+		}
+
 		// Classify the TLE based on catalog comparison
 		classification := i.classifyTLE(tle)
 		switch classification {
@@ -202,9 +241,6 @@ func (i *Ingestor) processTLEBatch(tles []*physics.TLE, metrics *IngestionMetric
 		case "decayed":
 			metrics.DecayedObjects++
 		}
-
-		// For now, count all as updates
-		metrics.UpdatedObjects++
 	}
 
 	return processed
@@ -394,4 +430,46 @@ func (i *Ingestor) GetLastSyncInfo() (time.Time, float64) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	return i.lastSyncTime, i.lastSyncEpoch
+}
+
+/**
+ * tleToSDAObject converts TLE orbital elements to SDAObject state vectors.
+ * Uses simplified Keplerian approximation for Hamiltonian validation.
+ * Note: Full SGP4 propagation would be more accurate but this is sufficient
+ * for energy conservation validation (Hamiltonian is orbit-shape invariant).
+ */
+func tleToSDAObject(tle *physics.TLE) catalog.SDAObject {
+	// Semi-major axis from mean motion: a = (μ/n²)^(1/3)
+	// n = MeanMotion in rad/s (convert from revs/day)
+	n := tle.MeanMotion * 2 * math.Pi / 86400.0 // rad/s
+	mu := physics.EARTH_MU_IAU
+	a := math.Pow(mu/(n*n), 1.0/3.0)
+
+	// Approximate position at epoch: circular orbit approximation
+	// This is sufficient for Hamiltonian energy check
+	cosRAAN := math.Cos(tle.RAAN)
+	sinRAAN := math.Sin(tle.RAAN)
+	cosI := math.Cos(tle.Inclination)
+	sinI := math.Sin(tle.Inclination)
+
+	// Position in orbital plane (circular approx)
+	x := a * cosRAAN
+	y := a * sinRAAN * cosI
+	z := a * sinRAAN * sinI
+
+	// Velocity (circular orbit: v = sqrt(μ/a))
+	v := math.Sqrt(mu / a)
+	vx := -v * sinRAAN
+	vy := v * cosRAAN * cosI
+	vz := v * cosRAAN * sinI
+
+	return catalog.SDAObject{
+		ID:          tle.SatelliteNumber,
+		Name:        tle.Name,
+		CountryCode: tle.CountryCode,
+		Pos:         types.Vector3{X: x, Y: y, Z: z},
+		Vel:         types.Vector3{X: vx, Y: vy, Z: vz},
+		EpochTT:     tleToJulianDate(tle),
+		Frame:       catalog.FrameGCRF, // ECI/GCRF coordinates
+	}
 }

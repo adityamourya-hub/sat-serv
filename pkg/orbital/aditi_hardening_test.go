@@ -45,8 +45,8 @@ func TestADITIHardeningSuite(t *testing.T) {
 
 	// 3. Test MOID Calculation (Requirement c)
 	t.Run("MOIDCalculation", func(t *testing.T) {
-		s1 := orbital.State{X: 7000, Y: 0, Z: 0, VX: 0, VY: 7.5, VZ: 0}
-		s2 := orbital.State{X: 7000, Y: 0, Z: 0, VX: 0, VY: 0, VZ: 7.5} // Crossing at 90 deg
+		s1 := physics.State{Pos: physics.Vector3{7000, 0, 0}, Vel: physics.Vector3{0, 7.5, 0}}
+		s2 := physics.State{Pos: physics.Vector3{7000, 0, 0}, Vel: physics.Vector3{0, 0, 7.5}} // Crossing at 90 deg
 
 		moid := proximity.CalculateMOID(s1, s2)
 		t.Logf("MOID distance: %.4f km", moid)
@@ -57,8 +57,7 @@ func TestADITIHardeningSuite(t *testing.T) {
 
 	// 4. Test Re-entry Prediction (Requirement h)
 	t.Run("ReentryImpact", func(t *testing.T) {
-		// Start at 120km, steep descent
-		initial := orbital.State{X: 6378.137 + 120, Y: 0, Z: 0, VX: -1.0, VY: 6.5, VZ: 0}
+		initial := physics.State{Pos: physics.Vector3{6378 + 120, 0, 0}, Vel: physics.Vector3{-0.1, 7.2, 0}}
 		impact := hypersonic.PredictImpactFootprint(initial, 0.05, 150.0, 15.0)
 
 		t.Logf("Predict Impact at Lat: %.2f, Lon: %.2f", impact.LatDeg, impact.LonDeg)

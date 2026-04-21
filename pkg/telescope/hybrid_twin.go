@@ -71,7 +71,7 @@ func NewHybridTwinValidation(bridge *CommandBridge) *HybridTwinValidation {
 func (htv *HybridTwinValidation) RunAllTests() error {
 	fmt.Println("\n=== ADITI 4.0 Hybrid Twin Validation ===")
 	fmt.Println("Air-Bearing Ground Truth Simulator")
-	fmt.Println("=========================================\n")
+	fmt.Println("=========================================")
 
 	// Test 1: Slew Impulse
 	if err := htv.TestSlewImpulse(); err != nil {
@@ -159,7 +159,7 @@ func (htv *HybridTwinValidation) TestSlewImpulse() error {
 		fmt.Printf("         WARNING: Overshoot=%.3f arcsec (target: 0)\n", overshoot*3600.0)
 	}
 
-	fmt.Println("         [PASS] Slew impulse test\n")
+	fmt.Println("         [PASS] Slew impulse test")
 	return nil
 }
 
@@ -228,7 +228,7 @@ func (htv *HybridTwinValidation) TestDriftInjection() error {
 		return fmt.Errorf("rejection rate %.1f%% below 95%% criterion", rejectionRate*100)
 	}
 
-	fmt.Println("         [PASS] Drift injection test\n")
+	fmt.Println("         [PASS] Drift injection test")
 	return nil
 }
 
@@ -284,7 +284,7 @@ func (htv *HybridTwinValidation) TestTierSwitchStress() error {
 			maxDiscontinuity*3600.0)
 	}
 
-	fmt.Println("         [PASS] Tier-switch stress test\n")
+	fmt.Println("         [PASS] Tier-switch stress test")
 	return nil
 }
 
@@ -345,7 +345,7 @@ func (htv *HybridTwinValidation) TestConflictTrigger() error {
 		return fmt.Errorf("max trigger latency %.2f ms exceeds 50ms criterion", maxTriggerLatency)
 	}
 
-	fmt.Println("         [PASS] Conflict trigger test\n")
+	fmt.Println("         [PASS] Conflict trigger test")
 	return nil
 }
 
@@ -430,7 +430,7 @@ func mean(data []float64) float64 {
 func (htv *HybridTwinValidation) PrintValidationSummary() {
 	fmt.Println("\n=========================================")
 	fmt.Println("    HYBRID TWIN VALIDATION SUMMARY")
-	fmt.Println("=========================================\n")
+	fmt.Println("=========================================")
 
 	// Test 1: Slew Impulse
 	fmt.Println("[TEST 1] Slew Impulse")
@@ -480,7 +480,7 @@ func (htv *HybridTwinValidation) PrintValidationSummary() {
 
 	fmt.Println("\n=========================================")
 	fmt.Println("    DELHI WAR-ROOM READY FOR MAY 4th")
-	fmt.Println("=========================================\n")
+	fmt.Println("=========================================")
 }
 
 // passFail returns [PASS] or [FAIL]

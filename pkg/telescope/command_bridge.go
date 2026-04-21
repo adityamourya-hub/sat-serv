@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"ssis/pkg/orbital"
@@ -45,6 +46,7 @@ type SpecklePreprocessor struct {
 	ZernikeCoefficients []float64 // Zernike modes for turbulence correction
 	FrameBuffer         []SpeckleFrame
 	BufferSize          int
+	frameIndex          int // CRITICAL FIX: Circular buffer index
 
 	// AMOS Multi-Task Learning Features
 	MultiTaskFeatures []float64 // Shared representation for Zernike + seeing + scintillation
@@ -57,6 +59,7 @@ type SpecklePreprocessor struct {
 	// Fractional FNO Integration
 	FractionalKernel float64   // Fractional Laplacian exponent (α ∈ [1,2])
 	NonLocalMemory   []float64 // Wake memory buffer for fractional transport
+	memoryIndex      int       // CRITICAL FIX: Circular buffer index for wake memory
 }
 
 // SpeckleFrame represents a single focal-plane speckle image
@@ -73,9 +76,10 @@ type SpeckleFrame struct {
 // for HGV plasma wake modeling in fractional FNO block
 func NewSpecklePreprocessor(bufferSize int) *SpecklePreprocessor {
 	return &SpecklePreprocessor{
-		ZernikeCoefficients: make([]float64, 15), // Z1-Z15 for tip/tilt through higher order
-		FrameBuffer:         make([]SpeckleFrame, 0, bufferSize),
+		ZernikeCoefficients: make([]float64, 15),              // Z1-Z15 for tip/tilt through higher order
+		FrameBuffer:         make([]SpeckleFrame, bufferSize), // CRITICAL FIX: Pre-allocated
 		BufferSize:          bufferSize,
+		frameIndex:          0, // Initialize circular index
 
 		// AMOS Multi-Task Learning
 		MultiTaskFeatures: make([]float64, 32), // Shared representation
@@ -86,8 +90,9 @@ func NewSpecklePreprocessor(bufferSize int) *SpecklePreprocessor {
 		DensityCorrection: 1.0, // Default: no correction
 
 		// Fractional FNO
-		FractionalKernel: 1.5,                    // Default α for transitional flow
-		NonLocalMemory:   make([]float64, 0, 50), // Wake memory buffer
+		FractionalKernel: 1.5,                 // Default α for transitional flow
+		NonLocalMemory:   make([]float64, 50), // CRITICAL FIX: Pre-allocated
+		memoryIndex:      0,                   // Initialize circular index
 	}
 }
 
@@ -97,15 +102,13 @@ func NewSpecklePreprocessor(bufferSize int) *SpecklePreprocessor {
 // ADITI 4.0: Computes UDE density bias and fractional FNO corrections
 // for HGV plasma wake modeling (30-80km transitional flow)
 func (sp *SpecklePreprocessor) ProcessFrame(frame SpeckleFrame) []float64 {
-	// Add to buffer
-	sp.FrameBuffer = append(sp.FrameBuffer, frame)
-	if len(sp.FrameBuffer) > sp.BufferSize {
-		sp.FrameBuffer = sp.FrameBuffer[1:]
-	}
+	// CRITICAL FIX: Use circular buffer instead of append
+	sp.FrameBuffer[sp.frameIndex] = frame
+	sp.frameIndex = (sp.frameIndex + 1) % sp.BufferSize
 
 	// Compute speckle statistics (simplified - would use neural net in production)
 	// Physics: Speckle contrast encodes atmospheric coherence
-	if len(sp.FrameBuffer) >= 3 {
+	if sp.BufferSize >= 3 {
 		// Multi-frame speckle analysis for Zernike estimation
 		sp.updateZernikeFromSpeckle()
 
@@ -225,14 +228,12 @@ func (sp *SpecklePreprocessor) computeUDEBias() {
 // ADITI 4.0: Implements Caputo D_t^β temporal memory for HGV wake
 // Fractional Laplacian (−Δ)^α for spatial non-locality
 func (sp *SpecklePreprocessor) updateFractionalMemory() {
-	// Add current density correction to memory
-	sp.NonLocalMemory = append(sp.NonLocalMemory, sp.DensityCorrection)
-	if len(sp.NonLocalMemory) > 50 {
-		sp.NonLocalMemory = sp.NonLocalMemory[1:]
-	}
+	// CRITICAL FIX: Use circular buffer instead of append
+	sp.NonLocalMemory[sp.memoryIndex] = sp.DensityCorrection
+	sp.memoryIndex = (sp.memoryIndex + 1) % 50
 
 	// Compute fractional kernel correction
-	if len(sp.NonLocalMemory) >= 10 {
+	if sp.BufferSize >= 10 {
 		// Caputo D_t^β: weighted sum with fractional power
 		var fractionalSum float64
 		beta := 0.8 // Temporal memory exponent (β ∈ [0,1])
@@ -341,6 +342,7 @@ type CommandBridge struct {
 	INDIEnabled  bool
 
 	// ADITI 4.0: INDI health monitoring
+	indiHealthMu         sync.RWMutex // CRITICAL FIX: Protect INDIHealth from race conditions
 	INDIHealth           INDIHealthStatus
 	INDIReconnectBackoff time.Duration
 	INDILastCmdTime      time.Time
@@ -360,6 +362,44 @@ type INDIHealthStatus struct {
 	ConsecutiveErrors int
 	AvgLatencyMs      float64
 	IsHealthy         bool
+}
+
+// CRITICAL FIX: Typed structs for INDI commands to eliminate interface{} allocations
+type INDICommand struct {
+	Type   string  `json:"type"`
+	Action string  `json:"action,omitempty"`  // CONNECT/DISCONNECT
+	RA     float64 `json:"ra,omitempty"`      // Right Ascension
+	Dec    float64 `json:"dec,omitempty"`     // Declination
+	Epoch  string  `json:"epoch,omitempty"`   // J2000, etc.
+	Track  bool    `json:"track,omitempty"`   // Track state
+	AzRate float64 `json:"az_rate,omitempty"` // Azimuth rate (deg/s)
+	ElRate float64 `json:"el_rate,omitempty"` // Elevation rate (deg/s)
+}
+
+type INDIResponse struct {
+	Status    string  `json:"status"`
+	Connected bool    `json:"connected,omitempty"`
+	RA        float64 `json:"ra,omitempty"`
+	Dec       float64 `json:"dec,omitempty"`
+	Epoch     string  `json:"epoch,omitempty"`
+	Tracking  bool    `json:"tracking,omitempty"`
+	AzRate    float64 `json:"az_rate,omitempty"`
+	ElRate    float64 `json:"el_rate,omitempty"`
+	Aborted   bool    `json:"aborted,omitempty"`
+	Error     string  `json:"error,omitempty"`
+}
+
+// CRITICAL FIX: sync.Pool for INDI command buffers to eliminate allocations
+var indiCommandPool = sync.Pool{
+	New: func() interface{} {
+		return &INDICommand{}
+	},
+}
+
+var indiResponsePool = sync.Pool{
+	New: func() interface{} {
+		return &INDIResponse{}
+	},
 }
 
 // NewCommandBridge creates a new telescope command interface
@@ -534,25 +574,26 @@ func (cb *CommandBridge) EnableINDI() error {
 }
 
 // SendINDICommand sends a command to the INDI proxy
-func (cb *CommandBridge) SendINDICommand(command map[string]interface{}) (map[string]interface{}, error) {
+// CRITICAL FIX: Uses typed structs to eliminate interface{} allocations
+func (cb *CommandBridge) SendINDICommand(command INDICommand) (INDIResponse, error) {
 	if !cb.INDIEnabled || cb.INDISocket == nil {
-		return nil, fmt.Errorf("INDI not enabled")
+		return INDIResponse{}, fmt.Errorf("INDI not enabled")
 	}
 
 	data, err := json.Marshal(command)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal INDI command: %w", err)
+		return INDIResponse{}, fmt.Errorf("failed to marshal INDI command: %w", err)
 	}
 
 	start := time.Now()
 
 	if _, err := cb.INDISocket.Send(string(data), 0); err != nil {
-		return nil, fmt.Errorf("failed to send INDI command: %w", err)
+		return INDIResponse{}, fmt.Errorf("failed to send INDI command: %w", err)
 	}
 
 	reply, err := cb.INDISocket.Recv(0)
 	if err != nil {
-		return nil, fmt.Errorf("INDI proxy timeout: %w", err)
+		return INDIResponse{}, fmt.Errorf("INDI proxy timeout: %w", err)
 	}
 
 	latency := time.Since(start)
@@ -560,9 +601,9 @@ func (cb *CommandBridge) SendINDICommand(command map[string]interface{}) (map[st
 		fmt.Printf("[TELESCOPE] WARNING: INDI latency %v exceeds 50ms target\n", latency)
 	}
 
-	var response map[string]interface{}
+	var response INDIResponse
 	if err := json.Unmarshal([]byte(reply), &response); err != nil {
-		return nil, fmt.Errorf("failed to parse INDI response: %w", err)
+		return INDIResponse{}, fmt.Errorf("failed to parse INDI response: %w", err)
 	}
 
 	return response, nil
@@ -570,12 +611,14 @@ func (cb *CommandBridge) SendINDICommand(command map[string]interface{}) (map[st
 
 // INDIConnect connects/disconnects the telescope via INDI
 func (cb *CommandBridge) INDIConnect(connect bool) error {
-	cmd := map[string]interface{}{
-		"type":   "CONNECTION",
-		"action": "CONNECT",
-	}
+	action := "CONNECT"
 	if !connect {
-		cmd["action"] = "DISCONNECT"
+		action = "DISCONNECT"
+	}
+
+	cmd := INDICommand{
+		Type:   "CONNECTION",
+		Action: action,
 	}
 
 	resp, err := cb.SendINDICommand(cmd)
@@ -583,8 +626,8 @@ func (cb *CommandBridge) INDIConnect(connect bool) error {
 		return err
 	}
 
-	if resp["status"] != "ACK" {
-		return fmt.Errorf("INDI connection failed: %v", resp["error"])
+	if resp.Status != "ACK" {
+		return fmt.Errorf("INDI connection failed: %v", resp.Error)
 	}
 
 	return nil
@@ -592,11 +635,11 @@ func (cb *CommandBridge) INDIConnect(connect bool) error {
 
 // INDISlew sends RA/Dec slew command via INDI
 func (cb *CommandBridge) INDISlew(ra, dec float64, epoch string) error {
-	cmd := map[string]interface{}{
-		"type":  "EQUATORIAL_EOD_COORD",
-		"ra":    ra,
-		"dec":   dec,
-		"epoch": epoch,
+	cmd := INDICommand{
+		Type:  "EQUATORIAL_EOD_COORD",
+		RA:    ra,
+		Dec:   dec,
+		Epoch: epoch,
 	}
 
 	resp, err := cb.SendINDICommand(cmd)
@@ -604,8 +647,8 @@ func (cb *CommandBridge) INDISlew(ra, dec float64, epoch string) error {
 		return err
 	}
 
-	if resp["status"] != "ACK" {
-		return fmt.Errorf("INDI slew failed: %v", resp["error"])
+	if resp.Status != "ACK" {
+		return fmt.Errorf("INDI slew failed: %v", resp.Error)
 	}
 
 	return nil
@@ -613,9 +656,9 @@ func (cb *CommandBridge) INDISlew(ra, dec float64, epoch string) error {
 
 // INDITrack toggles tracking mode via INDI
 func (cb *CommandBridge) INDITrack(track bool) error {
-	cmd := map[string]interface{}{
-		"type":  "TELESCOPE_TRACK_STATE",
-		"track": track,
+	cmd := INDICommand{
+		Type:  "TELESCOPE_TRACK_STATE",
+		Track: track,
 	}
 
 	resp, err := cb.SendINDICommand(cmd)
@@ -623,8 +666,8 @@ func (cb *CommandBridge) INDITrack(track bool) error {
 		return err
 	}
 
-	if resp["status"] != "ACK" {
-		return fmt.Errorf("INDI track toggle failed: %v", resp["error"])
+	if resp.Status != "ACK" {
+		return fmt.Errorf("INDI track toggle failed: %v", resp.Error)
 	}
 
 	return nil
@@ -632,10 +675,10 @@ func (cb *CommandBridge) INDITrack(track bool) error {
 
 // INDIMotionRate sets direct Az/El rate control (critical for HGVs)
 func (cb *CommandBridge) INDIMotionRate(azRate, elRate float64) error {
-	cmd := map[string]interface{}{
-		"type":    "TELESCOPE_MOTION_RATE",
-		"az_rate": azRate,
-		"el_rate": elRate,
+	cmd := INDICommand{
+		Type:   "TELESCOPE_MOTION_RATE",
+		AzRate: azRate,
+		ElRate: elRate,
 	}
 
 	resp, err := cb.SendINDICommand(cmd)
@@ -643,8 +686,8 @@ func (cb *CommandBridge) INDIMotionRate(azRate, elRate float64) error {
 		return err
 	}
 
-	if resp["status"] != "ACK" && resp["status"] != "WARN" {
-		return fmt.Errorf("INDI motion rate failed: %v", resp["error"])
+	if resp.Status != "ACK" && resp.Status != "WARN" {
+		return fmt.Errorf("INDI motion rate failed: %v", resp.Error)
 	}
 
 	return nil
@@ -652,8 +695,8 @@ func (cb *CommandBridge) INDIMotionRate(azRate, elRate float64) error {
 
 // INDIAbort sends emergency abort command via INDI
 func (cb *CommandBridge) INDIAbort() error {
-	cmd := map[string]interface{}{
-		"type": "TELESCOPE_ABORT_MOTION",
+	cmd := INDICommand{
+		Type: "TELESCOPE_ABORT_MOTION",
 	}
 
 	resp, err := cb.SendINDICommand(cmd)
@@ -661,8 +704,8 @@ func (cb *CommandBridge) INDIAbort() error {
 		return err
 	}
 
-	if resp["status"] != "ACK" {
-		return fmt.Errorf("INDI abort failed: %v", resp["error"])
+	if resp.Status != "ACK" {
+		return fmt.Errorf("INDI abort failed: %v", resp.Error)
 	}
 
 	return nil
@@ -682,14 +725,16 @@ func (cb *CommandBridge) indiHealthMonitor() {
 			}
 
 			// Ping INDI proxy with health check
-			cmd := map[string]interface{}{
-				"type": "HEALTH_CHECK",
+			cmd := INDICommand{
+				Type: "HEALTH_CHECK",
 			}
 
 			start := time.Now()
 			resp, err := cb.SendINDICommand(cmd)
 			latency := time.Since(start)
 
+			// CRITICAL FIX: Lock before writing to INDIHealth
+			cb.indiHealthMu.Lock()
 			cb.INDILastCmdTime = time.Now()
 
 			if err != nil {
@@ -699,15 +744,17 @@ func (cb *CommandBridge) indiHealthMonitor() {
 
 				// Exponential backoff for reconnection
 				if cb.INDIHealth.ConsecutiveErrors > 3 {
+					cb.indiHealthMu.Unlock()
 					fmt.Printf("[TELESCOPE] INDI unhealthy (%d errors), attempting reconnect...\n",
 						cb.INDIHealth.ConsecutiveErrors)
 					cb.attemptINDIReconnect()
+					continue
 				}
 			} else {
 				cb.INDIHealth.ConsecutiveErrors = 0
 				cb.INDIHealth.Connected = true
 				cb.INDIHealth.LastPingTime = time.Now()
-				cb.INDIHealth.IsHealthy = resp["status"] == "ACK"
+				cb.INDIHealth.IsHealthy = resp.Status == "ACK"
 
 				// Update latency tracking
 				latencyMs := float64(latency.Milliseconds())
@@ -718,6 +765,7 @@ func (cb *CommandBridge) indiHealthMonitor() {
 					fmt.Printf("[TELESCOPE] WARNING: INDI latency %.1fms exceeds 50ms target\n", latencyMs)
 				}
 			}
+			cb.indiHealthMu.Unlock()
 		}
 	}
 }
@@ -740,13 +788,28 @@ func (cb *CommandBridge) attemptINDIReconnect() {
 	} else {
 		fmt.Printf("[TELESCOPE] INDI reconnected successfully\n")
 		cb.INDIReconnectBackoff = 1 * time.Second // Reset backoff
+
+		// CRITICAL FIX: Lock before writing to INDIHealth
+		cb.indiHealthMu.Lock()
 		cb.INDIHealth.ConsecutiveErrors = 0
+		cb.indiHealthMu.Unlock()
 	}
 }
 
 // GetINDIHealth returns current INDI health status
+// CRITICAL FIX: Thread-safe with mutex, returns copy to avoid race after unlock
 func (cb *CommandBridge) GetINDIHealth() INDIHealthStatus {
-	return cb.INDIHealth
+	cb.indiHealthMu.RLock()
+	defer cb.indiHealthMu.RUnlock()
+
+	// Return copy to avoid race after unlock
+	return INDIHealthStatus{
+		Connected:         cb.INDIHealth.Connected,
+		LastPingTime:      cb.INDIHealth.LastPingTime,
+		ConsecutiveErrors: cb.INDIHealth.ConsecutiveErrors,
+		AvgLatencyMs:      cb.INDIHealth.AvgLatencyMs,
+		IsHealthy:         cb.INDIHealth.IsHealthy,
+	}
 }
 
 // Slew sends immediate pointing command with optional lead-time compensation

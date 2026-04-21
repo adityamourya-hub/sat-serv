@@ -295,9 +295,17 @@ func (c *Controller) GetActiveTier() ExecutionTier {
 }
 
 // ForceTier allows external override (e.g., manual command, safety override)
+// CRITICAL FIX: Check thermal before forcing tier to prevent thermal runaway
 func (c *Controller) ForceTier(tier ExecutionTier) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// CRITICAL FIX: Check thermal before forcing Tier3
+	if tier == Tier3 && c.Governor.IsCritical() {
+		fmt.Printf("[PAX] REJECTED: Cannot force Tier3 during thermal critical\n")
+		return
+	}
+
 	c.ActiveTier = tier
 	c.currentCool = 0 // Reset cooldown for immediate switching
 	fmt.Printf("[PAX] Tier forced to %s\n", tier.String())

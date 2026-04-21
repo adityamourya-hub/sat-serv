@@ -15,20 +15,20 @@ import (
 // Extends SINDy EquationString with bootstrap CI, physics consistency grade, causal provenance
 type SymbolicCertificate struct {
 	// Certificate metadata
-	CertificateID    string    `json:"certificate_id"`
-	Timestamp        time.Time `json:"timestamp"`
-	ObservationID    string    `json:"observation_id"`
-	SourceSensor     string    `json:"source_sensor"`
+	CertificateID string    `json:"certificate_id"`
+	Timestamp     time.Time `json:"timestamp"`
+	ObservationID string    `json:"observation_id"`
+	SourceSensor  string    `json:"source_sensor"`
 
 	// Hamiltonian invariant (for sovereign handshake)
-	HamiltonianHash  string    `json:"hamiltonian_hash"`
-	HamiltonianAvg   float64   `json:"hamiltonian_avg"`
-	HamiltonianSigma float64   `json:"hamiltonian_sigma"`
-	IsValid         bool      `json:"is_valid"` // Self-invalidates if σ_H / H_avg >= 10^-7
+	HamiltonianHash  string  `json:"hamiltonian_hash"`
+	HamiltonianAvg   float64 `json:"hamiltonian_avg"`
+	HamiltonianSigma float64 `json:"hamiltonian_sigma"`
+	IsValid          bool    `json:"is_valid"` // Self-invalidates if σ_H / H_avg >= 10^-7
 
 	// Physics consistency grade
-	ConsistencyGrade string  `json:"consistency_grade"` // A (excellent), B (good), C (acceptable), F (failed)
-	EnergyViolation  float64 `json:"energy_violation"`
+	ConsistencyGrade  string  `json:"consistency_grade"` // A (excellent), B (good), C (acceptable), F (failed)
+	EnergyViolation   float64 `json:"energy_violation"`
 	MomentumViolation float64 `json:"momentum_violation"`
 
 	// Bootstrap confidence interval
@@ -40,31 +40,31 @@ type SymbolicCertificate struct {
 	ProvenanceChain []ProvenanceEntry `json:"provenance_chain"`
 
 	// Falsifiable prediction
-	PredictionHorizonSec float64 `json:"prediction_horizon_sec"`
+	PredictionHorizonSec float64    `json:"prediction_horizon_sec"`
 	PredictedState       [6]float64 `json:"predicted_state"` // Position (3) + Velocity (3)
 }
 
 // ProvenanceEntry tracks the causal chain of observations
 type ProvenanceEntry struct {
-	Timestamp   time.Time `json:"timestamp"`
-	Source      string    `json:"source"`
-	Operation   string    `json:"operation"`
-	InputHash   string    `json:"input_hash"`
-	OutputHash  string    `json:"output_hash"`
-	Confidence  float64   `json:"confidence"`
+	Timestamp  time.Time `json:"timestamp"`
+	Source     string    `json:"source"`
+	Operation  string    `json:"operation"`
+	InputHash  string    `json:"input_hash"`
+	OutputHash string    `json:"output_hash"`
+	Confidence float64   `json:"confidence"`
 }
 
 // NewSymbolicCertificate creates a new certificate for an observation
 func NewSymbolicCertificate(observationID, sourceSensor string, stateVector [6]float64, constraints *PhysicalConstraints) *SymbolicCertificate {
 	cert := &SymbolicCertificate{
-		CertificateID:    generateCertificateID(),
-		Timestamp:        time.Now(),
-		ObservationID:    observationID,
-		SourceSensor:     sourceSensor,
-		ConsistencyGrade: "C", // Default to acceptable
-		ConfidenceLevel:  0.95,
+		CertificateID:        generateCertificateID(),
+		Timestamp:            time.Now(),
+		ObservationID:        observationID,
+		SourceSensor:         sourceSensor,
+		ConsistencyGrade:     "C", // Default to acceptable
+		ConfidenceLevel:      0.95,
 		PredictionHorizonSec: 60.0, // 60-second falsifiable prediction
-		PredictedState:   stateVector,
+		PredictedState:       stateVector,
 	}
 
 	// Calculate Hamiltonian invariant
@@ -96,7 +96,7 @@ func (cert *SymbolicCertificate) calculateHamiltonianInvariant(state [6]float64)
 	cert.HamiltonianSigma = math.Abs(hamiltonian) * 1e-8 // Simplified sigma
 
 	// Generate hash
-	hashInput := fmt.Sprintf("%f|%f|%s|%s", hamiltonian, cert.Timestamp.UnixNano(), cert.ObservationID, cert.SourceSensor)
+	hashInput := fmt.Sprintf("%f|%d|%s|%s", hamiltonian, cert.Timestamp.UnixNano(), cert.ObservationID, cert.SourceSensor)
 	hashBytes := sha256.Sum256([]byte(hashInput))
 	cert.HamiltonianHash = hex.EncodeToString(hashBytes[:])
 }

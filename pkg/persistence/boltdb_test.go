@@ -45,7 +45,7 @@ func TestBoltDBBackend_UpsertObject(t *testing.T) {
 		Pos:       octree.Vector3{X: 7000, Y: 0, Z: 0},
 		Vel:       octree.Vector3{X: 0, Y: 7.5, Z: 0},
 		EpochTT:   2460000.0,
-		Timestamp: time.Now().Unix(),
+		Timestamp: float64(time.Now().Unix()),
 	}
 
 	err = backend.UpsertObject(record)
@@ -72,7 +72,7 @@ func TestBoltDBBackend_GetLatestSnapshot(t *testing.T) {
 			Pos:       octree.Vector3{X: 7000, Y: 0, Z: 0},
 			Vel:       octree.Vector3{X: 0, Y: 7.5, Z: 0},
 			EpochTT:   2460000.0,
-			Timestamp: time.Now().Unix(),
+			Timestamp: float64(time.Now().Unix()),
 		},
 		{
 			ID:        2,
@@ -80,7 +80,7 @@ func TestBoltDBBackend_GetLatestSnapshot(t *testing.T) {
 			Pos:       octree.Vector3{X: -7000, Y: 0, Z: 0},
 			Vel:       octree.Vector3{X: 0, Y: -7.5, Z: 0},
 			EpochTT:   2460000.0,
-			Timestamp: time.Now().Unix(),
+			Timestamp: float64(time.Now().Unix()),
 		},
 	}
 
@@ -116,7 +116,7 @@ func TestBoltDBBackend_DeleteObject(t *testing.T) {
 		Pos:       octree.Vector3{X: 7000, Y: 0, Z: 0},
 		Vel:       octree.Vector3{X: 0, Y: 7.5, Z: 0},
 		EpochTT:   2460000.0,
-		Timestamp: time.Now().Unix(),
+		Timestamp: float64(time.Now().Unix()),
 	}
 
 	if err := backend.UpsertObject(record); err != nil {
@@ -160,7 +160,7 @@ func TestBoltDBBackend_GetObjectAtTime(t *testing.T) {
 		Pos:       octree.Vector3{X: 7000, Y: 0, Z: 0},
 		Vel:       octree.Vector3{X: 0, Y: 7.5, Z: 0},
 		EpochTT:   2460000.0,
-		Timestamp: earlier.Unix(),
+		Timestamp: float64(earlier.Unix()),
 	}
 
 	if err := backend.UpsertObject(record); err != nil {
@@ -196,7 +196,7 @@ func TestBoltDBBackend_QueryObjectsInWindow(t *testing.T) {
 			Pos:       octree.Vector3{X: 7000, Y: 0, Z: 0},
 			Vel:       octree.Vector3{X: 0, Y: 7.5, Z: 0},
 			EpochTT:   2460000.0,
-			Timestamp: now.Add(-2 * time.Hour).Unix(),
+			Timestamp: float64(now.Add(-2 * time.Hour).Unix()),
 		},
 		{
 			ID:        2,
@@ -204,7 +204,7 @@ func TestBoltDBBackend_QueryObjectsInWindow(t *testing.T) {
 			Pos:       octree.Vector3{X: -7000, Y: 0, Z: 0},
 			Vel:       octree.Vector3{X: 0, Y: -7.5, Z: 0},
 			EpochTT:   2460000.0,
-			Timestamp: now.Add(-1 * time.Hour).Unix(),
+			Timestamp: float64(float64(now.Add(-1 * time.Hour).Unix())),
 		},
 	}
 
@@ -231,10 +231,10 @@ func TestBoltDBBackend_QueryObjectsInWindow(t *testing.T) {
 
 func TestParseHistoryTS(t *testing.T) {
 	tests := []struct {
-		name    string
-		key     []byte
-		wantTS  int64
-		wantOK  bool
+		name   string
+		key    []byte
+		wantTS int64
+		wantOK bool
 	}{
 		{
 			name:   "valid key",

@@ -68,7 +68,7 @@ func TestManeuverCharacterizationImpulsive(t *testing.T) {
 		t.Errorf("Delta-V magnitude estimate outside tolerance: got %.4f, want 0.1", dvMag)
 	}
 
-	if char.BurnType != ManeuverImpulsive {
+	if char.BurnType != physics.ManeuverImpulsive {
 		t.Errorf("Expected BurnType impulsive, got %s", char.BurnType)
 	}
 }
