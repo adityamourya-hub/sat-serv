@@ -204,7 +204,7 @@ func (fct *FractionalColumnTest) computeTransitionalCoefficients(kn, mach float6
 }
 
 // computePointingAngles computes telescope pointing from ground station
-func (fct *FractionalColumnTest) computePointingAngles(altitude, velocity, flightPath float64) (az, el float64) {
+func (fct *FractionalColumnTest) computePointingAngles(altitude, velocity, _flightPath float64) (az, el float64) {
 	// Simplified: Assume HGV passes directly overhead
 	// Real implementation would use full ECI to AzEl conversion
 
