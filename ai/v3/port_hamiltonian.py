@@ -495,6 +495,98 @@ class PortHamiltonianSystem(eqx.Module):
             'supply_power': float(supply_power),
             'Hamiltonian': float(self.get_hamiltonian(z)),
         }
+    
+    def compute_gradient_H(
+        self,
+        z: jnp.ndarray,
+        z_latent: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
+        """
+        Compute full gradient of Hamiltonian ∇H(z, z_latent).
+        
+        Args:
+            z: [state_dim] state vector
+            z_latent: [latent_dim] physics code (optional)
+            
+        Returns:
+            grad_H: [state_dim] gradient of Hamiltonian
+        """
+        return grad(lambda x: self.get_hamiltonian(x, z_latent))(z)
+    
+    def compute_dH_dq(
+        self,
+        z: jnp.ndarray,
+        z_latent: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
+        """
+        Compute position gradient of Hamiltonian ∂H/∂q.
+        
+        Args:
+            z: [state_dim] state vector [q(3), p(3)]
+            z_latent: [latent_dim] physics code (optional)
+            
+        Returns:
+            dH_dq: [3] gradient w.r.t. position
+        """
+        half = self.state_dim // 2
+        grad_H = self.compute_gradient_H(z, z_latent)
+        return grad_H[:half]
+    
+    def compute_dH_dp(
+        self,
+        z: jnp.ndarray,
+        z_latent: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
+        """
+        Compute momentum gradient of Hamiltonian ∂H/∂p.
+        
+        For separable Hamiltonians H(q,p) = T(p) + V(q):
+            ∂H/∂p = ∂T/∂p = v (velocity)
+        
+        Args:
+            z: [state_dim] state vector [q(3), p(3)]
+            z_latent: [latent_dim] physics code (optional)
+            
+        Returns:
+            dH_dp: [3] gradient w.r.t. momentum (velocity for separable H)
+        """
+        half = self.state_dim // 2
+        grad_H = self.compute_gradient_H(z, z_latent)
+        return grad_H[half:]
+    
+    def compute_R_matrix(
+        self,
+        z: jnp.ndarray,
+        z_latent: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
+        """
+        Alias for get_dissipation_matrix for consistency with training code.
+        
+        Args:
+            z: [state_dim] state vector
+            z_latent: [latent_dim] physics code (optional)
+            
+        Returns:
+            R: [state_dim, state_dim] PSD dissipation matrix
+        """
+        return self.get_dissipation_matrix(z, z_latent)
+    
+    def compute_G_matrix(
+        self,
+        z: jnp.ndarray,
+        z_latent: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
+        """
+        Alias for get_control_coupling for consistency with training code.
+        
+        Args:
+            z: [state_dim] state vector
+            z_latent: [latent_dim] physics code (optional)
+            
+        Returns:
+            G: [state_dim, control_dim] control coupling matrix
+        """
+        return self.get_control_coupling(z, z_latent)
 
 
 class LieGroupSE3Integrator:

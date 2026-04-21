@@ -554,7 +554,7 @@ func (t *InformationTheoreticTasker) ComputePriority(
 	covTrace := computeTrace6x6(obj.Covariance)
 
 	// Predicted FIM for this observation
-	H := computeObservationMatrix(obj.State, sensor)
+	H := computeObservationMatrix()
 	R := sensor.MeasurementCovariance()
 
 	fim := ComputeFIM(obj.STM, H, R)
@@ -963,7 +963,7 @@ func computeTrace6x6(m [6][6]float64) float64 {
 	return trace
 }
 
-func computeObservationMatrix(_state [6]float64, _sensor *SensorPlatform) [3][6]float64 {
+func computeObservationMatrix() [3][6]float64 {
 	// For position-only measurement
 	// H = [I_3x3, 0_3x3]
 	var H [3][6]float64
