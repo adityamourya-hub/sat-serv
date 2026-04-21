@@ -433,7 +433,7 @@ func (a *AtmosphereEngine) GetDensityUnified(h, f107, ap, lat, lon float64, doy 
 
 // predictFNO provides neural FNO prediction with ONNX inference
 // ADITI 4.0: Uses ONNX model when available, falls back to analytic correction
-func (a *AtmosphereEngine) predictFNO(h, f107, ap, lat, lon float64, _doy int) float64 {
+func (a *AtmosphereEngine) predictFNO(h, f107, ap, _lat, _lon float64, _doy int) float64 {
 	// If ONNX session is loaded, run inference
 	// For now, use analytic neural correction as fallback
 	rhoJR := JacchiaRobertsDensity(h, f107, ap)
