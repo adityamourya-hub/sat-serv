@@ -22,6 +22,19 @@ import (
 	"github.com/spf13/viper"
 )
 
+// SensorConfig represents runtime configuration for a sensor
+// Defined here to avoid import cycles with pkg/boundary
+type SensorConfig struct {
+	Name        string  `mapstructure:"name"`          // Human-readable name
+	Type        string  `mapstructure:"type"`          // optical|radar|rf
+	Endpoint    string  `mapstructure:"endpoint"`      // ZMQ endpoint for data stream
+	Enabled     bool    `mapstructure:"enabled"`       // Whether sensor is active
+	Priority    int     `mapstructure:"priority"`      // Fusion priority (higher = more trusted)
+	MaxRangeKm  float64 `mapstructure:"max_range_km"`  // Maximum detection range
+	MinRangeKm  float64 `mapstructure:"min_range_km"`  // Minimum detection range
+	FieldOfView float64 `mapstructure:"field_of_view"` // Field of view [rad]
+}
+
 // Config represents the complete ADITI 4.0 configuration
 // Viper unmarshals YAML/JSON directly into this struct
 type Config struct {
@@ -53,26 +66,29 @@ type Config struct {
 
 	// Discovery filter configuration
 	Discovery struct {
-		EnableSINDy     bool    `mapstructure:"enable_sindy"`      // Enable latent force discovery
-		Threshold       float64 `mapstructure:"threshold"`         // P(discovery) threshold
-		ModeList        []string `mapstructure:"mode_list"`       // IMM mode list
+		EnableSINDy bool     `mapstructure:"enable_sindy"` // Enable latent force discovery
+		Threshold   float64  `mapstructure:"threshold"`    // P(discovery) threshold
+		ModeList    []string `mapstructure:"mode_list"`    // IMM mode list
 	} `mapstructure:"discovery"`
 
 	// Slew control configuration
 	Slew struct {
 		DefaultTelescope string  `mapstructure:"default_telescope"` // Default telescope ID
-		SettleTimeMs    float64 `mapstructure:"settle_time_ms"`    // Target settle time
-		MaxRate         float64 `mapstructure:"max_rate"`          // Maximum slew rate (rad/s)
-		LeadTimeMs      float64 `mapstructure:"lead_time_ms"`      // Prediction horizon
+		SettleTimeMs     float64 `mapstructure:"settle_time_ms"`    // Target settle time
+		MaxRate          float64 `mapstructure:"max_rate"`          // Maximum slew rate (rad/s)
+		LeadTimeMs       float64 `mapstructure:"lead_time_ms"`      // Prediction horizon
 	} `mapstructure:"slew"`
+
+	// Sensors configuration for sensor registry
+	Sensors []SensorConfig `mapstructure:"sensors"`
 
 	// Node configuration for distributed deployment
 	Node struct {
-		ID         string `mapstructure:"id"`          // Node identifier
-		Role       string `mapstructure:"role"`        // primary|replica|edge
-		Bind       string `mapstructure:"bind"`        // gRPC bind address
-		Peers      []string `mapstructure:"peers"`     // Peer node addresses
-		TimeoutMs  int    `mapstructure:"timeout_ms"`  // gRPC timeout
+		ID        string   `mapstructure:"id"`         // Node identifier
+		Role      string   `mapstructure:"role"`       // primary|replica|edge
+		Bind      string   `mapstructure:"bind"`       // gRPC bind address
+		Peers     []string `mapstructure:"peers"`      // Peer node addresses
+		TimeoutMs int      `mapstructure:"timeout_ms"` // gRPC timeout
 	} `mapstructure:"node"`
 }
 
@@ -142,7 +158,7 @@ func setDefaults(v *viper.Viper) {
 
 	// PAX defaults
 	v.SetDefault("pax.thermal_limit_watts", 8) // M2 Air TDP
-	v.SetDefault("pax.default_tier", 2)         // Pruned ONNX
+	v.SetDefault("pax.default_tier", 2)        // Pruned ONNX
 
 	// Discovery defaults
 	v.SetDefault("discovery.enable_sindy", true)
