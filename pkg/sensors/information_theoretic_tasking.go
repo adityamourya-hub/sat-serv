@@ -376,7 +376,7 @@ func (m *orbitalPHSModel) Hamiltonian(q, p, z []float64) float64 {
 
 // updateSTMSymplectic updates STM using symplectic flow
 // Maintains covariance realism while preserving energy constraints
-func (obj *TrackedObject) updateSTMSymplectic(dt float64, qOld, pOld, qNew, pNew []float64) {
+func (obj *TrackedObject) updateSTMSymplectic(dt float64, _qOld, _pOld, _qNew, _pNew []float64) {
 	// Compute state transition matrix using finite differences along symplectic flow
 	// This is more accurate than linearized Keplerian approximation for HGV dynamics
 
@@ -963,7 +963,7 @@ func computeTrace6x6(m [6][6]float64) float64 {
 	return trace
 }
 
-func computeObservationMatrix(state [6]float64, sensor *SensorPlatform) [3][6]float64 {
+func computeObservationMatrix(_state [6]float64, _sensor *SensorPlatform) [3][6]float64 {
 	// For position-only measurement
 	// H = [I_3x3, 0_3x3]
 	var H [3][6]float64
