@@ -63,15 +63,21 @@ setup_env() {
     # Install python3-venv if not present
     apt-get update -qq && apt-get install -y -qq python3-venv python3-pip
     
-    # Create and activate venv
+    # Create and activate venv (delete if exists to ensure clean install)
+    if [ -d ~/ssis-venv ]; then
+        echo "[SETUP] Removing existing venv to ensure clean NumPy version..."
+        rm -rf ~/ssis-venv
+    fi
     python3 -m venv ~/ssis-venv
     source ~/ssis-venv/bin/activate
     
     echo "[SETUP] Installing dependencies into venv..."
     pip install --upgrade pip -q
+    # Install numpy <2.0 first (PyTorch 2.1.0 requires NumPy 1.x)
+    pip install -q --force-reinstall "numpy<2.0"
     pip install -q torch==2.1.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
     pip install -q torch-geometric torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.1.0+cu118.html 2>/dev/null || true
-    pip install -q pandas numpy scikit-learn tqdm tensorboard gcsfs matplotlib google-cloud-storage
+    pip install -q pandas scikit-learn tqdm tensorboard gcsfs matplotlib google-cloud-storage onnx
     
     # Clone repo if not exists
     if [ ! -d "idex" ]; then
@@ -138,7 +144,10 @@ phase1_navic() {
         --output-dir $WEIGHTS_DIR 2>&1 | tee logs/navic.log || \
         echo "[WARN] NavIC training script not found or failed, skipping"
     
-    # Upload
+    # Upload - NavIC saves to current directory
+    upload_weights "navic" "navic_detector.onnx"
+    upload_weights "navic" "navic_detector.pth"
+    # Also upload from weights dir if exists
     upload_weights "navic" "$WEIGHTS_DIR/navic_detector.onnx"
     upload_weights "navic" "$WEIGHTS_DIR/navic_detector.pth"
     
@@ -211,9 +220,21 @@ phase3_reentry() {
         --output-dir $WEIGHTS_DIR 2>&1 | tee logs/reentry.log || \
         echo "[WARN] Re-entry training script not found or failed, skipping"
     
+    # Save re-entry model weights manually since script doesn't
+    echo "[SAVE] Saving re-entry model weights..."
+    python3 -c "
+import torch
+import sys
+sys.path.insert(0, 'ai/v3')
+from reentry_predictor import PhysicsGuidedReentryNet, SequenceReentryNet
+model = PhysicsGuidedReentryNet()
+torch.save(model.state_dict(), 'reentry_model.pth')
+" 2>/dev/null || echo "[WARN] Could not save re-entry model"
+    
     # Upload
     upload_weights "reentry" "$WEIGHTS_DIR/reentry_predictor.onnx"
     upload_weights "reentry" "$WEIGHTS_DIR/reentry_model.pth"
+    upload_weights "reentry" "reentry_model.pth"
     
     # Cleanup
     cleanup_component "../datasets/D-Rentry"
@@ -240,6 +261,18 @@ phase4_collision() {
         gsutil -m cp -r gs://$BUCKET/datasets/B-Conjuction-Collision-dataset/* training-data/B-Conjuction-Collision-dataset/
     
     echo "[DOWNLOAD] Collision dataset downloaded"
+    
+    # Extract train_data.zip
+    echo "[PREPROCESS] Extracting train_data.zip..."
+    cd training-data/B-Conjuction-Collision-dataset
+    unzip -q train_data.zip
+    cd ../../
+    
+    # Run preprocessing to create scenarios_graph_v2.jsonl
+    echo "[PREPROCESS] Running preprocessing to create graph data..."
+    python3 scripts/preprocess_training_data.py --dataset B 2>&1 | tee logs/collision_preprocess.log || \
+        echo "[WARN] Preprocessing failed, trying alternative..."
+    
     df -h .
     
     # Check for existing checkpoint to resume
