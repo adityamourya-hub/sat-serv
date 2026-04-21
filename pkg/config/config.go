@@ -56,6 +56,7 @@ type Config struct {
 		Tolerance     float64 `mapstructure:"tolerance"`      // RKF45 integration tolerance
 		MinStep       float64 `mapstructure:"min_step"`       // Minimum step size (s)
 		MaxStep       float64 `mapstructure:"max_step"`       // Maximum step size (s)
+		Propagator    string  `mapstructure:"propagator"`     // Default propagator name
 	} `mapstructure:"physics"`
 
 	// PAX thermal governor configuration
