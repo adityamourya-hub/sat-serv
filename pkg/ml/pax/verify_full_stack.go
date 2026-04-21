@@ -125,7 +125,7 @@ func VerifyUnifiedFlow() *ValidationResult {
 	zeroDayFrame := -1
 	modeExpansionTriggered := false
 
-	for frameIdx, _ := range maneuver.Frames {
+	for frameIdx := range maneuver.Frames {
 		frameStart := time.Now()
 
 		// A. PAX Tier Selection
