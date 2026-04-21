@@ -2,7 +2,6 @@ package physics
 
 import (
 	"math"
-	"strings"
 	"testing"
 )
 
