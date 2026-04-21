@@ -1,6 +1,9 @@
 """
 JAX Training Pipeline for Port-Hamiltonian System (PHS)
-ADITI 4.0: Canonical Training Backend
+ADITI 4.0: CANONICAL TRAINING BACKEND ✅
+
+🎯 UNIFICATION COMPLETE: This is the canonical training backend for ADITI 4.0.
+   PyTorch version (ai/neural_ode/port_hamiltonian_pytorch.py) exists for deployment only.
 
 Replaces broken PyTorch GHNN path with correct JAX implementation.
 Uses Forest-Ruth 4th-order symplectic integrator with proper q/p split.
