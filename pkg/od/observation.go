@@ -3,7 +3,7 @@ package od
 /**
  * Observation Models for Orbit Determination
  *
- * ADITI 4.0: Processes raw sensor data (radar/optical) into
+ * Processes raw sensor data (radar/optical) into
  * orbit determination measurements with proper noise modeling.
  *
  * Observation Types:

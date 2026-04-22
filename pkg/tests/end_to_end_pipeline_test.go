@@ -1,5 +1,5 @@
 // pkg/tests/end_to_end_pipeline_test.go
-// ADITI 4.0: End-to-End System Test for Phase 3 Verification
+// End-to-End System Test for Phase 3 Verification
 //
 // Full pipeline: Detection → Track Init → Predictive Slew → Centroid Lock
 // Target latency: < 100ms from detection to first centroid
@@ -33,7 +33,7 @@ const (
 
 // TestEndToEndPipeline verifies the full detection-to-custody pipeline
 func TestEndToEndPipeline(t *testing.T) {
-	fmt.Println("=== ADITI 4.0: End-to-End Pipeline Test ===")
+	fmt.Println("=== End-to-End Pipeline Test ===")
 	fmt.Printf("Target Latency: %.0f ms\n", TargetLatencyMs)
 	fmt.Printf("GEODSS Benchmark: %.0f ms\n", BenchmarkGEODSSMs)
 	fmt.Println()

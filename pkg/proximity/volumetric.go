@@ -17,7 +17,7 @@ type RegionOfInterest struct {
 }
 
 /**
- * ScanGroundRegion implements Volumetric Scan (ADITI 4.0 Requirement a).
+ * ScanGroundRegion implements Volumetric Scan (Sovereign Requirement a).
  * It identifies all space objects currently passing through the user-defined
  * region above a ground site.
  */

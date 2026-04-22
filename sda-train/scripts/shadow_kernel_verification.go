@@ -2,7 +2,7 @@
 // +build ignore
 
 /*
-Shadow-Kernel Verification for ADITI 4.0 Distillation
+Shadow-Kernel Verification for Sovereign Distillation
 
 Spins up a Go-native worker to validate each batch against the Forest-Ruth
 integrator. If the Go-native output deviates from PyTorch by more than 1e-9
@@ -49,6 +49,34 @@ type BatchResponse struct {
 	Reason       string      `json:"reason"`
 }
 
+// simplePHSModel implements a basic PHSModel for shadow kernel verification
+type simplePHSModel struct{}
+
+func (m *simplePHSModel) Velocity(q, p, z []float64) []float64 {
+	// Simple gravitational velocity model
+	mu := 398600.4418
+	r := math.Sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2])
+	factor := -mu / (r * r * r)
+	return []float64{
+		factor * q[0],
+		factor * q[1],
+		factor * q[2],
+	}
+}
+
+func (m *simplePHSModel) Force(q, p, z []float64) []float64 {
+	// No external forces in basic model
+	return []float64{0, 0, 0}
+}
+
+func (m *simplePHSModel) Hamiltonian(q, p, z []float64) float64 {
+	// Simple Keplerian Hamiltonian: H = |p|²/2 - μ/|q|
+	mu := 398600.4418
+	r := math.Sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2])
+	pMagSq := p[0]*p[0] + p[1]*p[1] + p[2]*p[2]
+	return 0.5*pMagSq - mu/r
+}
+
 // ShadowKernel implements the Go-native Forest-Ruth integrator
 type ShadowKernel struct {
 	engine *physics.Engine
@@ -57,7 +85,7 @@ type ShadowKernel struct {
 // NewShadowKernel creates a new shadow kernel verifier
 func NewShadowKernel() *ShadowKernel {
 	return &ShadowKernel{
-		engine: physics.NewEngine(),
+		engine: physics.NewEngine(&simplePHSModel{}),
 	}
 }
 
@@ -78,16 +106,14 @@ func (sk *ShadowKernel) VerifyBatch(req BatchRequest) BatchResponse {
 	maxDev := 0.0
 
 	for i, state := range req.States {
-		// Convert to physics.State
-		physState := physics.State{
-			Q: state[:3],
-			P: state[3:6],
-		}
+		// Convert to position and momentum vectors
+		q := state[:3]
+		p := state[3:6]
 
 		// Run Go-native Forest-Ruth integration
 		qOut, pOut := sk.engine.SymplecticStep(
-			physState.Q,
-			physState.P,
+			q,
+			p,
 			req.Latents[i],
 			req.Dt,
 		)
@@ -98,26 +124,32 @@ func (sk *ShadowKernel) VerifyBatch(req BatchRequest) BatchResponse {
 		copy(stateOut[3:], pOut)
 		statesOut[i] = stateOut
 
-		// Compute deviation from input (should be minimal for valid physics)
-		dev := computeDeviation(state, stateOut)
-		if dev > maxDev {
-			maxDev = dev
+		// Compute deviation from expected
+		deviation := 0.0
+		for j := 0; j < 6; j++ {
+			diff := stateOut[j] - req.States[i][j]
+			if math.Abs(diff) > deviation {
+				deviation = math.Abs(diff)
+			}
+		}
+		if deviation > maxDev {
+			maxDev = deviation
 		}
 	}
 
 	resp.StatesOut = statesOut
 	resp.MaxDeviation = maxDev
 
-	// Check reflex gap
 	if maxDev > ReflexGap {
 		resp.Pass = false
-		resp.Reason = fmt.Sprintf("Max deviation %.2e exceeds reflex gap %.0e", maxDev, ReflexGap)
+		resp.Reason = fmt.Sprintf("Max deviation %.2e exceeds reflex gap %.2e", maxDev, ReflexGap)
+	} else {
+		resp.Reason = "Within reflex gap"
 	}
 
 	return resp
 }
 
-// computeDeviation computes max absolute deviation between states
 func computeDeviation(s1, s2 []float64) float64 {
 	maxDev := 0.0
 	for i := range s1 {

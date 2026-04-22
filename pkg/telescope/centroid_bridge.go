@@ -1,5 +1,5 @@
 // pkg/telescope/centroid_bridge.go
-// ADITI 4.0: Centroid-to-PHS Feedback Bridge
+// Centroid-to-PHS Feedback Bridge
 //
 // Implements closed-loop feedback between MFBD vision output and AI-IMM EFE solver.
 // The centroid observation feeds in as an Observation Prior to resolve epistemic
@@ -163,7 +163,7 @@ func (cb *CentroidBridge) IsConflictHigh() bool {
 
 // updateObservationPrior updates the EFE solver's Adversarial Prior with centroid observation
 //
-// ADITI 4.0: Centroid-to-PHS Feedback - wires camera to Active Inference IMM
+// Centroid-to-PHS Feedback - wires camera to Active Inference IMM
 // When camera observation deviates from PHS prediction, Conflict Metric spikes,
 // helping system decide if deviation is maneuver or sensor glitch.
 func (cb *CentroidBridge) updateObservationPrior(obsState *physics.State, obsAz, obsEl float64) {
@@ -185,7 +185,7 @@ func (cb *CentroidBridge) updateObservationPrior(obsState *physics.State, obsAz,
 }
 
 // SetEFESolver connects the EFE solver for closed-loop feedback
-// ADITI 4.0: Call this after EFE solver is initialized to complete the wiring
+// Call this after EFE solver is initialized to complete the wiring
 func (cb *CentroidBridge) SetEFESolver(solver *ai_imm.EFESolver) {
 	cb.EFESolver = solver
 	fmt.Printf("[CENTROID] EFE solver connected for closed-loop feedback\n")

@@ -1,5 +1,5 @@
 // pkg/telescope/cluster_lead.go
-// ADITI 4.0: Multi-Mount ZMQ/INDI Cluster Lead
+// Multi-Mount ZMQ/INDI Cluster Lead
 //
 // One M2 node (CommandBridge) acting as cluster lead for 3-5 mounts.
 // Creates synthetic aperture optical array from cheap COTS telescopes.
@@ -31,11 +31,11 @@ import (
 type ClusterRole int
 
 const (
-	RoleUnassigned ClusterRole = iota
-	RoleNarrowFOV              // Sensor 1: High-mag DMD spectroscopy
-	RoleWideFOV                // Sensor 2: Active intent discovery
-	RoleHighCadence            // Sensor 3: ASR/MFBD reconstruction
-	RoleBackup                 // Hot standby
+	RoleUnassigned  ClusterRole = iota
+	RoleNarrowFOV               // Sensor 1: High-mag DMD spectroscopy
+	RoleWideFOV                 // Sensor 2: Active intent discovery
+	RoleHighCadence             // Sensor 3: ASR/MFBD reconstruction
+	RoleBackup                  // Hot standby
 )
 
 func (r ClusterRole) String() string {
@@ -67,60 +67,60 @@ type MountConfig struct {
 
 // SyntheticApertureTask coordinates multi-mount observation
 type SyntheticApertureTask struct {
-	TaskID        string       // Unique task identifier
-	TargetID      string       // NORAD ID or internal designation
-	Timestamp     int64        // Unix ms (synchronization anchor)
-	LeadTime      float64      // ms predictive lead
-	
+	TaskID    string  // Unique task identifier
+	TargetID  string  // NORAD ID or internal designation
+	Timestamp int64   // Unix ms (synchronization anchor)
+	LeadTime  float64 // ms predictive lead
+
 	// Role assignments
-	NarrowMount   string       // MountID for Sensor 1
-	WideMount     string       // MountID for Sensor 2
-	CadenceMount  string       // MountID for Sensor 3
-	
+	NarrowMount  string // MountID for Sensor 1
+	WideMount    string // MountID for Sensor 2
+	CadenceMount string // MountID for Sensor 3
+
 	// Coordinated pointing
-	Azimuth       float64      // degrees
-	Elevation     float64      // degrees
-	AzRate        float64      // deg/s
-	ElRate        float64      // deg/s
-	
+	Azimuth   float64 // degrees
+	Elevation float64 // degrees
+	AzRate    float64 // deg/s
+	ElRate    float64 // deg/s
+
 	// Synchronization
-	SyncDeadline  int64        // Unix ms - all mounts must ACK by this time
-	Acknowledged  []string     // MountIDs that have acknowledged
-	
+	SyncDeadline int64    // Unix ms - all mounts must ACK by this time
+	Acknowledged []string // MountIDs that have acknowledged
+
 	// Processing triggers
-	TriggerDMD    bool         // Fire DMD spectroscopy on Sensor 1
-	TriggerMFBD   bool         // Run MFBD on Sensor 3
+	TriggerDMD  bool // Fire DMD spectroscopy on Sensor 1
+	TriggerMFBD bool // Run MFBD on Sensor 3
 }
 
 // ClusterLead manages ZMQ PUB/SUB mesh for 3-5 slave mounts
 type ClusterLead struct {
 	// Identity
-	LeadID        string
-	NodeID        string
-	
+	LeadID string
+	NodeID string
+
 	// ZMQ sockets
-	pubSocket     *zmq4.Socket  // PUB: Broadcast commands to slaves
-	subSocket     *zmq4.Socket  // SUB: Receive ACKs from slaves
-	
+	pubSocket *zmq4.Socket // PUB: Broadcast commands to slaves
+	subSocket *zmq4.Socket // SUB: Receive ACKs from slaves
+
 	// Slave mounts
-	mounts        map[string]*MountConfig
-	mountMutex    sync.RWMutex
-	
+	mounts     map[string]*MountConfig
+	mountMutex sync.RWMutex
+
 	// Tasking
-	activeTasks   map[string]*SyntheticApertureTask
-	taskMutex     sync.RWMutex
-	
+	activeTasks map[string]*SyntheticApertureTask
+	taskMutex   sync.RWMutex
+
 	// Performance
-	latencyWindow []float64     // Recent sync latencies
-	maxMounts     int           // Maximum cluster size (5)
-	
+	latencyWindow []float64 // Recent sync latencies
+	maxMounts     int       // Maximum cluster size (5)
+
 	// Gateway integration
-	gateway       *NETRAGateway // Sovereign-to-NETRA feed
+	gateway *NETRAGateway // Sovereign-to-NETRA feed
 }
 
 // NewClusterLead creates ZMQ/INDI cluster lead (one M2 node)
 //
-// ADITI 4.0: Single M2 Air controls synthetic aperture array
+// Single M2 Air controls synthetic aperture array
 // Target: <50ms sync latency for 3-5 mounts
 func NewClusterLead(leadID, nodeID string) (*ClusterLead, error) {
 	// Create PUB socket for broadcasting
@@ -128,17 +128,17 @@ func NewClusterLead(leadID, nodeID string) (*ClusterLead, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PUB socket: %w", err)
 	}
-	
+
 	// Create SUB socket for receiving ACKs
 	subSocket, err := zmq4.NewSocket(zmq4.SUB)
 	if err != nil {
 		pubSocket.Close()
 		return nil, fmt.Errorf("failed to create SUB socket: %w", err)
 	}
-	
+
 	// Subscribe to all messages
 	subSocket.SetSubscribe("")
-	
+
 	cl := &ClusterLead{
 		LeadID:        leadID,
 		NodeID:        nodeID,
@@ -149,7 +149,7 @@ func NewClusterLead(leadID, nodeID string) (*ClusterLead, error) {
 		latencyWindow: make([]float64, 0, 100),
 		maxMounts:     5, // 3-5 mount cluster
 	}
-	
+
 	return cl, nil
 }
 
@@ -159,19 +159,19 @@ func (cl *ClusterLead) Bind(pubEndpoint, subEndpoint string) error {
 	if err := cl.pubSocket.Bind(pubEndpoint); err != nil {
 		return fmt.Errorf("failed to bind PUB socket: %w", err)
 	}
-	
+
 	// Bind SUB socket for receiving ACKs
 	if err := cl.subSocket.Bind(subEndpoint); err != nil {
 		return fmt.Errorf("failed to bind SUB socket: %w", err)
 	}
-	
+
 	fmt.Printf("[CLUSTER] Lead %s listening:\n", cl.LeadID)
 	fmt.Printf("  PUB: %s (commands to slaves)\n", pubEndpoint)
 	fmt.Printf("  SUB: %s (ACKs from slaves)\n", subEndpoint)
-	
+
 	// Start ACK listener
 	go cl.ackListener()
-	
+
 	return nil
 }
 
@@ -179,29 +179,29 @@ func (cl *ClusterLead) Bind(pubEndpoint, subEndpoint string) error {
 func (cl *ClusterLead) RegisterMount(config *MountConfig) error {
 	cl.mountMutex.Lock()
 	defer cl.mountMutex.Unlock()
-	
+
 	// Check cluster capacity
 	if len(cl.mounts) >= cl.maxMounts {
 		return fmt.Errorf("cluster at capacity (%d/%d mounts)", len(cl.mounts), cl.maxMounts)
 	}
-	
+
 	// Check for duplicate
 	if _, exists := cl.mounts[config.MountID]; exists {
 		return fmt.Errorf("mount %s already registered", config.MountID)
 	}
-	
+
 	// Connect SUB socket to mount's PUB endpoint
 	if err := cl.subSocket.Connect(config.Endpoint); err != nil {
 		return fmt.Errorf("failed to connect to mount %s: %w", config.MountID, err)
 	}
-	
+
 	// Store config
 	config.LastSeen = time.Now().UnixMilli()
 	cl.mounts[config.MountID] = config
-	
+
 	fmt.Printf("[CLUSTER] Registered mount %s at %s (role: %s)\n",
 		config.MountID, config.Endpoint, config.Role.String())
-	
+
 	return nil
 }
 
@@ -209,7 +209,7 @@ func (cl *ClusterLead) RegisterMount(config *MountConfig) error {
 func (cl *ClusterLead) UnregisterMount(mountID string) {
 	cl.mountMutex.Lock()
 	defer cl.mountMutex.Unlock()
-	
+
 	if config, exists := cl.mounts[mountID]; exists {
 		config.Enabled = false
 		delete(cl.mounts, mountID)
@@ -226,23 +226,23 @@ func (cl *ClusterLead) UnregisterMount(mountID string) {
 func (cl *ClusterLead) AssignRoles() {
 	cl.mountMutex.Lock()
 	defer cl.mountMutex.Unlock()
-	
+
 	if len(cl.mounts) < 3 {
 		fmt.Printf("[CLUSTER] WARNING: Only %d mounts, need 3+ for optimal roles\n", len(cl.mounts))
 	}
-	
+
 	var mounts []*MountConfig
 	for _, m := range cl.mounts {
 		if m.Enabled {
 			mounts = append(mounts, m)
 		}
 	}
-	
+
 	// Reset roles
 	for _, m := range mounts {
 		m.Role = RoleUnassigned
 	}
-	
+
 	// Assign based on capabilities
 	if len(mounts) >= 1 {
 		// Largest aperture → Narrow FOV
@@ -258,7 +258,7 @@ func (cl *ClusterLead) AssignRoles() {
 			narrowMount.Role = RoleNarrowFOV
 		}
 	}
-	
+
 	if len(mounts) >= 2 {
 		// Widest FOV → Wide FOV
 		widestFOV := 0.0
@@ -273,7 +273,7 @@ func (cl *ClusterLead) AssignRoles() {
 			wideMount.Role = RoleWideFOV
 		}
 	}
-	
+
 	if len(mounts) >= 3 {
 		// Remaining → High-cadence
 		for _, m := range mounts {
@@ -283,7 +283,7 @@ func (cl *ClusterLead) AssignRoles() {
 			}
 		}
 	}
-	
+
 	// Print assignments
 	for _, m := range mounts {
 		fmt.Printf("[CLUSTER] %s assigned role: %s\n", m.MountID, m.Role.String())
@@ -292,42 +292,42 @@ func (cl *ClusterLead) AssignRoles() {
 
 // SynchronizedSlew broadcasts coordinated task to all mounts
 //
-// ADITI 4.0: All mounts receive same timestamp + leadtime for coherent imaging
+// All mounts receive same timestamp + leadtime for coherent imaging
 // Returns: latency, error
 func (cl *ClusterLead) SynchronizedSlew(task *SyntheticApertureTask) (float64, error) {
 	start := time.Now()
-	
+
 	cl.taskMutex.Lock()
 	defer cl.taskMutex.Unlock()
-	
+
 	// Assign mounts to task
 	cl.assignMountsToTask(task)
-	
+
 	// Set synchronization parameters
 	task.Timestamp = time.Now().UnixMilli()
 	task.SyncDeadline = task.Timestamp + 50 // 50ms deadline
-	
+
 	// Serialize task
 	data, err := json.Marshal(task)
 	if err != nil {
 		return 0, fmt.Errorf("failed to marshal task: %w", err)
 	}
-	
+
 	// Broadcast to all mounts
 	if _, err := cl.pubSocket.Send(string(data), 0); err != nil {
 		return 0, fmt.Errorf("failed to broadcast: %w", err)
 	}
-	
+
 	// Store task
 	cl.activeTasks[task.TaskID] = task
-	
+
 	// Calculate latency
 	latency := float64(time.Since(start).Milliseconds())
 	cl.recordLatency(latency)
-	
+
 	fmt.Printf("[CLUSTER] Sync slew %s: Az=%.2f°, El=%.2f°, latency=%.2fms\n",
 		task.TaskID, task.Azimuth, task.Elevation, latency)
-	
+
 	return latency, nil
 }
 
@@ -335,12 +335,12 @@ func (cl *ClusterLead) SynchronizedSlew(task *SyntheticApertureTask) (float64, e
 func (cl *ClusterLead) assignMountsToTask(task *SyntheticApertureTask) {
 	cl.mountMutex.RLock()
 	defer cl.mountMutex.RUnlock()
-	
+
 	for id, mount := range cl.mounts {
 		if !mount.Enabled {
 			continue
 		}
-		
+
 		switch mount.Role {
 		case RoleNarrowFOV:
 			task.NarrowMount = id
@@ -360,31 +360,31 @@ func (cl *ClusterLead) ackListener() {
 		if err != nil {
 			continue
 		}
-		
+
 		// Parse ACK
 		var ack MountACK
 		if err := json.Unmarshal([]byte(data), &ack); err != nil {
 			continue
 		}
-		
+
 		// Update task
 		cl.taskMutex.Lock()
 		if task, exists := cl.activeTasks[ack.TaskID]; exists {
 			if !contains(task.Acknowledged, ack.MountID) {
 				task.Acknowledged = append(task.Acknowledged, ack.MountID)
-				
+
 				// Check if all mounts acknowledged
 				if cl.allMountsAcknowledged(task) {
 					fmt.Printf("[CLUSTER] Task %s fully acknowledged (%d mounts)\n",
 						ack.TaskID, len(task.Acknowledged))
-					
+
 					// Trigger processing pipelines
 					cl.triggerProcessing(task)
 				}
 			}
 		}
 		cl.taskMutex.Unlock()
-		
+
 		// Update mount heartbeat
 		cl.mountMutex.Lock()
 		if mount, exists := cl.mounts[ack.MountID]; exists {
@@ -425,7 +425,7 @@ func (cl *ClusterLead) allMountsAcknowledged(task *SyntheticApertureTask) bool {
 	if task.CadenceMount != "" {
 		expected++
 	}
-	
+
 	return len(task.Acknowledged) >= expected
 }
 
@@ -436,13 +436,13 @@ func (cl *ClusterLead) triggerProcessing(task *SyntheticApertureTask) {
 		fmt.Printf("[CLUSTER] Triggering DMD spectroscopy on %s\n", task.NarrowMount)
 		// TODO: Integrate with DMD tripwire
 	}
-	
+
 	// Fire MFBD on Sensor 3
 	if task.TriggerMFBD && task.CadenceMount != "" {
 		fmt.Printf("[CLUSTER] Triggering MFBD reconstruction on %s\n", task.CadenceMount)
 		// TODO: Integrate with VisionEngine
 	}
-	
+
 	// Gateway push to NETRA
 	if cl.gateway != nil {
 		cl.gateway.PushSyntheticApertureObservation(task)
@@ -462,7 +462,7 @@ func (cl *ClusterLead) GetAverageLatency() float64 {
 	if len(cl.latencyWindow) == 0 {
 		return 0.0
 	}
-	
+
 	sum := 0.0
 	for _, l := range cl.latencyWindow {
 		sum += l
@@ -474,17 +474,17 @@ func (cl *ClusterLead) GetAverageLatency() float64 {
 func (cl *ClusterLead) GetClusterStatus() (int, float64, map[string]ClusterRole) {
 	cl.mountMutex.RLock()
 	defer cl.mountMutex.RUnlock()
-	
+
 	status := make(map[string]ClusterRole)
 	active := 0
-	
+
 	for id, m := range cl.mounts {
 		status[id] = m.Role
 		if m.Enabled {
 			active++
 		}
 	}
-	
+
 	return active, cl.GetAverageLatency(), status
 }
 

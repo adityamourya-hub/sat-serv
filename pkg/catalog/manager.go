@@ -11,7 +11,7 @@ import (
 
 /**
  * CatalogManager provides high-level management of the satellite catalog
- * for ADITI 4.0 Live Catalog Updates.
+ * for Live Catalog Updates.
  *
  * Responsibilities:
  * - Active catalog (latest TLE per object)

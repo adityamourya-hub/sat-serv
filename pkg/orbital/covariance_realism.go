@@ -24,7 +24,7 @@ import (
  * representing model error. Tune these variances so that Mahalanobis distances
  * of orbital differences follow χ² distribution.
  *
- * For ADITI 4.0 IAF certification, this provides traceable, physics-based
+ * For IAF certification, this provides traceable, physics-based
  * uncertainty quantification without black-box ML.
  */
 
@@ -300,15 +300,15 @@ func computeStateError(predicted, reference physics.State) []float64 {
 	}
 }
 
-func computeMahalanobisSquared(error []float64, cov [6][6]float64) float64 {
+func computeMahalanobisSquared(error []float64, cov [36]float64) float64 {
 	// Convert to gonum matrices for inversion
 	epsilon := mat.NewVecDense(6, error)
 
-	// Build covariance matrix
+	// Build covariance matrix from flattened array (index = i*6 + j)
 	P := mat.NewSymDense(6, nil)
 	for i := 0; i < 6; i++ {
 		for j := 0; j <= i; j++ {
-			P.SetSym(i, j, cov[i][j])
+			P.SetSym(i, j, cov[i*6+j])
 		}
 	}
 
@@ -325,9 +325,10 @@ func computeMahalanobisSquared(error []float64, cov [6][6]float64) float64 {
 	return mahal
 }
 
-func isZeroCovariance(cov [6][6]float64) bool {
+func isZeroCovariance(cov [36]float64) bool {
+	// Check diagonal elements (indices: 0, 7, 14, 21, 28, 35)
 	for i := 0; i < 6; i++ {
-		if cov[i][i] != 0 {
+		if cov[i*6+i] != 0 {
 			return false
 		}
 	}

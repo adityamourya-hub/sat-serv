@@ -1,5 +1,5 @@
 // pkg/telescope/observation_report.go
-// ADITI 4.0: Sovereign ObservationReport Implementation
+// Sovereign ObservationReport Implementation
 //
 // Go-native implementation of the ObservationReport protobuf schema.
 // Provides zero-copy serialization for Reticulum Network Stack (100Hz edge path).
@@ -89,7 +89,7 @@ type OpticalFeatures struct {
 
 // ReportSerializer handles protobuf encoding/decoding
 //
-// ADITI 4.0: Zero-copy serialization for 100Hz edge path
+// Zero-copy serialization for 100Hz edge path
 // Target: < 500 bytes, < 1ms latency
 type ReportSerializer struct {
 	privateKey ed25519.PrivateKey
@@ -113,7 +113,7 @@ func NewReportSerializer(nodeID string) (*ReportSerializer, error) {
 
 // Serialize encodes report to protobuf bytes
 //
-// ADITI 4.0: Manual serialization for zero-copy performance
+// Manual serialization for zero-copy performance
 // (In production: Use protoc-generated Go code)
 func (rs *ReportSerializer) Serialize(report *ObservationReport) ([]byte, error) {
 	// Simplified manual serialization
@@ -191,23 +191,21 @@ func (rs *ReportSerializer) VerifySignature(data, signature, publicKey []byte) b
 	return ed25519.Verify(publicKey, data, signature)
 }
 
-// ComputeHamiltonianHash computes SHA-256 of Hamiltonian invariant
-//
-// ADITI 4.0: The "Physical Proof of Work"
-// If σ_H / H_avg >= 1e-7, certificate self-invalidates
+// ComputeHamiltonianHash computes a tolerance-binned SHA-256 of Hamiltonian samples.
+// Replaces the hardware-dependent float-string anti-pattern with a
+// reproducible hash that is robust to O(1e-9) numerical noise.
+// If σ_H / |H_avg| >= 1e-7, the caller should invalidate the certificate.
 func ComputeHamiltonianHash(hamiltonianSamples []float64) ([]byte, float64, float64) {
 	if len(hamiltonianSamples) == 0 {
 		return nil, 0, 0
 	}
 
-	// Compute mean
 	var sum float64
 	for _, h := range hamiltonianSamples {
 		sum += h
 	}
 	mean := sum / float64(len(hamiltonianSamples))
 
-	// Compute variance
 	var variance float64
 	for _, h := range hamiltonianSamples {
 		diff := h - mean
@@ -215,9 +213,15 @@ func ComputeHamiltonianHash(hamiltonianSamples []float64) ([]byte, float64, floa
 	}
 	variance /= float64(len(hamiltonianSamples))
 
-	// Compute hash of mean (simplified)
 	h := sha256.New()
-	h.Write([]byte(fmt.Sprintf("%.15e", mean)))
+	// Tolerance-binned hash: quantize H_avg to 1e-9 resolution
+	// so that compiler/architecture-dependent rounding does not alter the digest.
+	bin := int64(math.Floor(mean / 1e-9))
+	h.Write([]byte(fmt.Sprintf("H_%d", bin)))
+	for i, samp := range hamiltonianSamples {
+		binS := int64(math.Floor(samp / 1e-9))
+		h.Write([]byte(fmt.Sprintf("|%d:%d", i, binS)))
+	}
 	hash := h.Sum(nil)
 
 	return hash, mean, variance
@@ -250,7 +254,7 @@ func ValidateHamiltonian(mean, variance float64) (bool, float64) {
 
 // SpectroscopyHandoff manages ZMQ SUB to SLiPy controller
 //
-// ADITI 4.0: "Hot" handoff when DMD Tripwire detects coherent plasma mode
+// "Hot" handoff when DMD Tripwire detects coherent plasma mode
 // Telescope stays in ClosedLoopTrack while spectrometer integrates 2-second window
 type SpectroscopyHandoff struct {
 	zmqSocket        *ZMQSocket
@@ -343,12 +347,12 @@ func JulianDateFromTime(t time.Time) float64 {
 }
 
 // =============================================================================
-// Sovereign Handshake Protocol (ADITI 4.0)
+// Sovereign Handshake Protocol
 // =============================================================================
 
 // SovereignHandshake represents the physical proof of work between nodes
 //
-// ADITI 4.0: Every ObservationReport must include Hamiltonian Invariant Hash.
+// Every ObservationReport must include Hamiltonian Invariant Hash.
 // If σ_H / H_avg >= 10^-7, certificate self-invalidates (spoof detection).
 type SovereignHandshake struct {
 	// Report hash for integrity verification
@@ -386,7 +390,7 @@ func NewSovereignHandshake(nodeID string, report *ObservationReport) *SovereignH
 // Validate performs sovereign validation of the report
 //
 // Returns: isValid, confidence (0-1)
-// ADITI 4.0: Spoof detection - if σ_H / H_avg >= 10^-7, report is invalid
+// Spoof detection - if σ_H / H_avg >= 10^-7, report is invalid
 func (sh *SovereignHandshake) Validate(report *ObservationReport) (bool, float64) {
 	// 1. Check report hash integrity
 	expectedHash := sha256.New()
@@ -399,7 +403,7 @@ func (sh *SovereignHandshake) Validate(report *ObservationReport) (bool, float64
 	}
 
 	// 2. Check Hamiltonian invariant if available
-	if report.HamiltonianHash != nil && len(report.HamiltonianHash) > 0 {
+	if len(report.HamiltonianHash) > 0 {
 		// Validate Hamiltonian consistency
 		isValid, confidence := ValidateHamiltonian(report.HamiltonianInvariant, report.HamiltonianVariance)
 

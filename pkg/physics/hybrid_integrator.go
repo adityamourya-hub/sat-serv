@@ -1,4 +1,4 @@
-// pkg/physics/hybrid_integrator.go - ADITI 4.0 Symplectic-Adaptive Hybrid Integrator
+// pkg/physics/hybrid_integrator.go - Symplectic-Adaptive Hybrid Integrator
 //
 // Implements operator splitting for conservative + dissipative dynamics:
 //   - Conservative (fc): Gravity, J2, J3 - Forest-Ruth symplectic steps

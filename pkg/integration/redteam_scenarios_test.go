@@ -93,7 +93,7 @@ func TestSiliguriStalker(t *testing.T) {
 	}
 
 	// Validate the safe-distance maneuver parameters
-	// Based on ADITI 4.0 physics substrate: typical evasive delta-V ~ 0.5-2.0 m/s
+	// Typical evasive delta-V ~ 0.5-2.0 m/s
 	maxEvasiveDeltaV := 2.0 // m/s
 	minSafeDistance := 50.0 // km - safe operating distance
 

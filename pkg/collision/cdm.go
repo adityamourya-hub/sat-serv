@@ -85,7 +85,7 @@ func NewCDM(mc *MonteCarloConjunctionResult) *CDM {
 		Header: CDMHeader{
 			CCSDS_CDM_VERS: "1.0",
 			CREATION_DATE:  time.Now().Format(time.RFC3339),
-			ORIGINATOR:     "SSIS_IAF_ADITI_4",
+			ORIGINATOR:     "SSIS_IAF_SOV",
 			MESSAGE_FOR:    "IAF_SPACE_OPS",
 			MESSAGE_ID:     fmt.Sprintf("SSIS-MC-%d", time.Now().Unix()),
 		},
@@ -144,7 +144,7 @@ func (c *CDM) ToXML() (string, error) {
  * ParseCDMXML parses a CCSDS CDM XML message from external sources (18 SDS, NASA CARA, etc.)
  *
  * This enables operational conjunction assessment by ingesting real CDMs and
- * recomputing Pc using the ADITI 4.0 fixed Foster/Alfano methods for validation.
+ * recomputing Pc using the fixed Foster/Alfano methods for validation.
  *
  * @param xmlData Raw CDM XML bytes
  * @return Parsed CDM with full covariance matrices
@@ -239,12 +239,12 @@ func (c *CDM) ExtractSecondaryState() CDMObjectState {
 }
 
 /**
- * RecomputePc validates the CDM's published Pc against ADITI 4.0 fixed methods.
+ * RecomputePc validates the CDM's published Pc against fixed methods.
  *
  * This is critical for operational verification:
  * - Input: External CDM (18 SDS, CARA, ESA)
  * - Output: Comparison of published Pc vs recomputed Pc
- * - Validates that ADITI 4.0 fixes (Alfano 2005, 50×72 grid) produce correct results
+ * - Validates that fixed methods (Alfano 2005, 50×72 grid) produce correct results
  *
  * @return CDMValidationResult with both Pc values and error metrics
  */
@@ -285,13 +285,13 @@ func (c *CDM) RecomputePc() CDMValidationResult {
 	}
 
 	// Compute Pc using fixed Foster/Alfano methods
-	pcAditi := FosterAlfanoPc(geo)
+	pcRecomputed := FosterAlfanoPc(geo)
 
 	// Published Pc from CDM
 	pcPublished := c.RelativeMetadata.COLLISION_PROBABILITY
 
 	// Error metrics
-	pcError := pcAditi - pcPublished
+	pcError := pcRecomputed - pcPublished
 	pcRelativeError := 0.0
 	if pcPublished > 0 {
 		pcRelativeError = pcError / pcPublished
@@ -299,7 +299,7 @@ func (c *CDM) RecomputePc() CDMValidationResult {
 
 	return CDMValidationResult{
 		PublishedPc:         pcPublished,
-		RecomputedPc:        pcAditi,
+		RecomputedPc:        pcRecomputed,
 		AbsoluteError:       pcError,
 		RelativeError:       pcRelativeError,
 		MissDistance:        missDistance,

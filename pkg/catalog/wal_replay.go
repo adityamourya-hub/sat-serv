@@ -10,7 +10,7 @@ import (
 )
 
 /**
- * ADITI 4.0: WAL Replay Logic (The "Reflex Path" Recovery)
+ * WAL Replay Logic (The "Reflex Path" Recovery)
  *
  * Ensures <50ms recovery of Hamiltonian state after hard restart.
  *
@@ -25,9 +25,9 @@ import (
  */
 
 const (
-	WALMagic     = 0x57414C31 // "WAL1"
-	WALVersion   = 1
-	MaxWALSize   = 100 * 1024 * 1024 // 100MB max WAL
+	WALMagic        = 0x57414C31 // "WAL1"
+	WALVersion      = 1
+	MaxWALSize      = 100 * 1024 * 1024 // 100MB max WAL
 	EntryHeaderSize = 16
 )
 
@@ -43,7 +43,7 @@ const (
 // WALEntry represents a single write-ahead log record
 type WALEntry struct {
 	Type      WALEntryType
-	Timestamp int64  // Unix nanoseconds
+	Timestamp int64 // Unix nanoseconds
 	TargetID  uint32
 	Size      uint32 // Size of payload
 	Payload   []byte
@@ -51,21 +51,21 @@ type WALEntry struct {
 
 // WALHeader is stored at the beginning of the WAL file
 type WALHeader struct {
-	Magic       uint32
-	Version     uint32
-	EntryCount  uint64
-	LastLSN     uint64 // Log Sequence Number
-	Checksum    uint32
-	_           uint32 // Padding
+	Magic      uint32
+	Version    uint32
+	EntryCount uint64
+	LastLSN    uint64 // Log Sequence Number
+	Checksum   uint32
+	_          uint32 // Padding
 }
 
 // WALReplay handles crash recovery for the catalog
 // Ensures Hamiltonian state is restored within 50ms
 type WALReplay struct {
-	walFile   *os.File
-	walData   []byte
-	header    *WALHeader
-	catalog   *MMapCatalog
+	walFile *os.File
+	walData []byte
+	header  *WALHeader
+	catalog *MMapCatalog
 }
 
 // NewWALReplay creates a replay manager
@@ -333,12 +333,12 @@ func (wr *WALReplay) replayRRUpdate(entry WALEntry) error {
 
 // RecoveryMetrics tracks recovery performance
 type RecoveryMetrics struct {
-	TotalTime     time.Duration
-	IntegrityTime time.Duration
-	DriftCheckTime time.Duration
-	ReplayTime    time.Duration
-	SyncTime      time.Duration
-	ObjectsChecked int
+	TotalTime       time.Duration
+	IntegrityTime   time.Duration
+	DriftCheckTime  time.Duration
+	ReplayTime      time.Duration
+	SyncTime        time.Duration
+	ObjectsChecked  int
 	EntriesReplayed int
 	DriftedObjects  int
 }

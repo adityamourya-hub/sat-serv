@@ -3,7 +3,7 @@ package dphno
 /**
  * DPHNO-NASA42 Validation Test
  *
- * ADITI 4.0: Validates DPHNO predictions against NASA 42 ground truth.
+ * Validates DPHNO predictions against NASA 42 ground truth.
  *
  * This test validates that the Dissipative Port-Hamiltonian Neural Operator
  * achieves <100m deviation from NASA 42 across all orbital regimes.

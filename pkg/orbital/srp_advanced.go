@@ -6,7 +6,7 @@ import (
 )
 
 /**
- * ADITI 4.0: Advanced Solar Radiation Pressure Models for GEO/HEO
+ * Advanced Solar Radiation Pressure Models for GEO/HEO
  *
  * Standard "cannonball" SRP causes 10+ km/day error at GEO.
  * These models provide <100m/day accuracy:

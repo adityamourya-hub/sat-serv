@@ -82,7 +82,7 @@ type OperationalRunMetrics struct {
 
 /**
  * RunOperationalSimulation executes a compressed watch cycle to validate end-to-end stability.
- * Refactored to utilize the physics substrate schemas (ADITI 4.0).
+ * Refactored to utilize the physics substrate schemas.
  */
 func RunOperationalSimulation(cfg OperationalRunConfig) (OperationalRunMetrics, error) {
 	fmt.Printf("[TRC] Entering RunOperationalSimulation\n")
@@ -402,7 +402,7 @@ func buildAlertReasonCodes(inf physics.RapidRankInference, distanceToAssetKm flo
 	return reasons
 }
 
-func RenderADITIReportMarkdown(metrics OperationalRunMetrics) string {
+func RenderOperationalReportMarkdown(metrics OperationalRunMetrics) string {
 	passFail := []string{
 		fmt.Sprintf("Ingestion & Catalog Realism: PASS (signed alerts validated=%t)", metrics.SignedAlertExample.SignatureValid),
 		fmt.Sprintf("Propagation & Spatial Scaling: PASS (p95=%.2f ms)", metrics.LatencyP95Ms),
@@ -417,7 +417,7 @@ func RenderADITIReportMarkdown(metrics OperationalRunMetrics) string {
 		"End-to-End Operational Run: PASS (compressed 24h watch cycle executed)",
 	}
 
-	return fmt.Sprintf("# ADITI 4.0 Operational Test Report\n\n"+
+	return fmt.Sprintf("# Operational Test Report\n\n"+
 		"## Executive Summary\n"+
 		"- Total requests executed: %d\n"+
 		"- Total alerts emitted: %d\n"+

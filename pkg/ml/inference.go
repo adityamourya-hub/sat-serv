@@ -20,7 +20,7 @@ import (
 
 /**
  * InferenceEngine orchestrates all ML model predictions with fallback logic.
- * Migrated to utilize the physics substrate schemas (ADITI 4.0).
+ * Migrated to utilize the physics substrate schemas.
  *
  * P1 Audit: Added PredictManeuverINT8 for Tier1 pruned ONNX inference.
  * INT8 quantization provides 3x speedup for thermal-throttled scenarios.

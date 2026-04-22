@@ -156,7 +156,7 @@ func NewPropagatorWithConfig(tle *physics.TLE, config PropagatorConfig) (Propaga
 		}
 
 		params := physics.PhysicsParams{
-			Mass:     2500, // Default placeholders for IAF Aditi 4.0
+			Mass:     2500, // Default placeholders for IAF
 			DragArea: 15.0,
 			SRPArea:  15.0,
 			Cd:       2.2,
@@ -237,7 +237,7 @@ func PropagateSGP4(tleLine1, tleLine2 string, epoch time.Time) (pos, vel [3]floa
 /**
  * PropagateCartesianState performs numerical integration using adaptive RKF45.
  *
- * ADITI 4.0: This is now the DEFAULT propagator, replacing fixed-step RK4.
+ * This is now the DEFAULT propagator, replacing fixed-step RK4.
  * Adaptive stepping with 1e-9 tolerance provides certification-grade accuracy
  * for conjunction assessment (Pc < 1e-4) where ~1km/day RK4 error is unacceptable.
  *
@@ -259,7 +259,7 @@ func PropagateCartesianState(x []float64, dt float64, jd float64, params physics
  * PropagateCartesianStateRKF45 performs high-fidelity numerical integration using
  * adaptive Runge-Kutta-Fehlberg 4(5) with 1e-9 tolerance.
  *
- * ADITI 4.0: This is the recommended propagator for conjunction assessment (Pc < 1e-4)
+ * This is the recommended propagator for conjunction assessment (Pc < 1e-4)
  * and GEO/HEO objects where ~1km/day RK4 error is unacceptable.
  *
  * Algorithm: Adaptive step-size with embedded 5th-order error estimate.
@@ -341,7 +341,7 @@ func PropagateCartesianStateRKF45(x []float64, dt float64, jd float64, params ph
 /**
  * PropagateCartesianStateRK4 performs legacy fixed-step RK4 integration.
  *
- * ADITI 4.0 LEGACY: This was the original default with 10s fixed steps.
+ * LEGACY: This was the original default with 10s fixed steps.
  * It accumulates ~1km/day error in GEO, making it unsuitable for conjunction
  * assessment with Pc < 1e-4. Retained for backward compatibility and
  * performance-critical paths where adaptive overhead is unacceptable.
@@ -456,7 +456,7 @@ func vecAddScaled(v, dv []float64, s float64) []float64 {
  */
 /**
  * OrbitalAcceleration computes the derivative of the state vector (ax, ay, az).
- * Hardened for iDEX ADITI 4.0 Industry Standards.
+ * Hardened for sovereign industry standards.
  * Includes: J2-J4 Gravity, Sun/Moon Perturbations, Drag (with Earth rotation), and SRP.
  */
 func OrbitalAcceleration(x, y, z, vx, vy, vz float64, jd float64, params physics.PhysicsParams) (ax, ay, az float64) {

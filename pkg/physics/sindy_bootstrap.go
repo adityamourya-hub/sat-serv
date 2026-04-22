@@ -352,21 +352,6 @@ func (sb *SINDyBootstrap) computeStatistics(samples []float64, pointEstimate flo
 	upper95 := sorted[idx97_5]
 	isSignificant := (lower95 > 0) || (upper95 < 0)
 
-	// Grade based on relative CI width
-	ciWidth := upper95 - lower95
-	relativeWidth := ciWidth / (math.Abs(pointEstimate) + 1e-10)
-
-	grade := "F"
-	if isSignificant {
-		if relativeWidth < 0.1 {
-			grade = "A"
-		} else if relativeWidth < 0.2 {
-			grade = "B"
-		} else if relativeWidth < 0.5 {
-			grade = "C"
-		}
-	}
-
 	return BootstrapResult{
 		Coefficient:   pointEstimate,
 		LowerCI95:     lower95,
@@ -377,7 +362,6 @@ func (sb *SINDyBootstrap) computeStatistics(samples []float64, pointEstimate flo
 		Variance:      variance,
 		NSamples:      n,
 		IsSignificant: isSignificant,
-		Grade:         grade,
 	}
 }
 
@@ -440,7 +424,6 @@ type SINDyBootstrapReport struct {
 	Coefficients     map[string]BootstrapResult
 	ActiveModes      []string // Modes with significant coefficients
 	Confidence       float64  // Average confidence across active modes
-	PhysicsGrade     string   // Overall physics grade
 	ProcessingTimeMs float64  // Time taken to compute
 }
 
@@ -451,39 +434,10 @@ func (sb *SINDyBootstrap) GenerateReport(
 	start := time.Now()
 
 	activeModes := make([]string, 0)
-	gradeSum := 0
-	gradeCount := 0
 
 	for name, result := range coefficients {
 		if result.IsSignificant {
 			activeModes = append(activeModes, name)
-		}
-
-		// Grade scoring
-		switch result.Grade {
-		case "A":
-			gradeSum += 4
-		case "B":
-			gradeSum += 3
-		case "C":
-			gradeSum += 2
-		case "F":
-			gradeSum += 0
-		}
-		gradeCount++
-	}
-
-	// Overall grade
-	overallGrade := "F"
-	if gradeCount > 0 {
-		avgScore := float64(gradeSum) / float64(gradeCount)
-		switch {
-		case avgScore >= 3.5:
-			overallGrade = "A"
-		case avgScore >= 2.5:
-			overallGrade = "B"
-		case avgScore >= 1.5:
-			overallGrade = "C"
 		}
 	}
 
@@ -498,7 +452,6 @@ func (sb *SINDyBootstrap) GenerateReport(
 		Coefficients:     coefficients,
 		ActiveModes:      activeModes,
 		Confidence:       confidence,
-		PhysicsGrade:     overallGrade,
 		ProcessingTimeMs: float64(time.Since(start).Milliseconds()),
 	}
 }

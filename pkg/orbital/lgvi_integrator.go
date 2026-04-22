@@ -3,7 +3,7 @@ package orbital
 /**
  * Lie Group Variational Integrator (LGVI) for CR3BP
  *
- * ADITI 4.0: Geometric Mechanics Optimization
+ * Geometric Mechanics Optimization
  *
  * Traditional RK4/DP54 integrate STM as flat R^36 vector.
  * LGVI treats STM as element of Symplectic Group Sp(6,R),
@@ -67,7 +67,7 @@ func (mi *MagnusIntegrator) IntegrateStateSTM(
 }
 
 // integrateState uses Forest-Ruth symplectic integration for position/velocity
-// ADITI 4.0: Replaces RK4 to preserve JᵀJM = J symplectic structure (fixes Symplectic Ghost)
+// Replaces RK4 to preserve JᵀJM = J symplectic structure (fixes Symplectic Ghost)
 func (mi *MagnusIntegrator) integrateState(s CR3BPLite, dt float64) CR3BPLite {
 	// Forest-Ruth symplectic integrator (preserves Hamiltonian structure)
 	system := &CR3BPSystem{Mu: mi.Mu}

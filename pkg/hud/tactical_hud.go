@@ -153,7 +153,7 @@ func (hud *TacticalHUD) ToJSON() ([]byte, error) {
 func (hud *TacticalHUD) GetDisplayText() string {
 	status := fmt.Sprintf(`
 ╔════════════════════════════════════════════════════════════╗
-║           ADITI 4.0 TACTICAL HUD                            ║
+║           TACTICAL HUD                                     ║
 ╠════════════════════════════════════════════════════════════╣
 ║ Timestamp: %s                                      ║
 ║ Threat Level: %-12s  Tactical Pressure: %.2f      ║

@@ -1,4 +1,4 @@
-// pkg/catalog/tle_hybrid_converter.go - ADITI 4.0 TLE Elevation
+// pkg/catalog/tle_hybrid_converter.go - TLE Elevation
 //
 // Converts standard Two-Line Elements (TLE) into Hamiltonian-Gated states
 // for the Axiom-Zero sovereign catalog. Replaces SGP4 with Hybrid Integrator.
@@ -18,7 +18,7 @@
 // References:
 //   - SGP4 Theory: Hoots & Roehrich (1980)
 //   - Keplerian to Cartesian: Vallado, Fundamentals of Astrodynamics
-//   - ADITI 4.0: Hybrid Integrator with Strang splitting
+//   - Hybrid Integrator with Strang splitting
 
 package catalog
 
@@ -44,29 +44,35 @@ type TLE struct {
 	RevNumber    int     // Revolution number at epoch
 }
 
-// HamiltonianGatedState is the elevated TLE format for ADITI 4.0
+// HamiltonianGatedState is the elevated TLE format for the sovereign catalog
+//
+// SDE Optimization (<5ms Database Target):
+// - Fixed-size byte arrays instead of strings to avoid heap allocations
+// - Memory-aligned structure for cache locality
+// - Storing 30,000 of these without triggering GC
 type HamiltonianGatedState struct {
 	// Core orbital state
-	Position physics.Vector3 // [km] ECI position
-	Velocity physics.Vector3 // [km/s] ECI velocity
-	EpochJD  float64         // Julian Date of state
+	Position physics.Vector3 // 24 bytes [km] ECI position
+	Velocity physics.Vector3 // 24 bytes [km/s] ECI velocity
+	EpochJD  float64         // 8 bytes Julian Date of state
 
 	// Hamiltonian invariant (verification)
-	Hamiltonian    float64 // [km²/s²] Specific orbital energy
-	HamiltonianTol float64 // Tolerance for drift detection
+	Hamiltonian    float64 // 8 bytes [km²/s²] Specific orbital energy
+	HamiltonianTol float64 // 8 bytes Tolerance for drift detection
 
-	// ADITI 4.0 propagation parameters
-	Regime    physics.FlightRegime // LEO, MEO, GEO, HGV, etc.
-	UseHybrid bool                 // Use hybrid integrator (vs pure symplectic)
+	// Propagation parameters
+	Regime    uint8   // 1 byte Enum: 0=LEO, 1=MEO, 2=GEO, 3=HGV, 4=Ballistic
+	UseHybrid bool    // 1 byte Use hybrid integrator (vs pure symplectic)
+	_         [6]byte // 6 bytes Pad to 8-byte boundary for memory alignment
 
-	// Integrity
-	HessianHash string // SHA-256 of physics state
-	Signature   string // Ed25519 signature for tamper detection
+	// Integrity (fixed-size arrays - zero allocation)
+	HessianHash [32]byte // 32 bytes SHA-256 of physics state
+	Signature   [64]byte // 64 bytes Ed25519 signature for tamper detection
 
 	// Provenance
-	SourceTLE    string // Original TLE lines (for audit)
-	ConvertedAt  int64  // Unix timestamp
-	ConverterVer string // "aditi-4.0.0"
+	SourceTLEId  uint32 // 4 bytes Reference to TLE ID (don't store raw strings in hot state)
+	ConvertedAt  int64  // 8 bytes Unix timestamp
+	ConverterVer uint32 // 4 bytes Version as uint32 (e.g., 0x04000000 = 4.0.0)
 }
 
 // TLEToHybridConverter transforms SGP4 TLEs into Hamiltonian-Gated states
@@ -126,8 +132,8 @@ func (c *TLEToHybridConverter) Convert(tle *TLE) (*HamiltonianGatedState, error)
 	// Step 5: Get regime-specific tolerance
 	tol := c.getTolerance(regime)
 
-	// Step 6: Compute Hessian hash (placeholder)
-	hessianHash := c.computeHessianHash(pos, vel, H)
+	// Step 6: Compute Hessian hash (placeholder - would populate [32]byte in production)
+	// hessianHash := c.computeHessianHash(pos, vel, H)
 
 	// Build Hamiltonian-Gated State
 	state := &HamiltonianGatedState{
@@ -136,13 +142,13 @@ func (c *TLEToHybridConverter) Convert(tle *TLE) (*HamiltonianGatedState, error)
 		EpochJD:        epochJD,
 		Hamiltonian:    H,
 		HamiltonianTol: tol,
-		Regime:         regime,
-		UseHybrid:      true, // Default to hybrid integrator
-		HessianHash:    hessianHash,
-		Signature:      "", // Would be Ed25519 signed
-		SourceTLE:      tle.String(),
-		ConvertedAt:    0, // Would be time.Now().Unix()
-		ConverterVer:   "aditi-4.0.0",
+		Regime:         uint8(regime), // Convert FlightRegime to uint8
+		UseHybrid:      true,          // Default to hybrid integrator
+		HessianHash:    [32]byte{},    // Would be actual SHA-256 hash
+		Signature:      [64]byte{},    // Would be Ed25519 signature
+		SourceTLEId:    0,             // Would be TLE ID from database
+		ConvertedAt:    0,             // Would be time.Now().Unix()
+		ConverterVer:   0x04000000,    // Version 4.0.0 as uint32
 	}
 
 	return state, nil

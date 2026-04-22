@@ -8,7 +8,7 @@ import (
 /**
  * Tiered State Architecture - Critical Fix for State Size Inflation
  *
- * ADITI 4.0 Problem:
+ * Problem:
  * - Original State: 56 bytes (optimal)
  * - State with Covariance: 344 bytes (6× larger!)
  * - 100k objects with covariance = 34.4 MB memory pressure

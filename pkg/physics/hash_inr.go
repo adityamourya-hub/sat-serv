@@ -8,7 +8,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Hash Implicit Neural Representation (Hash INR)
+ * Hash Implicit Neural Representation (Hash INR)
  *
  * Multiresolution hash encoding + tiny MLP for atmospheric density field.
  *

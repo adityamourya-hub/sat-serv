@@ -91,19 +91,19 @@ type Controller struct {
 	DownThreshold  float64 // R² threshold to shift DOWN (Tier 2 → Tier 1)
 	CooldownFrames int     // Frames to wait after gear shift
 
-	// ADITI 4.0: Thermal Schmidt Triggering
+	// Thermal Schmidt Triggering
 	thermalCooldownStart time.Time // When thermal cooldown began
 	cooldownDurationSec  float64   // Cooldown duration in seconds (default 30s)
 	currentCool          int
 
-	// ADITI 4.0: Forest-Ruth coefficients (shared across all tiers)
+	// Forest-Ruth coefficients (shared across all tiers)
 	// Ensures thermal-manifold synchronicity - same integrator coefficients
 	// regardless of tier complexity. Only H-net complexity scales.
 	ForestRuthGamma float64   // γ = 1/(2-2^(1/3)) = 1.35120719195966
 	ForestRuthA     []float64 // Position coefficients
 	ForestRuthB     []float64 // Momentum coefficients
 
-	// ADITI 4.0: Conflict Metric for Tier 3 triggering
+	// Conflict Metric for Tier 3 triggering
 	ConflictThreshold float64 // JSD threshold for conflict alarm (default 0.5)
 	ResolutionTimer   int     // Frames to stay in Tier 3 for resolution (default 50 = 500ms @ 100Hz)
 	ConflictSafe      float64 // Safe threshold below which intent is clear (default 0.2)
@@ -213,7 +213,7 @@ func (c *Controller) SelectTier(probs map[string]float64, sindyR2 float64) Execu
 		return Tier1
 	}
 
-	// 2. ADITI 4.0: Thermal Schmidt Triggering
+	// 2. Thermal Schmidt Triggering
 	// Prevent gear-hunt oscillation at thermal boundary
 	// Up-shift (T1 → T2): Only if Temp < 72°C (hysteresis buffer)
 	// Down-shift (T2 → T1): Immediately if Temp > 80°C (safety margin)
@@ -281,7 +281,7 @@ func (c *Controller) SelectTier(probs map[string]float64, sindyR2 float64) Execu
 }
 
 // GetForestRuthCoefficients returns the Forest-Ruth coefficients.
-// ADITI 4.0: All tiers must share these coefficients to ensure
+// All tiers must share these coefficients to ensure
 // thermal-manifold synchronicity. Only H-net complexity scales.
 func (c *Controller) GetForestRuthCoefficients() (float64, []float64, []float64) {
 	return c.ForestRuthGamma, c.ForestRuthA, c.ForestRuthB
@@ -294,13 +294,13 @@ func (c *Controller) GetActiveTier() ExecutionTier {
 	return c.ActiveTier
 }
 
-// ForceTier allows external override (e.g., manual command, safety override)
-// CRITICAL FIX: Check thermal before forcing tier to prevent thermal runaway
+// ForceTier allows external override (e.g., manual command, safety override).
+// Thermal guard prevents Tier3 during critical temperatures.
 func (c *Controller) ForceTier(tier ExecutionTier) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// CRITICAL FIX: Check thermal before forcing Tier3
+	// Thermal guard: reject Tier3 if governor reports critical
 	if tier == Tier3 && c.Governor.IsCritical() {
 		fmt.Printf("[PAX] REJECTED: Cannot force Tier3 during thermal critical\n")
 		return
@@ -313,7 +313,7 @@ func (c *Controller) ForceTier(tier ExecutionTier) {
 
 // EvaluateConflict implements the Conflict Metric for Tier 3 triggering
 //
-// ADITI 4.0: When GoalMap suggests heading for known target but Shadow Goal suggests
+// When GoalMap suggests heading for known target but Shadow Goal suggests
 // novel maneuver, the system enters High Epistemic Tension. This triggers Tier 3
 // (Full DPHNO Scan) to resolve ambiguity before tracking collapse.
 //

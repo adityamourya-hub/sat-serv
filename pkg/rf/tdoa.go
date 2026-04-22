@@ -3,7 +3,7 @@ package rf
 /**
  * TDOA/FDOA Localization for Passive RF Characterization
  *
- * ADITI 4.0: RF-based SDA for GEO objects without optical limitations
+ * RF-based SDA for GEO objects without optical limitations
  *
  * Algorithms:
  * - TDOA (Time Difference of Arrival): Multi-station time correlation

@@ -7,15 +7,7 @@ import (
 	"ssis/pkg/catalog"
 )
 
-/**
- * Axiom-Zero: Hamiltonian-Gated Sovereign Engine
- *
- * Asset Metadata and Propulsion Plane
- *
- * Implements the Fuel-Capacity Metadata Table that transforms
- * Reachability Risk Index (RRI) from geometric "could they?" to
- * strategic "can they?" analysis.
- */
+// Asset Metadata and Propulsion Plane
 
 // EngineType represents the propulsion system type
 type EngineType uint8
@@ -54,7 +46,7 @@ type AssetMetadata struct {
 	MassInitial   float32 // Initial mass (kg)
 	MassFinal     float32 // Final mass (kg) - for fuel tracking
 
-	// ADITI 4.0: Hamiltonian Provenance Hash for anti-spoof verification
+	// Hamiltonian Provenance Hash for anti-spoof verification
 	// Every catalog entry carries a physics-based cryptographic seal
 	HamiltonianHash      string  // SHA-256 hash of energy state
 	HashTimestamp        int64   // Unix timestamp when hash was computed

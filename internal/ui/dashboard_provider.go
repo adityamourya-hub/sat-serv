@@ -1,4 +1,4 @@
-// Package ui provides the Decision Dominance Dashboard for ADITI 4.0
+// Package ui provides the Decision Dominance Dashboard for sovereign SDA
 //
 // This provider acts as a high-speed data bus between the JAX brain (Python)
 // and the Go-native UI. It captures state from pkg/physics engine and latents
@@ -17,7 +17,7 @@
 // IAF commander can verify and trust.
 //
 // References:
-//   - ADITI 4.0 HF-PGFM Architecture
+//   - HF-PGFM Architecture
 //   - SE(3)-Equivariant Observer (ai/v3/se3_encoder.py)
 //   - iDEX May 4th Demo Requirements
 

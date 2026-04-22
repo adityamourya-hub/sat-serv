@@ -10,7 +10,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Verification Test Suite
+ * Verification Test Suite
  *
  * These tests validate the physics fixes against:
  * - NASA CARA CDM benchmarks (where available)
@@ -336,7 +336,7 @@ func TestCovarianceRealismDefaults(t *testing.T) {
 	leoCov := physics.ConstructDefaultCovarianceFromTLE(leoTLE)
 
 	// Check LEO position uncertainty (~1km)
-	leoPosSigma := math.Sqrt(leoCov[0][0])
+	leoPosSigma := math.Sqrt(leoCov[0]) // cov[0][0] -> cov[0]
 	if leoPosSigma < 0.5 || leoPosSigma > 2.0 {
 		t.Errorf("LEO position sigma = %.3f km, expected ~1.0 km", leoPosSigma)
 	}
@@ -349,16 +349,16 @@ func TestCovarianceRealismDefaults(t *testing.T) {
 	geoCov := physics.ConstructDefaultCovarianceFromTLE(geoTLE)
 
 	// Check GEO position uncertainty (~5km)
-	geoPosSigma := math.Sqrt(geoCov[0][0])
+	geoPosSigma := math.Sqrt(geoCov[0]) // cov[0][0] -> cov[0]
 	if geoPosSigma < 3.0 || geoPosSigma > 7.0 {
 		t.Errorf("GEO position sigma = %.3f km, expected ~5.0 km", geoPosSigma)
 	}
 
 	t.Logf("Covariance realism defaults:")
 	t.Logf("  LEO: σ_pos = %.3f km, σ_vel = %.4f km/s",
-		math.Sqrt(leoCov[0][0]), math.Sqrt(leoCov[3][3]))
+		math.Sqrt(leoCov[0]), math.Sqrt(leoCov[21])) // cov[3][3] -> cov[21]
 	t.Logf("  GEO: σ_pos = %.3f km, σ_vel = %.4f km/s",
-		math.Sqrt(geoCov[0][0]), math.Sqrt(geoCov[3][3]))
+		math.Sqrt(geoCov[0]), math.Sqrt(geoCov[21])) // cov[3][3] -> cov[21]
 }
 
 // =============================================================================

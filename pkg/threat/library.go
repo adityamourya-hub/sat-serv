@@ -9,13 +9,13 @@ import (
 )
 
 /**
- * Sovereign Threat Library for ADITI 4.0
- * 
+ * Sovereign Threat Library
+ *
  * Transforms SINDy-discovered physics (L/D ratios) into actionable intelligence.
- * 
+ *
  * Pipeline:
  *   SINDy Output (L/D=2.05) → Library Lookup → Identity (DF-ZF) → RL Action
- * 
+ *
  * Requirements Satisfied:
  *   - Explainability: "Discovered L/D matches DF-ZF profile"
  *   - Sovereignty: Air-gapped YAML, updatable with classified INTEL
@@ -37,23 +37,23 @@ type Aerodynamics struct {
 
 // ThreatProfile represents a known threat in the intelligence database
 type ThreatProfile struct {
-	ID                 string       `yaml:"id"`                   // Unique identifier
-	CommonName         string       `yaml:"common_name"`          // Human-readable name
-	CountryCode        string       `yaml:"country_code"`         // CHN, RUS, etc.
-	Aerodynamics       Aerodynamics `yaml:"aerodynamics"`         // Physics signature
-	TacticalProfile    string       `yaml:"tactical_profile"`     // Behavior description
-	IntentLabel        string       `yaml:"intent_label"`         // MARS_HYPERSONIC, etc.
-	ThreatLevel        int          `yaml:"threat_level"`         // 1-10 scale
-	CountermeasurePolicy string    `yaml:"countermeasure_policy"` // RL policy selector
-	Notes              string       `yaml:"notes"`                // Intelligence notes
+	ID                   string       `yaml:"id"`                    // Unique identifier
+	CommonName           string       `yaml:"common_name"`           // Human-readable name
+	CountryCode          string       `yaml:"country_code"`          // CHN, RUS, etc.
+	Aerodynamics         Aerodynamics `yaml:"aerodynamics"`          // Physics signature
+	TacticalProfile      string       `yaml:"tactical_profile"`      // Behavior description
+	IntentLabel          string       `yaml:"intent_label"`          // MARS_HYPERSONIC, etc.
+	ThreatLevel          int          `yaml:"threat_level"`          // 1-10 scale
+	CountermeasurePolicy string       `yaml:"countermeasure_policy"` // RL policy selector
+	Notes                string       `yaml:"notes"`                 // Intelligence notes
 }
 
 // LibraryConfiguration controls library behavior
 type LibraryConfiguration struct {
-	AutoUpdateUCT         bool    `yaml:"auto_update_uct"`          // Auto-add new discoveries
+	AutoUpdateUCT         bool    `yaml:"auto_update_uct"`         // Auto-add new discoveries
 	UCTCertaintyThreshold float64 `yaml:"uct_certainty_threshold"` // Min confidence to add
 	MaxLibrarySize        int     `yaml:"max_library_size"`        // Size limit
-	ValidationRequired    bool    `yaml:"validation_required"`      // Human review
+	ValidationRequired    bool    `yaml:"validation_required"`     // Human review
 }
 
 // LibraryMetadata tracks library provenance
@@ -70,10 +70,10 @@ type ThreatLibrary struct {
 	Threats       []ThreatProfile      `yaml:"threats"`
 	Configuration LibraryConfiguration `yaml:"configuration"`
 	Metadata      LibraryMetadata      `yaml:"metadata"`
-	
+
 	// Runtime state
-	path         string               // File path for persistence
-	dirty        bool                 // Modified since load
+	path  string // File path for persistence
+	dirty bool   // Modified since load
 }
 
 // UCTRecord captures an Uncorrelated Track for analysis
@@ -86,7 +86,7 @@ type UCTRecord struct {
 	Altitude        float64   `json:"altitude"`
 	Velocity        float64   `json:"velocity"`
 	MachNumber      float64   `json:"mach_number"`
-	Certainty       float64   `json:"certainty"`       // SINDy confidence
+	Certainty       float64   `json:"certainty"`        // SINDy confidence
 	DiscoveryMethod string    `json:"discovery_method"` // "mrDMD+SINDy"
 	Location        string    `json:"location"`         // S2 cell reference
 }
@@ -97,18 +97,18 @@ func LoadThreatLibrary(path string) (*ThreatLibrary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read threat library: %w", err)
 	}
-	
+
 	var lib ThreatLibrary
 	if err := yaml.Unmarshal(data, &lib); err != nil {
 		return nil, fmt.Errorf("failed to parse threat library: %w", err)
 	}
-	
+
 	lib.path = path
 	lib.dirty = false
-	
-	fmt.Printf("[THREAT_LIBRARY] Loaded %d threat profiles from %s\n", 
+
+	fmt.Printf("[THREAT_LIBRARY] Loaded %d threat profiles from %s\n",
 		len(lib.Threats), path)
-	
+
 	return &lib, nil
 }
 
@@ -117,19 +117,19 @@ func (tl *ThreatLibrary) Save() error {
 	if !tl.dirty {
 		return nil // No changes to save
 	}
-	
+
 	// Update metadata
 	tl.Metadata.LastUpdated = time.Now()
-	
+
 	data, err := yaml.Marshal(tl)
 	if err != nil {
 		return fmt.Errorf("failed to marshal library: %w", err)
 	}
-	
+
 	if err := os.WriteFile(tl.path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write library: %w", err)
 	}
-	
+
 	tl.dirty = false
 	fmt.Printf("[THREAT_LIBRARY] Saved to %s\n", tl.path)
 	return nil
@@ -143,30 +143,30 @@ func (tl *ThreatLibrary) Identify(
 	currentAlt, currentVel float64,
 	confidence float64,
 ) (*ThreatMatch, error) {
-	
+
 	// Calculate Mach number
 	mach := currentVel / 340.0 // Approximate
-	
+
 	// Score each threat profile
 	var bestMatch *ThreatProfile
 	bestScore := -1.0
-	
+
 	for i := range tl.Threats {
 		threat := &tl.Threats[i]
-		
+
 		// Calculate match score (0-1, higher is better)
 		score := tl.calculateMatchScore(
 			threat,
 			discoveredLD, discoveredCD, discoveredCL,
 			currentAlt, mach,
 		)
-		
+
 		if score > bestScore {
 			bestScore = score
 			bestMatch = threat
 		}
 	}
-	
+
 	// Threshold for positive identification
 	// Below 0.7 confidence, classify as UCT
 	if bestScore < 0.7 {
@@ -185,7 +185,7 @@ func (tl *ThreatLibrary) Identify(
 				DiscoveryMethod: "mrDMD+SINDy",
 			})
 		}
-		
+
 		return &ThreatMatch{
 			Profile:        nil,
 			MatchScore:     bestScore,
@@ -193,7 +193,7 @@ func (tl *ThreatLibrary) Identify(
 			Certainty:      confidence,
 		}, nil
 	}
-	
+
 	return &ThreatMatch{
 		Profile:        bestMatch,
 		MatchScore:     bestScore,
@@ -216,9 +216,9 @@ func (tl *ThreatLibrary) calculateMatchScore(
 	ld, cd, cl float64,
 	altitude, mach float64,
 ) float64 {
-	
+
 	scores := make([]float64, 0)
-	
+
 	// 1. L/D ratio match (primary discriminator)
 	ldCenter := (threat.Aerodynamics.LDRatioMin + threat.Aerodynamics.LDRatioMax) / 2
 	ldRange := threat.Aerodynamics.LDRatioMax - threat.Aerodynamics.LDRatioMin
@@ -228,7 +228,7 @@ func (tl *ThreatLibrary) calculateMatchScore(
 		ldScore = 0
 	}
 	scores = append(scores, ldScore*0.5) // 50% weight
-	
+
 	// 2. Altitude envelope match
 	altCenter := (threat.Aerodynamics.GlideAltitudeMin + threat.Aerodynamics.GlideAltitudeMax) / 2
 	altRange := threat.Aerodynamics.GlideAltitudeMax - threat.Aerodynamics.GlideAltitudeMin
@@ -238,12 +238,12 @@ func (tl *ThreatLibrary) calculateMatchScore(
 		altScore = 0
 	}
 	scores = append(scores, altScore*0.3) // 30% weight
-	
+
 	// 3. Mach capability check
 	if mach <= threat.Aerodynamics.MaxMach {
 		scores = append(scores, 0.2) // 20% weight
 	}
-	
+
 	// 4. Optional: Cd/Cl refinement (if available)
 	if cd > 0 && cl > 0 {
 		calcLD := cl / cd
@@ -254,13 +254,13 @@ func (tl *ThreatLibrary) calculateMatchScore(
 			scores = append(scores, calcScore*0.1) // 10% bonus
 		}
 	}
-	
+
 	// Sum weighted scores
 	total := 0.0
 	for _, s := range scores {
 		total += s
 	}
-	
+
 	return total
 }
 
@@ -269,7 +269,7 @@ func (tl *ThreatLibrary) recordUCT(uct UCTRecord) {
 	// In production: Write to database, trigger analyst alert
 	fmt.Printf("[THREAT_LIBRARY] UCT Recorded: L/D=%.2f, Alt=%.1fkm, Certainty=%.1f%%\n",
 		uct.DiscoveredLD, uct.Altitude, uct.Certainty*100)
-	
+
 	// If certainty high enough and config allows, auto-add
 	if uct.Certainty >= tl.Configuration.UCTCertaintyThreshold {
 		tl.proposeNewThreat(uct)
@@ -280,9 +280,9 @@ func (tl *ThreatLibrary) recordUCT(uct UCTRecord) {
 func (tl *ThreatLibrary) proposeNewThreat(uct UCTRecord) {
 	// Create proposed threat (requires human validation)
 	proposed := ThreatProfile{
-		ID:                 fmt.Sprintf("HGV_PROPOSED_%s", uct.ID),
-		CommonName:         "Unknown HGV (Auto-Discovered)",
-		CountryCode:        "UNK",
+		ID:          fmt.Sprintf("HGV_PROPOSED_%s", uct.ID),
+		CommonName:  "Unknown HGV (Auto-Discovered)",
+		CountryCode: "UNK",
 		Aerodynamics: Aerodynamics{
 			LDRatioMin:       uct.DiscoveredLD * 0.9,
 			LDRatioMax:       uct.DiscoveredLD * 1.1,
@@ -293,11 +293,11 @@ func (tl *ThreatLibrary) proposeNewThreat(uct UCTRecord) {
 			GlideAltitudeMin: uct.Altitude - 5,
 			GlideAltitudeMax: uct.Altitude + 5,
 		},
-		IntentLabel:        "MARS_UNKNOWN_AUTO",
-		ThreatLevel:        8, // Unknown = high caution
-		Notes:              fmt.Sprintf("Auto-discovered. Certainty: %.1f%%", uct.Certainty*100),
+		IntentLabel: "MARS_UNKNOWN_AUTO",
+		ThreatLevel: 8, // Unknown = high caution
+		Notes:       fmt.Sprintf("Auto-discovered. Certainty: %.1f%%", uct.Certainty*100),
 	}
-	
+
 	if !tl.Configuration.ValidationRequired {
 		// Auto-add if validation not required
 		tl.Threats = append(tl.Threats, proposed)

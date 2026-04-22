@@ -8,10 +8,10 @@ package nasa42
  * - NASA 42: High-fidelity physics for critical conjunctions
  *
  * Workflow:
- * 1. ADITI detects high-risk conjunction (Pc > 1e-4)
+ * 1. Sovereign stack detects high-risk conjunction (Pc > 1e-4)
  * 2. Hand off object pair to NASA 42 via IPC
  * 3. Get NASA-validated trajectory with Kane's dynamics
- * 4. Compare ADITI vs 42 results
+ * 4. Compare sovereign vs 42 results
  * 5. Use 42 as "ground truth" for mission-critical decisions
  */
 
@@ -26,8 +26,8 @@ import (
 
 // Example_hybridPropagation demonstrates the Go + 42 workflow
 func Example_hybridPropagation() {
-	// Step 1: ADITI Go layer - bulk catalog screening
-	fmt.Println("=== Step 1: ADITI Go Layer ===")
+	// Step 1: Sovereign Go layer - bulk catalog screening
+	fmt.Println("=== Step 1: Sovereign Go Layer ===")
 	fmt.Println("Screening 100,000 objects...")
 
 	// Simulated: Detect high-risk conjunction
@@ -40,14 +40,14 @@ func Example_hybridPropagation() {
 		Vel: [3]float64{0, -7.5, 0},
 	}
 
-	// ADITI quick screening
+	// Sovereign quick screening
 	geo := collision.ConjunctionGeometry{
 		RelPosition: [3]float64{0.1, 0.1, 0}, // 100m miss
 		HBR:         0.01,                    // 10m combined
 	}
 	pc := collision.FosterAlfanoPc(geo)
 
-	fmt.Printf("ADITI detected: Pc = %.2e\n", pc)
+	fmt.Printf("Sovereign detected: Pc = %.2e\n", pc)
 
 	if pc > 1e-4 {
 		fmt.Println("HIGH RISK - Handing off to NASA 42 for validation")
@@ -75,7 +75,7 @@ func Example_hybridPropagation() {
 		primaryFinal, _ := propagator.Propagate(primaryInitial, 1000.0, 3600.0) // 1 hour, 1000kg
 		_, _ = propagator.Propagate(secondaryInitial, 1000.0, 3600.0)
 
-		// Step 3: Validate ADITI against NASA 42
+		// Step 3: Validate sovereign against NASA 42
 		fmt.Println("\n=== Step 3: Validation ===")
 
 		posError, velError := propagator.client.ValidateAgainstADITI(
@@ -95,16 +95,16 @@ func Example_hybridPropagation() {
 		fmt.Printf("Velocity error: %.2f mm/s\n", velError)
 
 		if posError < 100.0 {
-			fmt.Println("✓ ADITI validated: Within 100m of NASA 42")
+			fmt.Println("✓ Sovereign validated: Within 100m of NASA 42")
 		} else {
-			fmt.Println("⚠ ADITI deviation: >100m from NASA 42")
+			fmt.Println("⚠ Sovereign deviation: >100m from NASA 42")
 		}
 	}
 
 	// Output:
-	// === Step 1: ADITI Go Layer ===
+	// === Step 1: Sovereign Go Layer ===
 	// Screening 100,000 objects...
-	// ADITI detected: Pc = 9.99e-01
+	// Sovereign detected: Pc = 9.99e-01
 	// HIGH RISK - Handing off to NASA 42 for validation
 	//
 	// === Step 2: NASA 42 Handoff ===
@@ -247,7 +247,7 @@ func Example_kaneDynamicsAdvantage() {
 	fmt.Println("  - No Lagrange multipliers needed")
 	fmt.Println("  - Eliminates internal constraint forces")
 	fmt.Println()
-	fmt.Println("For ADITI 4.0:")
+	fmt.Println("For sovereign stack:")
 	fmt.Println("  - Flexible solar arrays: Model vibration effects")
 	fmt.Println("  - Docking maneuvers: Contact dynamics")
 	fmt.Println("  - Formation flying: Multi-body constraints")
@@ -270,7 +270,7 @@ func Example_kaneDynamicsAdvantage() {
 func Example_IPC_performance() {
 	fmt.Println("=== IPC Performance: Go ↔ NASA 42 ===")
 	fmt.Println()
-	fmt.Println("Metric                    | ADITI (Go)    | NASA 42 (IPC)")
+	fmt.Println("Metric                    | Sovereign (Go) | NASA 42 (IPC)")
 	fmt.Println("--------------------------|---------------|----------------")
 	fmt.Println("Object Capacity           | 100,000       | 10-100")
 	fmt.Println("Math Basis                | SGP4/RKF45    | Kane's Dynamics")

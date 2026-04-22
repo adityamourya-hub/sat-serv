@@ -1,5 +1,5 @@
 // pkg/telescope/hybrid_twin.go
-// ADITI 4.0: Hybrid Twin Validation Framework
+// Hybrid Twin Validation Framework
 //
 // Air-Bearing Mount as ground-truth simulator.
 // Near-zero friction mimics Conservation of Angular Momentum
@@ -69,7 +69,7 @@ func NewHybridTwinValidation(bridge *CommandBridge) *HybridTwinValidation {
 
 // RunAllTests executes complete validation matrix
 func (htv *HybridTwinValidation) RunAllTests() error {
-	fmt.Println("\n=== ADITI 4.0 Hybrid Twin Validation ===")
+	fmt.Println("\n=== Hybrid Twin Validation ===")
 	fmt.Println("Air-Bearing Ground Truth Simulator")
 	fmt.Println("=========================================")
 

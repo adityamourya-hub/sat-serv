@@ -3,7 +3,7 @@ SHA-256 Manifest Generation with Ed25519 Signing
 
 Generates a cryptographic manifest for the final distilled weights.
 This includes the Hessian Minimum Eigenvalue as mathematical proof of
-global stability for the ADITI 4.0 audit.
+global stability for the sovereign audit.
 
 The manifest is signed with the sovereign Ed25519 key, providing
 tamper-evidence and chain-of-custody for the iDEX reviewers.
@@ -253,7 +253,7 @@ def generate_ed25519_keypair(output_prefix: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ADITI 4.0 Weight Manifest Generator with Ed25519 Signing"
+        description="Weight Manifest Generator with Ed25519 Signing"
     )
     parser.add_argument(
         '--weights', type=str, required=True,
@@ -318,7 +318,7 @@ def main():
     
     # Print summary
     print("\n" + "="*70)
-    print("  ADITI 4.0 WEIGHT MANIFEST")
+    print("  WEIGHT MANIFEST")
     print("="*70)
     print(f"  Weights: {args.weights}")
     print(f"  SHA-256: {manifest_data['sha256']}")
@@ -333,7 +333,7 @@ def main():
     
     if manifest_data.get('is_convex'):
         print("\n✅ Model is globally stable (Hessian convex)")
-        print("   Ready for ADITI 4.0 audit deployment.")
+        print("   Ready for sovereign audit deployment.")
     
     return 0
 

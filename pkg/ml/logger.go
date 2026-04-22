@@ -1,5 +1,5 @@
 // pkg/ml/logger.go
-// ADITI 4.0: Structured logging for ML inference pipeline
+// Structured logging for ML inference pipeline
 // Replaces fmt.Printf with leveled JSON logging for correlation with training metrics
 //
 // Benefits of using zap over standard library:

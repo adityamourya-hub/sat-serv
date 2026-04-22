@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # pkg/telescope/indi_proxy.py
-# ADITI 4.0: INDI Protocol Proxy for Telescope Control
+# INDI Protocol Proxy for Telescope Control
 #
 # Lightweight Python proxy that translates ZMQ commands from Go into INDI protocol
 # commands for telescope mount control. Enables <50ms latency for HGV tracking.
@@ -340,7 +340,7 @@ def main():
     """Main entry point"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="INDI Protocol Proxy for ADITI 4.0")
+    parser = argparse.ArgumentParser(description="INDI Protocol Proxy for Telescope Control")
     parser.add_argument("--zmq-port", type=int, default=5555, help="ZMQ port for Go communication")
     parser.add_argument("--indi-host", type=str, default="localhost", help="INDI server host")
     parser.add_argument("--indi-port", type=int, default=7624, help="INDI server port")

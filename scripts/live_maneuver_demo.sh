@@ -1,6 +1,6 @@
 #!/bin/bash
 # scripts/live_maneuver_demo.sh
-# Master script for ADITI 4.0 Symbolic Attribution Demo
+# Master script for  Symbolic Attribution Demo
 
 set -e
 
@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 echo "================================================================"
-echo "   ADITI 4.0 - SYMBOLIC MANOEUVRE ATTRIBUTION LIVE PIPELINE     "
+echo "    - SYMBOLIC MANOEUVRE ATTRIBUTION LIVE PIPELINE     "
 echo "================================================================"
 echo ""
 

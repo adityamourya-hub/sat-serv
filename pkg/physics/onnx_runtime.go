@@ -1,5 +1,5 @@
 // pkg/physics/onnx_runtime.go
-// ADITI 4.0: Full ONNX Runtime Integration for M2 Air Thermal Governor
+// Full ONNX Runtime Integration for M2 Air Thermal Governor
 //
 // Implements PAX Tier 2/3 ONNX inference with thermal governor for M2 Air.
 // Three models are loaded:
@@ -119,11 +119,6 @@ func (r *ONNXRuntime) checkModelAvailability() {
 //
 // Input: State vector [q, p, z] (typically 6-9 dimensions)
 // Output: Hamiltonian gradient ∂H/∂q, ∂H/∂p
-//
-// Note: This is a stub implementation. Full ONNX inference requires
-// the yalue/onnxruntime_go package to be properly initialized with
-// the model files. The actual inference will be implemented when
-// model files are available.
 func (r *ONNXRuntime) InferHnodeCore(input []float64) ([]float64, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

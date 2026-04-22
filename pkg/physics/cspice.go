@@ -1,5 +1,5 @@
 // pkg/physics/cspice.go
-// ADITI 4.0: Go-Native CSPICE Wrapper
+// Go-Native CSPICE Wrapper
 //
 // Provides Go bindings for NASA SPICE (NAIF) toolkit for high-precision
 // ephemeris computations. Replaces analytical fallback with official JPL kernels.
@@ -28,14 +28,14 @@ import (
 
 // CSPICE wraps NASA SPICE toolkit functions
 //
-// ADITI 4.0: Go-native wrapper for high-precision ephemeris
+// Go-native wrapper for high-precision ephemeris
 // Requires NASA SPICE toolkit (C library) to be installed
 // Build with: go build -tags cspice
 type CSPICE struct {
-	mu         sync.RWMutex
-	kernelDir  string
+	mu            sync.RWMutex
+	kernelDir     string
 	loadedKernels []string
-	initialized bool
+	initialized   bool
 }
 
 // CSPICEConfig holds configuration for CSPICE initialization
@@ -55,9 +55,9 @@ func NewCSPICE(config CSPICEConfig) (*CSPICE, error) {
 	}
 
 	cspice := &CSPICE{
-		kernelDir:  config.KernelDir,
+		kernelDir:     config.KernelDir,
 		loadedKernels: make([]string, 0),
-		initialized: false,
+		initialized:   false,
 	}
 
 	return cspice, nil
@@ -81,7 +81,7 @@ func (c *CSPICE) Initialize() error {
 		return nil
 	}
 
-	// ADITI 4.0: STUB - Requires actual CGO bindings to NASA SPICE
+	// STUB - Requires actual CGO bindings to NASA SPICE
 	// For now, mark as initialized to allow interface testing
 	//
 	// Full implementation would:
@@ -93,8 +93,8 @@ func (c *CSPICE) Initialize() error {
 
 	// Load kernel files from directory
 	kernels := []string{
-		"de440.bsp",              // Planetary ephemeris
-		"de440s.bsp",             // Small-body ephemeris
+		"de440.bsp",                    // Planetary ephemeris
+		"de440s.bsp",                   // Small-body ephemeris
 		"earth_000101_241226_2402.bpc", // Earth orientation
 		"moon_000101_241226_2402.bpc",  // Moon orientation
 	}
@@ -134,7 +134,7 @@ func (c *CSPICE) GetBodyPosition(bodyName string, jd float64, frame string, aber
 		return [3]float64{}, 0, fmt.Errorf("CSPICE not initialized")
 	}
 
-	// ADITI 4.0: STUB - Requires actual CGO bindings
+	// STUB - Requires actual CGO bindings
 	// Full implementation would:
 	// et := C.j2000_c() + (jd - 2451545.0) * 86400.0
 	// var pos [3]C.double
@@ -156,7 +156,7 @@ func (c *CSPICE) GetBodyState(bodyName string, jd float64, frame string, aberrat
 		return [6]float64{}, 0, err
 	}
 
-	// ADITI 4.0: STUB - Velocity would require spkpos or derivative
+	// STUB - Velocity would require spkpos or derivative
 	// For now, return position with zero velocity
 	return [6]float64{pos[0], pos[1], pos[2], 0, 0, 0}, lt, nil
 }
@@ -170,7 +170,7 @@ func (c *CSPICE) Unload() error {
 		return nil
 	}
 
-	// ADITI 4.0: STUB - Requires actual CGO bindings
+	// STUB - Requires actual CGO bindings
 	// Full implementation would:
 	// for _, kernel := range c.loadedKernels {
 	//     err := C.unload_c(C.CString(kernel))

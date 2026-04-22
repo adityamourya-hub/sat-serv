@@ -9,7 +9,7 @@ import (
 
 /**
  * ParseTLE provides the primary entry point for converting raw TLE strings into structured objects.
- * Moved to physics substrate for architectural decoupling (ADITI 4.0).
+ * Moved to physics substrate for architectural decoupling.
  */
 func ParseTLE(data string) (*TLE, error) {
 	fmt.Printf("[TRC] Entering ParseTLE\n")

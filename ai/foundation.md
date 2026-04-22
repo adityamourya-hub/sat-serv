@@ -209,7 +209,84 @@ Ranked by leverage (biggest architectural win per unit effort):
 
 ---
 
-## 6. Critical Files
+## 6. Cross-Domain Mathematical Imports
+
+The following mappings are not analogy or inspiration — they are *isomorphism*. Each imports a mature mathematical apparatus into ADITI that is currently handled by neural-network approximations with no convergence guarantee. Making them explicit collapses months of empirical tuning into provable structures.
+
+### 6.1 Vlasov–Poisson plasma kinetics ↔ orbital debris population
+
+The 6-D phase-space distribution `f(x, v, t)` of a collisionless plasma obeys the Vlasov equation:
+
+```
+∂f/∂t + v·∇_x f + (q/m)(E + v×B)·∇_v f = 0
+```
+
+Replace charge `q/m` with gravitational mass, and the electromagnetic field with the Newtonian potential `Φ(x)`. The resulting equation is *identical* to the collisionless Boltzmann description of the orbital debris population under self-gravity and Earth oblateness. This is not metaphor — the terms map one-to-one.
+
+| Plasma physics | Debris mechanics | ADITI leverage |
+|---|---|---|
+| Landau damping | Thermalization of fragmentation velocity dispersion after break-up | Replace empirical `B*` drag with a velocity-distribution relaxation model derived from plasma linear theory |
+| Penrose instability criterion `∫ (∂f₀/∂v)/(ω−kv) dv > 0` | Kessler syndrome threshold: when fragment density exceeds critical coupling between altitude shells | Derive a *rigorous* critical density for runaway collision cascading, not the current rule-of-thumb |
+| Particle-in-Cell (PIC) with charge deposition | Monte Carlo propagator with known truncation error | Replace the existing RK45 debris propagator with a PIC-style split-step: symplectic `x` push + Poisson solve for `Φ`, giving error bounds per timestep instead of empirical drift |
+
+**Immediate action.** The existing `pkg/physics/propagate.go` RKF45 debris propagator accumulates ~1 km/day error in GEO with no bound. A Vlasov-Poisson PIC step gives `O(Δt²)` error with a *computable* CFL condition from the gravitational potential, turning propagation from an empirical guess into a theorem.
+
+### 6.2 Gutzwiller trace formula ↔ natural basis for resonant orbit families
+
+In semiclassical quantum chaos, the density of states is expressed as a sum over classical periodic orbits:
+
+```
+ρ(E) = ρ̄(E) + Σ_p Σ_r A_{p,r} e^{i r S_p(E)/ℏ}
+```
+
+The sum is over *all* periodic orbits `p` at energy `E`, with action `S_p`. The orbit amplitudes `A_{p,r}` form an orthogonal basis for the fluctuating part of the spectrum.
+
+In celestial mechanics, the gravitational potential is not arbitrary — it is dominated by zonal harmonics `J_n` and tesseral resonances. The periodic orbits in this potential (repeat-ground-track families, Molniya loops, frozen-orbit libration centers) are *exactly* the natural basis functions. Currently ADITI learns orbital dynamics from scratch with MLPs on Cartesian state. Instead:
+
+- Enumerate the resonant orbit families for the actual `J₂, J₃, J₂,₂` potential (not a toy model).
+- Use the Gutzwiller amplitudes `A_p` as a fixed, physics-mandated basis for the latent space.
+- Train only the *weights* on these basis functions — the basis itself is derived from Hamilton's equations, not gradient descent.
+
+**Immediate action.** Replace the latent state of the DreamerV3 RSSM (or any world-model latent) with coefficients on the resonant-orbit basis. This is the difference between learning Fourier modes from data (inefficient, no convergence guarantee) and using the correct eigenfunctions of the actual potential (efficient, exact in the linear regime).
+
+### 6.3 Koopman operator theory ↔ DreamerV3 world model
+
+The Koopman operator `K` acts on observables `g(x)` rather than states:
+
+```
+K g(x) = g ∘ F(x)
+```
+
+where `F(x)` is the flow map. In the space of observables, `K` is *linear*, even when the underlying dynamics are nonlinear. Spectral decomposition of `K` yields eigenfunctions `φ_j` and eigenvalues `λ_j`:
+
+```
+K φ_j = λ_j φ_j
+```
+
+These eigenfunctions are the natural coordinates in which the dynamics are linear, and the eigenvalues encode decay rates, oscillation frequencies, and conservation laws (eigenvalue `1` with eigenfunction `H(x)`).
+
+DreamerV3's RSSM attempts to learn *exactly this* — a latent space where dynamics are linear and Markov — but does so without knowing that the correct latent functions are the Koopman eigenfunctions. The result is:
+- Latent space is arbitrary (no physical meaning).
+- No guarantee that conservation laws are preserved.
+- No spectral insight (cannot distinguish stable modes from unstable ones).
+
+**Drop-in replacement.** Replace the RSSM transition with a learned Koopman operator:
+
+```
+z_{t+1} = K_θ z_t + B_θ a_t
+```
+
+where `z_t = ψ_θ(x_t)` is a learned observable embedding, and `K_θ` is constrained to be diagonalizable with eigenvalues inside the unit circle (stable) or on it (conservative). The EDMD (Extended Dynamic Mode Decomposition) algorithm provides a closed-form least-squares fit for `K` given observed trajectories — no backpropagation needed for the operator itself.
+
+**Immediate action.** The existing `ai/v3/astrojax_world_model.py` uses an RSSM with learned transition. Replace the MLP transition with a Koopman-EDMD layer: embed observations via a small encoder, fit `K` and `B` via EDMD on trajectory windows, and use the spectral decomposition of `K` to identify conserved quantities (eigenvalue `1`) and unstable modes (eigenvalue `|λ| > 1`). This gives:
+- A world model with *provable* linear dynamics in latent space.
+- Automatic discovery of conservation laws (Koopman eigenfunctions near `λ = 1`).
+- Explicit stability guarantees (spectral radius constraint on `K`).
+- Direct bridge to controller design: linear MPC in Koopman coordinates is globally optimal for the learned model.
+
+---
+
+## 7. Critical Files
 
 ### Modify
 - [ai/neural_ode/train.py](/Users/adi/idex/ai/neural_ode/train.py) — replace broken "Yoshida-4" block (L142-177); replace `StructurePreservingLoss` (L93-123) with Augmented Lagrangian.
@@ -240,7 +317,7 @@ Ranked by leverage (biggest architectural win per unit effort):
 
 ---
 
-## 7. Verification Plan
+## 8. Verification Plan
 
 **Unit-level.**
 - Symplecticity: rollout 10⁴ steps of Keplerian orbit, `|ΔH/H| < 10⁻⁸`.
@@ -264,6 +341,6 @@ Ranked by leverage (biggest architectural win per unit effort):
 
 ---
 
-## 8. TL;DR
+## 9. TL;DR
 
 The foundation is **Lie-Group Port-Hamiltonian Neural Operators**, trained with Augmented Lagrangian under hard symplectic integration, with SINDy as residual-inverse control inference and Fourier Neural Operators reserved for infinite-dimensional fields (atmosphere, contact). Every primitive needed exists in fragments across idex and ganga1.0; the work is wiring, unification, and replacing soft penalties with hard constraints — not new ML research. The hypernetwork atlas and PAX tiering proposed in [model_arch.md](/Users/adi/idex/ai/model_arch.md) are correct but belong in Phase 4–5, not Phase 1. The biggest single lever is fixing the broken symplectic integrator in the PyTorch trainer, which today undermines every downstream claim about conservation.

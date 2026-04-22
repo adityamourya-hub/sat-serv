@@ -1,5 +1,5 @@
 """
-Multi-Objective Distillation Loss for ADITI 4.0 Final Run
+Multi-Objective Distillation Loss for Sovereign Distillation
 
 Implements the Sobolev Training loss function:
     L_total = λ1 * L_physics + λ2 * ||Xi||_1 + λ3 * L_symp + λ4 * L_sobolev
@@ -55,7 +55,7 @@ class DistillationLoss(nn.Module):
         # Symplectic matrix J (standard form)
         self.J = self._build_symplectic_matrix(state_dim)
         
-        # ADITI 4.0: Dual Ascent for Hard Constraints
+        # Dual Ascent for Hard Constraints
         # Lagrange multipliers for each constraint
         self.lambdas = {
             'energy': torch.zeros(1),      # λ for Hamiltonian conservation
@@ -335,7 +335,7 @@ class DistillationLoss(nn.Module):
         total_loss += self.lambda_sobolev * L_sobolev
         loss_components['L_sobolev'] = L_sobolev.item()
         
-        # 5. ADITI 4.0: Hard constraint loss (Dual Ascent)
+        # 5. Hard constraint loss (Dual Ascent)
         if use_hard_constraints:
             constraints = self.compute_hard_constraints(x, x_pred, model, z)
             L_hard = self.hard_constraint_loss(constraints)
@@ -495,7 +495,7 @@ def get_lagrange_multipliers(loss_fn: DistillationLoss) -> Dict[str, np.ndarray]
     """
     Get current Lagrange multipliers for audit verification.
     
-    ADITI 4.0: Stable, converged λ is the mathematical signature
+    Stable, converged λ is the mathematical signature
     that the model has internalized the physical manifold.
     
     Args:

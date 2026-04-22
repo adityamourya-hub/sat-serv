@@ -1,5 +1,5 @@
 // pkg/telescope/vision_engine.go
-// ADITI 4.0: Multi-Frame Blind Deconvolution (MFBD) Vision Engine
+// Multi-Frame Blind Deconvolution (MFBD) Vision Engine
 //
 // Moves system from "blob tracking" to "Morphological Intelligence".
 // Reconstructs physical geometry (solar panels, bus shape, hypersonic lifting body)
@@ -145,7 +145,7 @@ type ObjectGeometry struct {
 	GeometryHash string  // SHA-256 hash of reconstruction
 	Confidence   float64 // Reconstruction confidence
 
-	// ADITI 4.0: Centroid for PHS feedback
+	// Centroid for PHS feedback
 	CentroidX float64 // Pixel X coordinate (center of mass)
 	CentroidY float64 // Pixel Y coordinate (center of mass)
 
@@ -173,7 +173,7 @@ type VisionEngine struct {
 	reconstructionCount int64
 	totalProcessingTime time.Duration
 
-	// ADITI 4.0: Plate-solving constants for pixel-to-Az/El transformation
+	// Plate-solving constants for pixel-to-Az/El transformation
 	PlateScale      float64 // arcsec/pixel
 	FocalLength     float64 // mm
 	PixelSize       float64 // microns
@@ -219,7 +219,7 @@ func NewVisionEngine(config MFBDConfig, asr *ASRFilter) *VisionEngine {
 			currentTemp: 50.0,
 			timestamp:   time.Now().Unix(),
 		},
-		// ADITI 4.0: Default plate-solving constants (typical for GEODSS-class telescope)
+		// Default plate-solving constants (typical for GEODSS-class telescope)
 		PlateScale:      0.5,    // 0.5 arcsec/pixel
 		FocalLength:     2000.0, // 2000mm focal length
 		PixelSize:       9.0,    // 9 microns pixel size
@@ -298,7 +298,7 @@ func (v *VisionEngine) GetCurrentTemp() float64 {
 
 // ReconstructTarget executes MFBD on accumulated frames
 //
-// ADITI 4.0: PAX Governor Tier 3 - High-fidelity characterization
+// PAX Governor Tier 3 - High-fidelity characterization
 // Returns reconstructed object geometry for e3nn analysis
 func (v *VisionEngine) ReconstructTarget(targetID string) (*ObjectGeometry, error) {
 	start := time.Now()

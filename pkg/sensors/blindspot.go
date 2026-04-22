@@ -3,7 +3,7 @@ package sensors
 /**
  * Blind Spot Detection - Space-Time Inversion for Sovereign Ops
  *
- * ADITI 4.0 Point (e): Compute union of adversarial sensor footprints
+ * Compute union of adversarial sensor footprints
  * and identify null set (gaps) where PoD < threshold (e.g., <5%).
  *
  * Physics Requirements:

@@ -23,7 +23,7 @@ import (
  * - Continuous aggregate integration for B* smoothing
  * - Batch ingestion for high throughput
  *
- * ADITI 4.0: Designed for 50k+ objects, 1.5 updates/day, 5.5 GB/year growth.
+ * Designed for 50k+ objects, 1.5 updates/day, 5.5 GB/year growth.
  */
 type TimescaleDBBackend struct {
 	db *sql.DB

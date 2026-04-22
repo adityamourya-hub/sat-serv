@@ -1,6 +1,6 @@
 // visibility.metal
 // Metal Performance Shaders for Sensor Visibility Computation
-// ADITI 4.0: 100k objects × M sensors in milliseconds on M2
+// : 100k objects × M sensors in milliseconds on M2
 
 #include <metal_stdlib>
 using namespace metal;

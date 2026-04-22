@@ -1,6 +1,6 @@
 // Package ai_imm implements Active Inference IMM (AI-IMM)
 //
-// ADITI 4.0: Pivot from reactive Bayesian filtering to predictive intent inference.
+// Pivot from reactive Bayesian filtering to predictive intent inference.
 //
 // The fundamental objective shifts from "What happened?" to "What is the adversary
 // trying to learn or achieve?" by minimizing Expected Free Energy (EFE).
@@ -36,7 +36,7 @@ type Policy struct {
 // AdversarialPrior defines the "Goal Map" for pragmatic value calculation
 // Identifies targets heading for National Strategic Installations
 //
-// ADITI 4.0: Enhanced with Mixture of Gaussians (MoG), Reachability Ellipsoid, and Shadow Goal
+// Enhanced with Mixture of Gaussians (MoG), Reachability Ellipsoid, and Shadow Goal
 // p(s) = (1-α) · Σ w_i · exp(-0.5 (s - G_i)^T Σ_i^{-1} (s - G_i)) + α · U(R)
 //
 // where:
@@ -64,7 +64,7 @@ type AdversarialPrior struct {
 	// Thermal budget for M2 Air
 	MaxComputeTimeMs float64 // Max compute time per EFE evaluation
 
-	// ADITI 4.0: Platform-Specific Energy Buffer mapping
+	// Platform-Specific Energy Buffer mapping
 	// Each HGV class has distinct L/D profile and thermal stress limits
 	PlatformEnergyBuffers map[string]float64 // EnergyBuffer per HGV class (km²/s²)
 }
@@ -126,7 +126,7 @@ func NewAdversarialPrior() *AdversarialPrior {
 		Volume:       1e9,   // km³ (placeholder)
 	}
 
-	// ADITI 4.0: Platform-Specific Energy Buffer mapping
+	// Platform-Specific Energy Buffer mapping
 	// Each HGV class has distinct L/D profile and thermal stress limits
 	// EnergyBuffer is the "Minimum Kinetic Reserve" required to maintain stable glide
 	platformEnergyBuffers := map[string]float64{
@@ -193,7 +193,7 @@ func (ap *AdversarialPrior) GetEnergyBuffer(hgvClass HGVClass) float64 {
 // LogDensity calculates log-density of state given adversarial prior
 // This is the Pragmatic Value: how well does this state align with strategic goals?
 //
-// ADITI 4.0: Enhanced with Mixture of Gaussians (MoG) and Shadow Goal
+// Enhanced with Mixture of Gaussians (MoG) and Shadow Goal
 // p(s) = (1-α) · GoalMap(s) + α · ShadowGoal(s)
 func (ap *AdversarialPrior) LogDensity(state *physics.State) float64 {
 	// Convert ECI position to lat/lon/altitude with proper GST accounting
@@ -284,7 +284,7 @@ func (ap *AdversarialPrior) LogProb(state *physics.State) float64 {
 
 // ComputeDynamicAlpha calculates dynamic Discovery Weight α based on SINDy residual
 //
-// ADITI 4.0: Dynamic curiosity linked to physics model failure
+// Dynamic curiosity linked to physics model failure
 // α(r) = α_base + (α_max - α_base) · σ(k · (||r||_2 - τ))
 //
 // where:
@@ -308,7 +308,7 @@ func (s *EFESolver) ComputeDynamicAlpha(residual float64) float64 {
 
 // UpdateReachabilityEnvelope updates the Reachability Envelope based on current Hamiltonian
 //
-// ADITI 4.0: Strictly bounded by remaining energy (H_current - H_min_glide)
+// Strictly bounded by remaining energy (H_current - H_min_glide)
 // The envelope volume scales with available energy, preventing the system
 // from considering physically impossible terminal states.
 func (ap *AdversarialPrior) UpdateReachabilityEnvelope(state *physics.State) {
@@ -446,10 +446,10 @@ func eciToLatLonAlt(pos physics.Vector3, epochJD ...float64) (lat, lon, alt floa
 
 // EFESolver calculates Expected Free Energy for policy selection
 //
-// ADITI 4.0: Enhanced with Persistence Memory (Belief Hysteresis) and
+// Enhanced with Persistence Memory (Belief Hysteresis) and
 // Hamiltonian-Bounded Reachability Envelope to prevent "Computational Hallucination."
 //
-// ADITI 4.0: Enhanced with Centroid-to-PHS Feedback for closed-loop kinetic custody.
+// Enhanced with Centroid-to-PHS Feedback for closed-loop kinetic custody.
 type EFESolver struct {
 	AdversarialPrior *AdversarialPrior
 	DPHNO            *dphno.DPHNOOperator // Dissipative Port-Hamiltonian Neural Operator
@@ -459,17 +459,17 @@ type EFESolver struct {
 	EpistemicWeight float64 // Weight for epistemic value
 	PragmaticWeight float64 // Weight for pragmatic value
 
-	// ADITI 4.0: Persistence Memory (Belief Hysteresis)
+	// Persistence Memory (Belief Hysteresis)
 	// Leaky integrator on curiosity state to prevent flickering during multi-stage maneuvers
 	AlphaMem  float64 // Memory of curiosity state (α_mem)
 	TauDecay  float64 // Memory horizon (τ_decay) in seconds - how long curiosity persists
 	ShockSens float64 // Shock sensitivity (η) - how fast new residuals overwrite memory
 
-	// ADITI 4.0: Hamiltonian-Bounded Reachability Envelope
+	// Hamiltonian-Bounded Reachability Envelope
 	EnergyBuffer float64 // Minimal energy required for stable glide (H_min_glide buffer)
 	HMinGlide    float64 // Minimum Hamiltonian for stable glide (≈ -30000 km²/s²)
 
-	// ADITI 4.0: Centroid-to-PHS Feedback
+	// Centroid-to-PHS Feedback
 	ObservationPriorAz float64 // Observed Azimuth from camera (degrees)
 	ObservationPriorEl float64 // Observed Elevation from camera (degrees)
 	HasObservation     bool    // Whether camera observation is available
@@ -485,16 +485,16 @@ func NewEFESolver(dphno *dphno.DPHNOOperator) *EFESolver {
 		EpistemicWeight:  1.0,
 		PragmaticWeight:  1.0,
 
-		// ADITI 4.0: Persistence Memory parameters
+		// Persistence Memory parameters
 		AlphaMem:  0.05, // Base curiosity (α_base)
 		TauDecay:  5.0,  // 5 second memory horizon
 		ShockSens: 1.0,  // Full shock sensitivity
 
-		// ADITI 4.0: Energy boundary parameters
+		// Energy boundary parameters
 		EnergyBuffer: 1000.0,   // km²/s² buffer for numerical stability
 		HMinGlide:    -30000.0, // Minimum Hamiltonian for stable glide
 
-		// ADITI 4.0: Centroid-to-PHS Feedback
+		// Centroid-to-PHS Feedback
 		HasObservation:   false,
 		CameraConfidence: 1.0,
 	}
@@ -502,7 +502,7 @@ func NewEFESolver(dphno *dphno.DPHNOOperator) *EFESolver {
 
 // UpdateCuriosity implements Persistence Memory (Belief Hysteresis) via leaky integrator
 //
-// ADITI 4.0: Prevents α from "flickering" during complex multi-stage maneuvers
+// Prevents α from "flickering" during complex multi-stage maneuvers
 // where the residual might momentarily dip as the vehicle passes through
 // a brief ballistic-like phase.
 //
@@ -537,7 +537,7 @@ func (s *EFESolver) UpdateCuriosity(rawAlpha float64, dt float64) {
 
 // SetObservationPrior sets the centroid observation from camera
 //
-// ADITI 4.0: Centroid-to-PHS Feedback for closed-loop kinetic custody.
+// Centroid-to-PHS Feedback for closed-loop kinetic custody.
 // When the camera observes the target at a different location than PHS predicts,
 // this creates epistemic ambiguity that the EFE solver must resolve.
 func (s *EFESolver) SetObservationPrior(az, el float64, confidence float64) {
@@ -554,7 +554,7 @@ func (s *EFESolver) ClearObservationPrior() {
 
 // IsPhysicallyPossible checks if a terminal state is reachable given current energy
 //
-// ADITI 4.0: Hamiltonian-Bounded Reachability Envelope prevents "Computational Hallucination"
+// Hamiltonian-Bounded Reachability Envelope prevents "Computational Hallucination"
 // by ensuring the AI doesn't waste curiosity on physically impossible terminal states.
 //
 // Reachability condition:
@@ -688,12 +688,12 @@ func (s *EFESolver) simplePredict(state *physics.State, mode int) *physics.State
 
 // OptimizePolicy finds the policy that minimizes EFE using Pruned-Beam Search
 //
-// ADITI 4.0: Pruned-Beam Search with width=3
+// Pruned-Beam Search with width=3
 // - Greedy-Horizon (1-Step): Fast (~2ms) but "blind"
 // - MCTS (Full Tree): Brilliant but too expensive (1000 simulations/frame)
 // - Pruned-Beam: Balance (~20-25ms) with "Look-Ahead" capability
 func (s *EFESolver) OptimizePolicy(currentState *physics.State, beamWidth int) Policy {
-	// ADITI 4.0: Use fixed beam width of 3 for thermal budget
+	// Use fixed beam width of 3 for thermal budget
 	beamWidth = 3
 
 	// Generate candidate policies (beam search)
@@ -716,7 +716,7 @@ func (s *EFESolver) OptimizePolicy(currentState *physics.State, beamWidth int) P
 
 // EvaluatePolicy calculates EFE using persistence memory and energy-bounded reachability
 //
-// ADITI 4.0: Enhanced with:
+// Enhanced with:
 // - Persistence Memory (Belief Hysteresis) to prevent α flickering
 // - Hamiltonian-Bounded Reachability Envelope to reject physically impossible states
 // - Centroid-to-PHS Feedback to spike Conflict Metric on observation deviation
@@ -733,7 +733,7 @@ func (s *EFESolver) EvaluatePolicy(p Policy, currentObservation *physics.State, 
 	// 2. Predict terminal state s_H after horizon H
 	terminalState := s.Rollout(currentObservation, p)
 
-	// 3. ADITI 4.0: Energy Boundary Check (Hamiltonian-Bounded Reachability)
+	// 3. Energy Boundary Check (Hamiltonian-Bounded Reachability)
 	// Compute current Hamiltonian
 	rCurrent := math.Sqrt(currentObservation.Pos[0]*currentObservation.Pos[0] +
 		currentObservation.Pos[1]*currentObservation.Pos[1] +
@@ -762,7 +762,7 @@ func (s *EFESolver) EvaluatePolicy(p Policy, currentObservation *physics.State, 
 	// Blended pragmatic value: (1-α) * GoalMap + α * Shadow
 	pragmaticValue := (1.0-alpha)*goalMapLogDensity + alpha*shadowLogDensity
 
-	// 5. ADITI 4.0: Centroid-to-PHS Feedback Conflict Metric
+	// 5. Centroid-to-PHS Feedback Conflict Metric
 	// If camera observation available and deviates from PHS prediction, spike epistemic value
 	if s.HasObservation {
 		// Convert terminal state to Az/El for comparison
@@ -792,7 +792,7 @@ func (s *EFESolver) EvaluatePolicy(p Policy, currentObservation *physics.State, 
 
 // computeAngularConflict computes angular distance between PHS prediction and camera observation
 //
-// ADITI 4.0: Used for Centroid-to-PHS Feedback to detect when camera observation
+// Used for Centroid-to-PHS Feedback to detect when camera observation
 // deviates significantly from PHS prediction, indicating potential maneuver or sensor glitch.
 func (s *EFESolver) computeAngularConflict(predLat, predLon, obsAz, obsEl float64) float64 {
 	// Simplified: convert lat/lon to approximate Az/El
@@ -822,7 +822,7 @@ func (s *EFESolver) Rollout(currentState *physics.State, p Policy) *physics.Stat
 
 // CalculateConflictMetric computes Jensen-Shannon Divergence between GoalMap and Shadow Goal
 //
-// ADITI 4.0: Conflict Metric serves as "Internal Auditor" detecting when the system
+// Conflict Metric serves as "Internal Auditor" detecting when the system
 // is being pulled in two directions—known strategic priors vs raw anomalous data.
 //
 // When GoalMap suggests heading for "Base Alpha" but Shadow Goal suggests novel "Dog-Leg",
@@ -904,7 +904,7 @@ func (s *EFESolver) modeToString(mode int) string {
 }
 
 // CalculateInformationGain calculates epistemic value (information gain)
-// ADITI 4.0: Separate method for clarity in EvaluatePolicy
+// Separate method for clarity in EvaluatePolicy
 func (s *EFESolver) CalculateInformationGain(p Policy, currentState *physics.State) float64 {
 	var totalGain float64
 	state := *currentState
@@ -920,7 +920,7 @@ func (s *EFESolver) CalculateInformationGain(p Policy, currentState *physics.Sta
 }
 
 // generatePrunedCandidatePolicies generates pruned candidate policies
-// ADITI 4.0: Only evaluates top 3 most likely mode-sequences
+// Only evaluates top 3 most likely mode-sequences
 func (s *EFESolver) generatePrunedCandidatePolicies(beamWidth int) []Policy {
 	policies := make([]Policy, 0, beamWidth)
 

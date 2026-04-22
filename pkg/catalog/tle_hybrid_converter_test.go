@@ -63,7 +63,7 @@ func TestTLEToHybridConverter_Convert(t *testing.T) {
 	}
 
 	// Should be LEO
-	if state.Regime != physics.FlightRegimeLEO {
+	if physics.FlightRegime(state.Regime) != physics.FlightRegimeLEO {
 		t.Errorf("Expected LEO regime, got %v", state.Regime)
 	}
 

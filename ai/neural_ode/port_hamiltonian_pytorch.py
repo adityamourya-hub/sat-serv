@@ -60,9 +60,8 @@ class PortHamiltonianSystem(nn.Module):
         self.latent_dim = latent_dim
         self.use_latent_conditioning = use_latent_conditioning
         
-        # CRITICAL FIX: Training mode flag for memory leak prevention
-        self.training_mode = True  # Default to training mode
-        self.iteration_count = 0  # For periodic memory cleanup
+        # iteration_count for periodic GPU cache cleanup during training
+        self.iteration_count = 0
         
         # Hamiltonian network: H(x, z) → energy
         # Input: [state, latent] if conditioning, else [state]
@@ -80,11 +79,11 @@ class PortHamiltonianSystem(nn.Module):
         )
         
         # Dissipation network: x → L (lower triangular) → R = LL^T (PSD)
-        # SOFTPLUS FIX: Use softplus instead of ReLU to prevent gradient death
+        # Softplus ensures R>0 (strictly positive dissipation) with smooth gradients
         r_input_dim = state_dim + latent_dim if use_latent_conditioning else state_dim
         self.R_net = nn.Sequential(
             nn.Linear(r_input_dim, hidden_dim),
-            nn.Softplus(),  # CRITICAL: softplus ensures strict positivity
+            nn.Softplus(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.Softplus(),
             nn.Linear(hidden_dim, state_dim * state_dim),
@@ -109,16 +108,6 @@ class PortHamiltonianSystem(nn.Module):
         
         # Initialize with small weights
         self._initialize_weights()
-    
-    def set_training_mode(self, mode: bool):
-        """Set training mode for autograd graph retention."""
-        self.training_mode = mode
-    
-    def get_memory_usage(self):
-        """Return current GPU memory usage in MB."""
-        if torch.cuda.is_available():
-            return torch.cuda.max_memory_allocated() / 1024**2
-        return 0.0
     
     def _initialize_weights(self):
         """Initialize with small weights for stable training."""
@@ -179,8 +168,7 @@ class PortHamiltonianSystem(nn.Module):
         # Force lower triangular structure (Cholesky factor)
         L = torch.tril(L)
         
-        # Apply softplus to diagonal to ensure STRICT positivity
-        # CRITICAL FIX: prevents gradient death, ensures R > 0 everywhere
+        # Apply softplus to diagonal to ensure strict positivity of dissipation matrix R
         diag_indices = torch.arange(self.state_dim, device=x.device)
         diag_softplus = F.softplus(L[:, diag_indices, diag_indices]) + 1e-6
         L[:, diag_indices, diag_indices] = diag_softplus
@@ -264,8 +252,8 @@ class PortHamiltonianSystem(nn.Module):
         x_grad = x.detach().requires_grad_(True)
         H = self.get_hamiltonian(x_grad, z_latent)
         
-        # CRITICAL FIX: Use different autograd settings based on mode
-        if self.training_mode:
+        # Use PyTorch's built-in training flag for autograd graph retention
+        if self.training:
             # Training: retain graph for higher-order derivatives
             grad_H = torch.autograd.grad(
                 H.sum(), x_grad,
@@ -285,7 +273,7 @@ class PortHamiltonianSystem(nn.Module):
                 retain_graph=False
             )[0]
         
-        # CRITICAL FIX: NaN guards to prevent silent failure
+        # NaN guards: numerical gradient fallback for Hamiltonian autograd failures
         if torch.isnan(grad_H).any():
             print("[WARNING] NaN detected in Hamiltonian gradient, using fallback")
             # Fallback: numerical gradient via finite differences
@@ -330,6 +318,56 @@ class PortHamiltonianSystem(nn.Module):
         This makes PHS a drop-in replacement for GHNNVectorField.
         """
         return self.dynamics(x, u=None, z_latent=z_latent)
+    
+    def compute_dH_dq(self, q: torch.Tensor, p: torch.Tensor, 
+                      z_latent: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        Compute position gradient ∂H/∂q for symplectic integration.
+        
+        Args:
+            q: [batch, 3] position vectors
+            p: [batch, 3] momentum vectors  
+            z_latent: [batch, latent_dim] physics code (optional)
+            
+        Returns:
+            dH_dq: [batch, 3] gradient w.r.t. position
+        """
+        x = torch.cat([q, p], dim=1)
+        x_grad = x.detach().requires_grad_(True)
+        H = self.get_hamiltonian(x_grad, z_latent)
+        
+        grad_H = torch.autograd.grad(
+            H.sum(), x_grad,
+            create_graph=self.training,
+            retain_graph=self.training
+        )[0]
+        
+        return grad_H[:, :3]
+    
+    def compute_dH_dp(self, q: torch.Tensor, p: torch.Tensor,
+                        z_latent: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        Compute momentum gradient ∂H/∂p for symplectic integration.
+        
+        Args:
+            q: [batch, 3] position vectors
+            p: [batch, 3] momentum vectors
+            z_latent: [batch, latent_dim] physics code (optional)
+            
+        Returns:
+            dH_dp: [batch, 3] gradient w.r.t. momentum
+        """
+        x = torch.cat([q, p], dim=1)
+        x_grad = x.detach().requires_grad_(True)
+        H = self.get_hamiltonian(x_grad, z_latent)
+        
+        grad_H = torch.autograd.grad(
+            H.sum(), x_grad,
+            create_graph=self.training,
+            retain_graph=self.training
+        )[0]
+        
+        return grad_H[:, 3:]
 
 
 class GHNNVectorField(nn.Module):

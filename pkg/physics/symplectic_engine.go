@@ -5,7 +5,7 @@ import (
 )
 
 /**
- * Symplectic Engine 
+ * Symplectic Engine
  *
  * Implements Forest-Ruth (Yoshida 4th-order) symplectic integrator
  * to bridge the gap between H100 training logic and Go-native reflex kernel.
@@ -254,7 +254,7 @@ const (
 
 // ManifoldGate provides ortho-normalization to prevent floating-point creep
 //
-// ADITI 4.0: Geometric Firewall that prevents the AI from hallucinating
+// Geometric Firewall that prevents the AI from hallucinating
 // a universe where physics are optional. Ensures state remains on manifold.
 // Every 1000 cycles, applies ortho_normalize to kill floating-point drift.
 type ManifoldGate struct {

@@ -171,7 +171,7 @@ func TestCDMRecomputePc(t *testing.T) {
 		t.Fatalf("Failed to parse CDM: %v", err)
 	}
 
-	// Recompute Pc using ADITI 4.0 fixed methods
+	// Recompute Pc using fixed methods
 	result := cdm.RecomputePc()
 
 	t.Logf("Published Pc:  %e", result.PublishedPc)
@@ -227,8 +227,8 @@ func TestCDMValidationResult(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			v := CDMValidationResult{
-				PublishedPc:  tt.published,
-				RecomputedPc: tt.recomputed,
+				PublishedPc:   tt.published,
+				RecomputedPc:  tt.recomputed,
 				AbsoluteError: tt.recomputed - tt.published,
 				RelativeError: (tt.recomputed - tt.published) / tt.published,
 			}

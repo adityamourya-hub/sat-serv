@@ -4,7 +4,7 @@ package dphno
  * DPHNO Operator - Go Binding for Python DPHNO
  *
  * Exports the Dissipative Port-Hamiltonian Neural Operator
- * to Go for use in ADITI 4.0 propagation.
+ * to Go for use in sovereign propagation.
  *
  * TODO: Complete ONNX Runtime integration after model export
  * Current implementation uses basic physics as placeholder.

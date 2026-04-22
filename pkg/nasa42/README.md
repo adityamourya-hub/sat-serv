@@ -1,13 +1,13 @@
-# NASA 42 Integration for ADITI 4.0
+# NASA 42 Integration for 
 
 ## Executive Summary
 
-**NASA 42** provides the "Ground Truth" physics validation for ADITI 4.0. While Go handles the 100k-object catalog at scale, 42 validates critical conjunctions with mission-grade precision using Kane's Equations and flexible body dynamics.
+**NASA 42** provides the "Ground Truth" physics validation for . While Go handles the 100k-object catalog at scale, 42 validates critical conjunctions with mission-grade precision using Kane's Equations and flexible body dynamics.
 
 **Architecture:**
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ADITI 4.0 (Go)                                            │
+│   (Go)                                            │
 │  - 100k object catalog                                      │
 │  - BVH conjunction screening                                │
 │  - Real-time SDA operations                                  │

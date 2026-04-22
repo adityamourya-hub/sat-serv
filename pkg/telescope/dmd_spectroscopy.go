@@ -1,5 +1,5 @@
 // pkg/telescope/dmd_spectroscopy.go
-// ADITI 4.0: DMD Spectroscopy Trigger for Sensor 1 (Narrow FOV)
+// DMD Spectroscopy Trigger for Sensor 1 (Narrow FOV)
 //
 // Sensor 1: Narrow FOV (high-mag) → DMD Spectroscopy
 // Physics: High-res spectra for material ID (SLiPy + e3nn irrep tensors)
@@ -53,7 +53,7 @@ func NewDMDSpectroscopyTrigger() *DMDSpectroscopyTrigger {
 
 // ProcessSpectralFeed analyzes spectral data and triggers if DMD criteria met
 //
-// ADITI 4.0: DMD identifies coherent plasma modes that indicate:
+// DMD identifies coherent plasma modes that indicate:
 //   - HGV re-entry wakes
 //   - Maneuver signatures
 //   - Material chemistry (via spectral fingerprint)

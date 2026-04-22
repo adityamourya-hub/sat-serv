@@ -65,7 +65,7 @@ func (e *TrainingEnv) Step(action SimAction) EnvStepResult {
 
 	nextRisk := next.ThreatLevel
 
-	// ADITI 4.0: Fuel-aware reward scaling to prevent over-aggressive maneuvers
+	// Fuel-aware reward scaling to prevent over-aggressive maneuvers
 	// Action costs scale with remaining fuel to encourage conservation
 	// When fuel is low, maneuver costs increase exponentially
 	fuelFraction := next.FuelFraction
@@ -121,7 +121,7 @@ func (e *TrainingEnv) Step(action SimAction) EnvStepResult {
 		reward -= 2.0 // Discourage unnecessary maneuvers when fuel is low
 	}
 
-	// ADITI 4.0: Mission priority weighting
+	// Mission priority weighting
 	// High-priority scenarios (ASAT, RapidThreat) have higher reward for successful resolution
 	// This reflects real mission priorities where some threats are more critical
 	missionPriorityBonus := 0.0
