@@ -1,0 +1,59 @@
+# Edge Server Configuration for Concurrent ST-BVH Deployment
+# Enables <1-minute custody for cluster launches using parallel processing
+
+server:
+  name: "sda-edge-server-01"
+  region: "primary"
+  
+# Hardware Configuration
+hardware:
+  cpu_cores: 16
+  memory_gb: 64
+  storage_gb: 1000
+  
+# Parallel BVH Builder Configuration
+bvh_builder:
+  num_workers: 16  # Uses GOMAXPROCS
+  parallel_threshold: 1000  # Objects count to trigger parallel build
+  chunk_size: 1000  # Objects per worker chunk
+  
+# Concurrent BVH Configuration
+concurrent_bvh:
+  enable_read_write_lock: true
+  enable_versioning: true
+  max_concurrent_queries: 100
+  query_timeout_ms: 500
+  update_timeout_ms: 1000
+  
+# Swept Volume Configuration
+swept_volume:
+  lookahead_sec: 60  # 60-second lookahead for ballistic objects
+  enable_keplerian_sweep: true
+  maneuver_detector_enabled: true
+  maneuver_sigma_scale: 3.0  # 3-sigma containment for maneuvering objects
+  rebuild_threshold: 0.1  # Rebuild if >10% objects maneuver
+  
+# Performance Targets
+performance:
+  target_custody_time_sec: 60  # <1 minute for 100 UCT cluster
+  target_query_latency_ms: 1  # <1ms for volumetric scan
+  target_update_latency_ms: 10  # <10ms for single object update
+  
+# Catalog Size Targets
+catalog:
+  max_objects: 100000
+  expected_uct_cluster_size: 100
+  update_frequency_sec: 60
+  
+# Monitoring
+monitoring:
+  enable_metrics: true
+  enable_tracing: true
+  metrics_port: 9090
+  
+# Edge Deployment
+edge:
+  air_gapped: true
+  local_inference: true
+  thermal_governor_enabled: true
+  max_temperature_c: 75.0
