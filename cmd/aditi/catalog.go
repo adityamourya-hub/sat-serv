@@ -20,7 +20,7 @@ import (
 var catalogCmd = &cobra.Command{
 	Use:   "catalog",
 	Short: "Manage the air-gapped sovereign catalog",
-	Long: `Manage the Hamiltonian-Gated sovereign catalog for ADITI 4.0.
+	Long: `Manage the Hamiltonian-Gated sovereign catalog .
 
 Commands:
   import  - Import TLE files and convert to Hamiltonian-Gated states

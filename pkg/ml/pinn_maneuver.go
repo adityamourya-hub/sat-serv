@@ -3,7 +3,7 @@ package ml
 /**
  * Physics-Informed Neural Network (PINN) for Maneuver Detection
  *
- * ADITI 4.0: Combines physics knowledge (Gauss variational equations)
+ * Combines physics knowledge (Gauss variational equations)
  * with neural networks to detect subtle maneuvers hidden in TLE noise.
  *
  * Approach:
@@ -74,7 +74,7 @@ func (pmd *PINNManeuverDetector) GaussVariationalEquations(
 	srpEffect := params.Cr * 1e-12
 
 	// RAAN precession (J2 effect) - use ADITI standard
-	j2Precession := -1.5 * physics.J2_ADITI * math.Pow(physics.EARTH_R_EQUATORIAL/elements.SMA, 2) *
+	j2Precession := -1.5 * physics.J2 * math.Pow(physics.EARTH_R_EQUATORIAL/elements.SMA, 2) *
 		elements.MeanMotion() * math.Cos(elements.Inc)
 
 	return OrbitalElementSet{
@@ -211,7 +211,7 @@ func (pmd *PINNManeuverDetector) predictWithPhysics(
 	newSMA := current.SMA + dragEffect
 
 	// RAAN precession using ADITI standard
-	j2Rate := -1.5 * physics.J2_ADITI * math.Pow(physics.EARTH_R_EQUATORIAL/newSMA, 2) *
+	j2Rate := -1.5 * physics.J2 * math.Pow(physics.EARTH_R_EQUATORIAL/newSMA, 2) *
 		n * math.Cos(current.Inc)
 	newRAAN := current.RAAN + j2Rate*dtSeconds
 

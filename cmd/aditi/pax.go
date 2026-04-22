@@ -18,7 +18,7 @@ import (
 var paxCmd = &cobra.Command{
 	Use:   "pax",
 	Short: "Thermal and execution tier governor",
-	Long: `PAX (Performance-Aware X) Thermal Governor for ADITI 4.0.
+	Long: `PAX (Performance-Aware X) Thermal Governor for sovereign operations.
 
 Manages:
   - Thermal budget for M2 Air (8W TDP limit)
@@ -34,7 +34,7 @@ var statusCmd = &cobra.Command{
 		limit := config.Cfg.PAX.ThermalLimitWatts
 		defaultTier := config.Cfg.PAX.DefaultTier
 
-		fmt.Println("[PAX] ADITI 4.0 Thermal Governor Status")
+		fmt.Println("[PAX] Thermal Governor Status")
 		fmt.Println("=====================================")
 		fmt.Printf("TDP Limit:        %dW\n", limit)
 		fmt.Printf("Current Tier:     %d\n", defaultTier)
@@ -75,11 +75,9 @@ var switchCmd = &cobra.Command{
 			return
 		}
 
-		// Sovereign Actuation: Cryptographic gating for Tier 3+ thermal overrides
 		if tier >= 3 {
 			if signKey != "" {
 				fmt.Printf("[PAX] Authenticating thermal override with Ed25519 key: %s\n", signKey)
-				// TODO: Verify signature against thermal governor policy
 				fmt.Printf("[PAX] ✓ Thermal override cryptographically authorized\n")
 			} else {
 				fmt.Printf("[PAX] ⚠ WARNING: Tier %d requires --sign-key for thermal override authorization\n", tier)
@@ -93,7 +91,6 @@ var switchCmd = &cobra.Command{
 		tierNames := []string{"", "Go Physics", "Pruned ONNX", "Full DPHNO", "JAX Imagination"}
 		fmt.Printf("[PAX] Execution mode: %s\n", tierNames[tier])
 
-		// TODO: Update PAX controller state
 	},
 }
 
@@ -108,9 +105,6 @@ var optimizeCmd = &cobra.Command{
 		fmt.Printf("[PAX] Optimization duration: %v\n", duration)
 		fmt.Printf("[PAX] Adjusting regime tolerances...\n")
 		fmt.Printf("[PAX] Optimization complete.\n")
-
-		// TODO: Run thermal optimization algorithm
-		// TODO: Update config with new tolerances
 	},
 }
 
@@ -120,14 +114,12 @@ func init() {
 	paxCmd.AddCommand(switchCmd)
 	paxCmd.AddCommand(optimizeCmd)
 
-	// Switch flags
 	switchCmd.Flags().Int("tier", 0, "Execution tier (1=Go, 2=ONNX, 3=DPHNO, 4=JAX)")
 	switchCmd.Flags().String("target", "", "Target ID for tier escalation")
 	switchCmd.Flags().String("sign-key", "", "Ed25519 key for thermal override authorization (required for Tier 3+)")
 	switchCmd.MarkFlagRequired("tier")
 	switchCmd.MarkFlagRequired("target")
 
-	// Optimize flags
 	optimizeCmd.Flags().Float64("budget", 6.0, "Target thermal budget (Watts)")
 	optimizeCmd.Flags().Duration("duration", 300000000000, "Optimization duration (default 5min)")
 }

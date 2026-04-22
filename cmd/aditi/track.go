@@ -29,14 +29,34 @@ The Discovery Filter uses:
 var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Initialize discovery filter for a target",
+	Long: `Start tracking a target with sovereign inference.
+
+Modes:
+  physics  - Pure Port-Hamiltonian physics (conservative + dissipative)
+  sindy    - SINDy latent force discovery for continuous control estimation
+  deeponet - DeepONet operator learning for discrete adversarial control inference
+
+DeepONet mode enables:
+  - 72-hour residual history buffer (pattern of life analysis)
+  - Apple Neural Engine (ANE) inference for <2ms latency
+  - Discrete "bang-bang" thruster detection (vs. SINDy's polynomial assumption)`,
 	Run: func(cmd *cobra.Command, args []string) {
 		target, _ := cmd.Flags().GetString("target")
 		mode, _ := cmd.Flags().GetString("mode")
 		threshold, _ := cmd.Flags().GetFloat64("threshold")
 		sindy, _ := cmd.Flags().GetBool("sindy")
 
-		fmt.Printf("[ADITI] Initializing Discovery Filter for: %s\n", target)
-		fmt.Printf("[ADITI] Mode: %s | Threshold: %.2f | SINDy: %v\n", mode, threshold, sindy)
+		fmt.Printf("[ADITI] Initializing Sovereign Tracking | Target: %s | Mode: %s\n", target, mode)
+
+		// DeepONet mode initialization
+		if mode == "deeponet" {
+			fmt.Println("[SYSTEM] Mode: DeepONet Adversarial Control Inference")
+			fmt.Println("[SYSTEM] Allocating 100-sample residual history buffer...")
+			fmt.Println("[SYSTEM] Warming up Apple Neural Engine (ANE)...")
+			fmt.Println("[SYSTEM] Zero-allocation ring buffer: ENABLED")
+		}
+
+		fmt.Printf("[ADITI] Threshold: %.2f | SINDy: %v\n", threshold, sindy)
 
 		// Initialize Discovery Filter with HGV constants
 		// In production, would load from configuration
@@ -115,8 +135,8 @@ func init() {
 	trackCmd.AddCommand(stopCmd)
 
 	// Start flags
-	startCmd.Flags().String("target", "", "Target ID to track")
-	startCmd.Flags().String("mode", "discovery", "Tracking mode")
+	startCmd.Flags().String("target", "", "Target ID to track (NORAD ID)")
+	startCmd.Flags().String("mode", "physics", "Tracking mode: physics | sindy | deeponet")
 	startCmd.Flags().Float64("threshold", 0.7, "Discovery mode probability threshold")
 	startCmd.Flags().Bool("sindy", true, "Enable SINDy latent force discovery")
 	startCmd.MarkFlagRequired("target")

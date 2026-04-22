@@ -234,7 +234,7 @@ func (a *FuelAccountant) ProcessSpectralObservation(targetID uint32, detectedLin
 	return updated
 }
 
-// GenerateFuelAwareThreatMap generates the fuel-aware threat map for ADITI 4.0
+// GenerateFuelAwareThreatMap generates the fuel-aware threat map for sovereign stack
 func (a *FuelAccountant) GenerateFuelAwareThreatMap(primaryID int, rriSolver *RRISolver) []FuelAwareThreatEntry {
 	threatList := rriSolver.GenerateThreatList(primaryID, a.Catalog)
 

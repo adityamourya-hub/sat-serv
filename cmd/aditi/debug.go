@@ -1,29 +1,17 @@
-// cmd/aditi/debug.go - Debug and Profiling Commands for ADITI 4.0
-//
-// SDE Audit Compliance: Prove M2 Air isn't choking on memory.
-// Exposes Go pprof server and GC tracing for performance verification.
+// cmd/aditi/debug.go - Debug and Profiling Commands
 
 package main
 
 import (
 	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
 var debugCmd = &cobra.Command{
-	Use:    "debug",
-	Short:  "Debug and profiling tools for performance verification",
-	Long: `Debug and Profiling Commands for ADITI 4.0.
-
-SDE Audit Compliance:
-  - pprof: Expose Go profiler for heap analysis
-  - gc-trace: Enable GC tracing to prove zero garbage in 100Hz loops
-  - trace: Capture execution traces for latency analysis
-
-Audit Proof:
-  - Live-stream heap allocations to show track command generates zero garbage
-  - Verify <1ms reflex loop latency
-  - Confirm <50ms telescope settle-time
+	Use:   "debug",
+	Short: "Debug and profiling tools for performance verification",
+	Long: `Debug and Profiling Commands.
 
 Examples:
   aditi debug pprof --bind localhost:6060
@@ -73,7 +61,6 @@ var gcTraceCmd = &cobra.Command{
 			fmt.Printf("[DEBUG] GC Tracing ENABLED\n")
 			fmt.Printf("[DEBUG] Log file: %s\n", logFile)
 			fmt.Printf("[DEBUG] Setting GODEBUG=gctrace=1\n")
-			fmt.Printf("[DEBUG] This proves the track command generates ZERO garbage during 100Hz reflex loops.\n")
 
 			// TODO: Enable GC trace logging
 			// TODO: Verify heap allocations stay flat

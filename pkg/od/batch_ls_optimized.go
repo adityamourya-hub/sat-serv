@@ -3,10 +3,7 @@ package od
 /**
  * Batch Least Squares Orbit Determination - Optimized Version
  *
- * ADITI 4.0 Critical Fix: sync.Pool for ODResult
- *
- * Problem: ODResult allocations in hot path cause GC pressure
- * Solution: Object pooling via sync.Pool
+ * sync.Pool for ODResult to reduce GC pressure on hot path.
  *
  * Performance Impact:
  * - Before: 100k OD operations = 100k heap allocations

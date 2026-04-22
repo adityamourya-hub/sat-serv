@@ -1,4 +1,4 @@
-// internal/filter/innovation_test.go - ADITI 4.0 Adaptive IMM Validation
+// internal/filter/innovation_test.go - Adaptive IMM Validation
 //
 // Validates that the Adaptive IMM can detect physical regime shifts (high-G "Pull-up")
 // and update internal Markovian priors using the Dirichlet evidence loop within
@@ -20,7 +20,7 @@
 //
 // References:
 //   - pkg/hypersonic/hgv_imm_filter.go (Adaptive IMM implementation)
-//   - May 4th Audit: iDEX ADITI 4.0 Sovereign Brain
+//   - May 4th Audit: iDEX Sovereign Brain
 
 package filter
 
@@ -129,7 +129,7 @@ func TestIMMDirichletTransition(t *testing.T) {
 			10.0, 1.0, // High prior for staying Ballistic
 			1.0, 10.0, // High prior for staying HGV
 		}),
-		Eta:            0.95, // Forgetting factor for rapid adaptation
+		Eta:            0.95,
 		DiscoveryThres: 25.0, // Chi-squared threshold for 6DOF
 		NumModes:       2,
 	}

@@ -5,7 +5,7 @@ import (
 )
 
 /**
- * Lie Algebra Operators for ADITI 4.0
+ * Lie Algebra Operators
  *
  * Provides hat/vee operators and exponential maps for:
  * - so(3) ↔ SO(3) (rotation algebra/group)

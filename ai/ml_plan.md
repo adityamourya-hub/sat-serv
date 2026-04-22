@@ -540,7 +540,7 @@ for i, constraint_fn in enumerate(constraint_fns):
 | Zero-day detection rate | > 95% | vs zero-day test set from Phase 3 |
 | False positive rate | < 1% | On pure orbital (no maneuver) test set |
 
-**Level 3: Operational Performance (ADITI 4.0 Judging)**
+**Level 3: Operational Performance ( Judging)**
 | Metric | Target | Measurement |
 |---|---|---|
 | OODA loop latency | < 100ms | End-to-end: sensor → decision |
@@ -607,7 +607,7 @@ Week 15:    CONFORMAL UQ (Layer 5)
 Week 16:    INTEGRATION + CERTIFICATION
              Wire all components through Go runtime
              Run CARA parity cases
-             Run ADITI 4.0 benchmark suite
+             Run  benchmark suite
              Final certification run
 ```
 
@@ -744,7 +744,7 @@ Phase 1 (Orbital foundation) → Deploy orbital PELDF
 Phase 2 (HGV extension) ──────→ Deploy HGV PELDF
          ↓                       (sub-50m accuracy on skip-glide)
 Phase 3 (Adversarial) ────────→ Deploy hardened model
-         ↓                       (ADITI 4.0 submission-ready)
+         ↓                       ( submission-ready)
 Phase 4 (Online adaptation) ──→ Continuous improvement from live data
 ```
 

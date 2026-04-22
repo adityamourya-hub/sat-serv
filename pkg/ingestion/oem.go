@@ -13,7 +13,7 @@ import (
 
 /**
  * OEM (Orbit Ephemeris Message) Parser (CCSDS 502.0-B-2)
- * Hardened for IAF ADITI 4.0 Industry Interoperability.
+ * Hardened for IAF Industry Interoperability.
  */
 
 type OEMDataPoint struct {
@@ -44,7 +44,7 @@ func ParseOEMKVD(path string) (*OEMFile, error) {
 
 	oem := &OEMFile{Points: make([]OEMDataPoint, 0)}
 	scanner := bufio.NewScanner(file)
-	
+
 	inData := false
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -61,7 +61,9 @@ func ParseOEMKVD(path string) (*OEMFile, error) {
 				oem.Frame = strings.TrimSpace(strings.Split(line, "=")[1])
 			} else if line == "DATA_START" || strings.Contains(line, "EPOCH") {
 				inData = true
-				if line == "DATA_START" { continue }
+				if line == "DATA_START" {
+					continue
+				}
 			}
 		}
 
@@ -71,16 +73,18 @@ func ParseOEMKVD(path string) (*OEMFile, error) {
 				epoch, err := time.Parse(time.RFC3339, parts[0])
 				if err != nil {
 					epoch, err = time.Parse("2006-002T15:04:05.999", parts[0])
-					if err != nil { continue }
+					if err != nil {
+						continue
+					}
 				}
-				
+
 				x, _ := strconv.ParseFloat(parts[1], 64)
 				y, _ := strconv.ParseFloat(parts[2], 64)
 				z, _ := strconv.ParseFloat(parts[3], 64)
 				vx, _ := strconv.ParseFloat(parts[4], 64)
 				vy, _ := strconv.ParseFloat(parts[5], 64)
 				vz, _ := strconv.ParseFloat(parts[6], 64)
-				
+
 				oem.Points = append(oem.Points, OEMDataPoint{
 					Epoch: epoch, X: x, Y: y, Z: z, VX: vx, VY: vy, VZ: vz,
 				})
@@ -106,8 +110,8 @@ func (o *OEMFile) InterpolateState(target time.Time) (physics.State, error) {
 	var p1, p2 OEMDataPoint
 	found := false
 	for i := 0; i < len(o.Points)-1; i++ {
-		if (target.Equal(o.Points[i].Epoch) || target.After(o.Points[i].Epoch)) && 
-		   (target.Equal(o.Points[i+1].Epoch) || target.Before(o.Points[i+1].Epoch)) {
+		if (target.Equal(o.Points[i].Epoch) || target.After(o.Points[i].Epoch)) &&
+			(target.Equal(o.Points[i+1].Epoch) || target.Before(o.Points[i+1].Epoch)) {
 			p1, p2 = o.Points[i], o.Points[i+1]
 			found = true
 			break
@@ -121,7 +125,7 @@ func (o *OEMFile) InterpolateState(target time.Time) (physics.State, error) {
 	t1 := p1.Epoch.UnixNano()
 	t2 := p2.Epoch.UnixNano()
 	t := target.UnixNano()
-	
+
 	dur := float64(t2-t1) / 1e9
 	if dur <= 0 {
 		return physics.State{

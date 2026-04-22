@@ -3,7 +3,7 @@ package orbital
 /**
  * CR3BP with State Transition Matrix (STM)
  *
- * ADITI 4.0: Production-quality CR3BP implementation
+ * Production-quality CR3BP implementation
  * Based on DhruvJ22/Astrodynamics_Research (Purdue Multi-Body Dynamics)
  *
  * Mathematical Framework:

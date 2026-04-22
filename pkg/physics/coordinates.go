@@ -4,22 +4,20 @@ import (
 	"math"
 )
 
-// CRITICAL FIX: NavIC temporal anchor for nanosecond-scale precision
-// NavIC offset: 17 nanoseconds relative to GPS time
+// NavIC temporal anchor: 17 nanoseconds offset relative to GPS time
 const NAVIC_OFFSET_NS = 17.0
 
 /**
  * WGS-84 and Frame Transformation Utilities
- * Hardened for IAF ADITI 4.0 'Sovereign' Grade Precision.
+ * Hardened for IAF 'Sovereign' Grade Precision.
  */
 
 /**
  * ECIToGeodetic converts ECI coordinates to WGS-84 Geodetic (Lat, Lon, Alt).
- * Accounts for Earth's rotation (GST).
- * CRITICAL FIX: Applies NavIC temporal anchor for nanosecond-scale precision.
+ * Accounts for Earth's rotation (GST) and NavIC temporal anchor.
  */
 func ECIToGeodetic(x, y, z float64, jd float64) (lat, lon, alt float64) {
-	// CRITICAL FIX: Apply NavIC temporal anchor (17 nanoseconds)
+	// Apply NavIC temporal anchor (17 nanoseconds)
 	jd_navic := jd + NAVIC_OFFSET_NS/86400.0e9
 	gst := GreenwichSiderealTime(jd_navic)
 
@@ -53,10 +51,9 @@ func ECIToGeodetic(x, y, z float64, jd float64) (lat, lon, alt float64) {
 
 /**
  * GeodeticToECI converts WGS-84 Geodetic to ECI.
- * CRITICAL FIX: Applies NavIC temporal anchor for nanosecond-scale precision.
  */
 func GeodeticToECI(lat, lon, alt float64, jd float64) (x, y, z float64) {
-	// CRITICAL FIX: Apply NavIC temporal anchor (17 nanoseconds)
+	// Apply NavIC temporal anchor (17 nanoseconds)
 	jd_navic := jd + NAVIC_OFFSET_NS/86400.0e9
 	gst := GreenwichSiderealTime(jd_navic)
 

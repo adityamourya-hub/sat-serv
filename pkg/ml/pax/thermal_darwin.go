@@ -20,7 +20,7 @@ type ThermalGovernor struct {
 }
 
 // Temperature returns the current temperature in Celsius (mapped from Level)
-// ADITI 4.0: Level 0-100 maps to 40-100°C for thermal monitoring
+// Level 0-100 maps to 40-100°C for thermal monitoring
 func (g *ThermalGovernor) Temperature() float64 {
 	// Map Level 0-100 to Temperature 40-100°C
 	return 40.0 + float64(g.Level)*0.6

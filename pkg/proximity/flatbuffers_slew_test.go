@@ -116,11 +116,11 @@ func TestFlatSlewCommand_Conversion(t *testing.T) {
 		t.Error("TiltJerk mismatch after conversion")
 	}
 
-	if cmd.Timestamp != flatCmd.Timestamp() {
+	if cmd.Timestamp != int64(flatCmd.Timestamp()) {
 		t.Error("Timestamp mismatch after conversion")
 	}
 
-	if cmd.Priority != int(flatCmd.Priority()) {
+	if cmd.Priority != int32(flatCmd.Priority()) {
 		t.Error("Priority mismatch after conversion")
 	}
 

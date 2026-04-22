@@ -1,4 +1,4 @@
-# ADITI 4.0: Symplectic-Adaptive Hybrid Integrator
+# : Symplectic-Adaptive Hybrid Integrator
 
 ## Executive Summary
 

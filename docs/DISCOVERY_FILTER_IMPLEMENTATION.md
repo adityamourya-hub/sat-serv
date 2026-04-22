@@ -1,4 +1,4 @@
-# ADITI 4.0: Discovery Filter Implementation
+# : Discovery Filter Implementation
 
 ## Executive Summary
 

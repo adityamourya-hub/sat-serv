@@ -1,5 +1,5 @@
 // pkg/ml/quantization/manifold_preserving.go
-// ADITI 4.0: Manifold-Preserving Quantization for M2 ANE
+// Manifold-Preserving Quantization for M2 ANE
 //
 // Standard 8-bit quantization is "Symmetry-Blind" - destroys rotational
 // equivariance by rounding vector orientations.
@@ -273,7 +273,7 @@ func (mpq *ManifoldPreservingQuantizer) QuantizeGNet(data []float32, shape []int
 
 // ValidateHessian checks minimum eigenvalue after quantization
 //
-// ADITI 4.0: If λ_min < 0, quantization broke energy surface convexity
+// If λ_min < 0, quantization broke energy surface convexity
 // Returns: isValid, minEigenvalue
 func (mpq *ManifoldPreservingQuantizer) ValidateHessian() (bool, float64) {
 	// Simplified Hessian validation

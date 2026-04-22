@@ -7,7 +7,7 @@ import (
 
 /**
  * OrbitalAccelerationDynamic computes acceleration with per-object drag
- * and real-time space weather integration (ADITI 4.0 High-Fidelity).
+ * and real-time space weather integration (High-Fidelity).
  *
  * This function extends the base OrbitalAcceleration with:
  * - Per-object ballistic coefficient from TLE B* smoothing
@@ -175,7 +175,7 @@ func greenwichSiderealTime(jd float64) float64 {
  * EstimatePropagationUncertainty computes the 1-sigma position uncertainty
  * given propagation time, drag model uncertainty, and ballistic coefficient uncertainty.
  *
- * ADITI 4.0: Used for conjunction assessment confidence bounds and blind spot detection.
+ * Used for conjunction assessment confidence bounds and blind spot detection.
  *
  * @param initialAltKm: Initial altitude (km)
  * @param propHours: Propagation time (hours)

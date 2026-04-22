@@ -745,7 +745,7 @@ type PreprocessingMetadata struct {
 // If σ_H / H_avg >= 10^-7, certificate self-invalidates
 //
 // References:
-//   - Sovereign Handshake Protocol (ADITI 4.0)
+//   - Sovereign Handshake Protocol
 //   - Physics as Hard Constraint (Augmented Lagrangian optimization)
 type ObservationReport struct {
 	// Report metadata
@@ -763,10 +763,10 @@ type ObservationReport struct {
 	SymbolicCertificate *VerificationCertificate
 
 	// Physics consistency verification
-	HamiltonianHash  string  // Hash of H(q,p) for energy conservation check
-	HamiltonianValue float64 // Computed H(q,p)
-	EnergyDrift      float64 // |H(t) - H(0)| / |H(0)|
-	ConsistencyGrade string  // A/B/C/D based on physics compliance
+	HamiltonianHash   string  // Hash of H(q,p) for energy conservation check
+	HamiltonianValue  float64 // Computed H(q,p)
+	EnergyDrift       float64 // |H(t) - H(0)| / |H(0)|
+	ConsistencyPassed bool    // true if all physics constraints satisfied
 
 	// Falsifiable predictions (60s lookahead for VSC validation)
 	PredictedState60s [6]float64
@@ -788,9 +788,9 @@ type VerificationCertificate struct {
 	LaTeXForm      string // Human-readable equation
 
 	// Statistical validation
-	BootstrapCI      [6][2]float64 // 95% confidence intervals per state dimension
-	PhysicsGrade     string        // A: strict energy/momentum conservation, B: within tolerance, C: approximate
-	CausalProvenance []string      // Chain of processing/modification steps
+	BootstrapCI          [6][2]float64                 // 95% confidence intervals per state dimension
+	ConstraintViolations []physics.ConstraintViolation // Physics pass/fail per constraint (replaces A-F grade)
+	CausalProvenance     []string                      // Chain of processing/modification steps
 
 	// Falsifiable predictions (60s window)
 	PredictedState60s [6]float64 // Predicted state 60 seconds ahead
@@ -820,23 +820,16 @@ func (r *ObservationReport) ComputeHamiltonianHash() string {
 	return hashInput
 }
 
-// VerifyPhysicsConsistency checks if observation satisfies physics constraints
-// Returns grade and whether certificate is valid
-func (r *ObservationReport) VerifyPhysicsConsistency() (grade string, valid bool) {
-	// Grade A: Energy drift < 10^-10 (machine precision limited)
-	// Grade B: Energy drift < 10^-7 (sovereign handshake threshold)
-	// Grade C: Energy drift < 10^-5 (acceptable for operations)
-	// Grade D: Energy drift >= 10^-5 (suspect/spoof)
-
-	if r.EnergyDrift < 1e-10 {
-		return "A", true
-	} else if r.EnergyDrift < 1e-7 {
-		return "B", true
-	} else if r.EnergyDrift < 1e-5 {
-		return "C", true
-	} else {
-		return "D", false // Self-invalidate
+// VerifyPhysicsConsistency checks if observation satisfies physics constraints.
+// Returns constraint violations and overall validity.
+func (r *ObservationReport) VerifyPhysicsConsistency() (violations []physics.ConstraintViolation, valid bool) {
+	violations = []physics.ConstraintViolation{
+		{Constraint: "energy_drift_machine_precision", Value: r.EnergyDrift, Threshold: 1e-10, Unit: "relative", Passed: r.EnergyDrift < 1e-10},
+		{Constraint: "energy_drift_sovereign_handshake", Value: r.EnergyDrift, Threshold: 1e-7, Unit: "relative", Passed: r.EnergyDrift < 1e-7},
+		{Constraint: "energy_drift_operational", Value: r.EnergyDrift, Threshold: 1e-5, Unit: "relative", Passed: r.EnergyDrift < 1e-5},
 	}
+	valid = physics.AllPassed(violations)
+	return violations, valid
 }
 
 // GenerateObservationReport creates a VSC-enriched observation report
@@ -890,16 +883,15 @@ func (platform *SensorPlatform) GenerateObservationReport(
 		EquationString:    "ẍ = -μ/r³ · x", // Simplified orbital dynamics
 		LaTeXForm:         "$\\ddot{\\mathbf{x}} = -\\frac{\\mu}{r^3} \\mathbf{x}$",
 		BootstrapCI:       bootstrapCI,
-		PhysicsGrade:      "B", // Will be updated by VerifyPhysicsConsistency
 		CausalProvenance:  report.CausalChain,
 		PredictedState60s: predictedState,
 		HamiltonianHash:   hash,
 	}
 
-	// Verify and set final grade
-	grade, valid := report.VerifyPhysicsConsistency()
-	report.ConsistencyGrade = grade
-	report.SymbolicCertificate.PhysicsGrade = grade
+	// Verify physics consistency
+	violations, valid := report.VerifyPhysicsConsistency()
+	report.ConsistencyPassed = valid
+	report.SymbolicCertificate.ConstraintViolations = violations
 
 	if !valid {
 		// Certificate self-invalidates

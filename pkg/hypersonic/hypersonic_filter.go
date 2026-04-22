@@ -59,7 +59,7 @@ func HypersonicPropagator(s []float64, dt float64, jd float64) []float64 {
 			h := crossProduct(physics.Vector3{rx, ry, rz}, physics.Vector3{vx, vy, vz})
 			lVec := crossProduct(physics.Vector3{vx, vy, vz}, h)
 			lMag := math.Sqrt(lVec[0]*lVec[0] + lVec[1]*lVec[1] + lVec[2]*lVec[2])
-			
+
 			if lMag > 1e-9 {
 				lDir := physics.Vector3{lVec[0] / lMag, lVec[1] / lMag, lVec[2] / lMag}
 				liftMag := dragMag * ld
@@ -108,7 +108,7 @@ func ComputeHypersonicJacobian(x, y, z, vx, vy, vz, beta, ld, jd float64) [][]fl
 	a[5][2] = muR5*z*z - physics.EARTH_MU_IAU*invR3
 
 	// J2 Gradient
-	j2Fac := (1.5 * physics.J2_ADITI * physics.EARTH_MU_IAU * physics.EARTH_R_EQUATORIAL * physics.EARTH_R_EQUATORIAL) * invR3 * invR2
+	j2Fac := (1.5 * physics.J2 * physics.EARTH_MU_IAU * physics.EARTH_R_EQUATORIAL * physics.EARTH_R_EQUATORIAL) * invR3 * invR2
 	a[3][0] += j2Fac * (1.0 - 5.0*z*z*invR2)
 	a[4][1] += j2Fac * (1.0 - 5.0*z*z*invR2)
 	a[5][2] += j2Fac * (3.0 - 5.0*z*z*invR2)
@@ -119,16 +119,16 @@ func ComputeHypersonicJacobian(x, y, z, vx, vy, vz, beta, ld, jd float64) [][]fl
 	if speed > 0.01 && beta > 0 {
 		rho := physics.GetDensityUnified(x, y, z, jd)
 		dragConst := 0.5 * rho * 1000.0 / beta
-		
+
 		// da_drag / dv
 		a[3][3] = -dragConst * (2*vx*vx/speed + speed)
-		a[3][4] = -dragConst * (2*vx*vy/speed)
-		a[3][5] = -dragConst * (2*vx*vz/speed)
-		a[4][3] = -dragConst * (2*vy*vx/speed)
+		a[3][4] = -dragConst * (2 * vx * vy / speed)
+		a[3][5] = -dragConst * (2 * vx * vz / speed)
+		a[4][3] = -dragConst * (2 * vy * vx / speed)
 		a[4][4] = -dragConst * (2*vy*vy/speed + speed)
-		a[4][5] = -dragConst * (2*vy*vz/speed)
-		a[5][3] = -dragConst * (2*vz*vx/speed)
-		a[5][4] = -dragConst * (2*vz*vy/speed)
+		a[4][5] = -dragConst * (2 * vy * vz / speed)
+		a[5][3] = -dragConst * (2 * vz * vx / speed)
+		a[5][4] = -dragConst * (2 * vz * vy / speed)
 		a[5][5] = -dragConst * (2*vz*vz/speed + speed)
 
 		// da_drag / dbeta
@@ -143,12 +143,12 @@ func ComputeHypersonicJacobian(x, y, z, vx, vy, vz, beta, ld, jd float64) [][]fl
 		if math.Abs(ld) > 1e-6 {
 			nx, ny, nz := physics.CalculateLiftVectorECI(x, y, z, vx, vy, vz)
 			liftMag := (0.5 * rho * speed2 * 1000.0 / beta) * ld
-			
+
 			// da_lift / d_ld
 			a[3][7] = liftMag / ld * nx
 			a[4][7] = liftMag / ld * ny
 			a[5][7] = liftMag / ld * nz
-			
+
 			// da_lift / dbeta
 			a[3][6] -= (liftMag * nx) / beta
 			a[4][6] -= (liftMag * ny) / beta
@@ -160,7 +160,7 @@ func ComputeHypersonicJacobian(x, y, z, vx, vy, vz, beta, ld, jd float64) [][]fl
 }
 
 /**
- * HypersonicPropagatorWithSTM integrates the 8D state and 8x8 STM 
+ * HypersonicPropagatorWithSTM integrates the 8D state and 8x8 STM
  * simultaneously (72 states total).
  * dot(Phi) = A * Phi
  */
@@ -184,7 +184,7 @@ func HypersonicPropagatorWithSTM(s []float64, phi []float64, dt float64, jd floa
 	f := func(t float64, y []float64) []float64 {
 		x_s := y[0:8]
 		Phi := y[8:72]
-		
+
 		// 1. Compute Dynamics (f)
 		rx, ry, rz := x_s[0], x_s[1], x_s[2]
 		vx, vy, vz := x_s[3], x_s[4], x_s[5]
@@ -193,13 +193,13 @@ func HypersonicPropagatorWithSTM(s []float64, phi []float64, dt float64, jd floa
 		speed := math.Sqrt(vx*vx + vy*vy + vz*vz)
 		ax, ay, az := physics.OrbitalAcceleration(rx, ry, rz, vx, vy, vz, jd+t/86400.0, physics.PhysicsParams{})
 		rho := physics.GetDensityUnified(rx, ry, rz, jd+t/86400.0)
-		
+
 		if beta > 0 && speed > 0.01 {
 			dragMag := 0.5 * rho * speed * speed * 1000.0 / beta
 			ax -= dragMag * vx / speed
 			ay -= dragMag * vy / speed
 			az -= dragMag * vz / speed
-			
+
 			if math.Abs(ld) > 1e-6 {
 				nx, ny, nz := physics.CalculateLiftVectorECI(rx, ry, rz, vx, vy, vz)
 				liftMag := dragMag * ld
@@ -208,7 +208,7 @@ func HypersonicPropagatorWithSTM(s []float64, phi []float64, dt float64, jd floa
 				az += liftMag * nz
 			}
 		}
-		
+
 		derivs := make([]float64, 72)
 		derivs[0], derivs[1], derivs[2] = vx, vy, vz
 		derivs[3], derivs[4], derivs[5] = ax, ay, az
@@ -216,7 +216,7 @@ func HypersonicPropagatorWithSTM(s []float64, phi []float64, dt float64, jd floa
 
 		// 2. Compute Jacobian (A)
 		A := ComputeHypersonicJacobian(rx, ry, rz, vx, vy, vz, beta, ld, jd+t/86400.0)
-		
+
 		// 3. Compute dot(Phi) = A * Phi
 		for i := 0; i < 8; i++ {
 			for j := 0; j < 8; j++ {
@@ -224,10 +224,10 @@ func HypersonicPropagatorWithSTM(s []float64, phi []float64, dt float64, jd floa
 				for k := 0; k < 8; k++ {
 					sum += A[i][k] * Phi[k*8+j]
 				}
-				derivs[8 + i*8 + j] = sum
+				derivs[8+i*8+j] = sum
 			}
 		}
-		
+
 		return derivs
 	}
 

@@ -1,4 +1,4 @@
-// pkg/proximity/adversarial_slew.go - ADITI 4.0 Telescope Mount Control
+// pkg/proximity/adversarial_slew.go - Telescope Mount Control
 //
 // Adversarial Slew Logic: Optimizes telescope movement to track high-Mach targets
 // (HGVs, ballistic re-entry) with minimal mechanical settle-time.
@@ -20,7 +20,7 @@
 //
 // References:
 //   - Podhradsky et al. "High-precision telescope control for SSA" (2023)
-//   - ADITI 4.0: Hybrid Integrator manifold prediction
+//   - Hybrid Integrator manifold prediction
 
 package proximity
 

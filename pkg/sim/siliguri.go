@@ -1,4 +1,4 @@
-// Package sim provides synthetic data generation for ADITI 4.0 training
+// Package sim provides synthetic data generation for sovereign training
 // Implements Go-native "Truth Engine" for Siliguri Corridor digital twin
 package sim
 

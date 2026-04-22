@@ -1,4 +1,4 @@
-// cmd/aditi/tactical.go - Tactical Spatial Commands for ADITI 4.0
+// cmd/aditi/tactical.go - Tactical Spatial Commands for sovereign SDA
 //
 // Core IAF mandate compliance: Volumetric Scan and Neighborhood Watch (NW)
 // These commands provide spatial querying capabilities for sovereign SDA operations.
@@ -7,13 +7,14 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
 var tacticalCmd = &cobra.Command{
 	Use:   "tactical",
 	Short: "Spatial queries and neighborhood screening for IAF mandate compliance",
-	Long: `Tactical spatial commands for ADITI 4.0 sovereign SDA.
+	Long: `Tactical spatial commands for sovereign SDA.
 
 IAF Mandate Compliance:
   - Volumetric Scan (volscan): Query RSOs within 3D spatial regions

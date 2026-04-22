@@ -1,4 +1,4 @@
-# ADITI 4.0: Hard Manifold Constraint Architecture
+# : Hard Manifold Constraint Architecture
 
 ## Executive Summary
 
@@ -74,8 +74,8 @@ def forest_ruth_step(model, q, p, z_latent, dt):
     Stage 3: q = q + C3*dt*dH/dp,  p = p - D3*dt*dH/dq
     Stage 4: q = q + C4*dt*dH/dp
     
-    This preserves phase-space volume EXACTLY.
-    Energy drift is O(dt^5), not O(t) like RK4.
+    This preserves phase-space volume under the modified Hamiltonian H̃_θ (Yoshida 1990, §3).
+    Energy drift from original H_θ is O(dt^5), not O(t) like RK4.
     """
 ```
 
@@ -274,5 +274,5 @@ Hamiltonian Firewall active.
 ---
 
 *Document: HARD_CONSTRAINT_ARCHITECTURE.md*  
-*Version: ADITI 4.0*  
+*Version: *  
 *Status: Ready for May 4th Audit*

@@ -1,6 +1,6 @@
 # SSIS Configuration Directory
 
-Configuration files for the Space Situational Intelligence System (SSIS) / ADITI 4.0.
+Configuration files for the Space Situational Intelligence System (SSIS) / .
 
 ## File Overview
 

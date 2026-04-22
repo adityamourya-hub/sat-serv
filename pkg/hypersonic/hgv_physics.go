@@ -6,7 +6,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Hypersonic Glide Vehicle (HGV) Physics
+ * Hypersonic Glide Vehicle (HGV) Physics
  *
  * Skip-glide trajectory with lift generation (L/D = 2-4).
  * Equations of motion in spherical, rotating Earth frame.

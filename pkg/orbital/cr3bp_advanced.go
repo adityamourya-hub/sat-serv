@@ -3,7 +3,7 @@ package orbital
 /**
  * Advanced CR3BP: Invariant Manifolds & Halo Orbits
  *
- * ADITI 4.0: Purdue Multi-Body Dynamics (Howell Group) implementation
+ * Purdue Multi-Body Dynamics (Howell Group) implementation
  * for "dark object" detection via stable/unstable manifolds.
  *
  * Capabilities:

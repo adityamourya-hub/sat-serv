@@ -3,7 +3,7 @@ package collision
 /**
  * LaPointe Algorithm for Analytical Pc Calculation
  *
- * ADITI 4.0: Geometric Mechanics Optimization #3
+ * Geometric Mechanics Optimization #3
  *
  * Problem: 2D Gaussian integral for Pc is bottleneck in decision layer
  * Solution: Chan-LaPointe series expansion (50× faster than quadrature)

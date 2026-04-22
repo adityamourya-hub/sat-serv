@@ -1,4 +1,4 @@
-# ADITI 4.0: Adversarial Slew Logic
+# : Adversarial Slew Logic
 
 ## Executive Summary
 
@@ -222,7 +222,7 @@ func (sc *SlewController) emergencyAdjust(cmd SlewCommand) SlewCommand {
 
 ---
 
-## Integration with ADITI 4.0
+## Integration with 
 
 ### Hybrid Integrator Feed
 ```go

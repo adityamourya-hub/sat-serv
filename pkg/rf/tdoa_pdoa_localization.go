@@ -3,7 +3,7 @@ package rf
 /**
  * TDOA-PDOA Localization Algorithm
  *
- * ADITI 4.0 Implementation of Chen et al. IEEE WCL 2020
+ * Implementation of Chen et al. IEEE WCL 2020
  *
  * Combines Time Difference of Arrival (TDOA) and
  * Phase Difference of Arrival (PDOA) for high-precision localization

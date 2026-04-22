@@ -16,7 +16,7 @@ import (
 var verifyCmd = &cobra.Command{
 	Use:   "verify",
 	Short: "Integrity and physics validation",
-	Long: `Hamiltonian integrity verification and audit for ADITI 4.0.
+	Long: `Hamiltonian integrity verification and audit .
 
 Commands:
   hamiltonian - Check energy conservation for a target

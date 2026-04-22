@@ -1,5 +1,5 @@
 // cmd/closed_loop_custody/main.go
-// ADITI 4.0: Closed-Loop Kinetic Custody System
+// Closed-Loop Kinetic Custody System
 //
 // Main entry point for sovereign SDA transition from open-loop propagation
 // to closed-loop kinetic custody with <100ms Go-reflex.
@@ -162,7 +162,7 @@ func (clc *ClosedLoopCustody) Start() error {
 
 // controlLoop runs the main 100Hz feedback loop
 //
-// ADITI 4.0: The core closed-loop kinetic custody
+// The core closed-loop kinetic custody
 // 1. Get camera observation (centroid)
 // 2. Compute conflict metric vs PHS prediction
 // 3. Feed to EFE solver (Active Inference)
@@ -363,7 +363,7 @@ func main() {
 	flag.Parse()
 
 	fmt.Println("╔══════════════════════════════════════════════════════════════╗")
-	fmt.Println("║     ADITI 4.0: Closed-Loop Kinetic Custody System            ║")
+	fmt.Println("║     Closed-Loop Kinetic Custody System                       ║")
 	fmt.Println("║     Sovereign SDA - <100ms Go-Reflex                        ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
 	fmt.Println()

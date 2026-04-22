@@ -24,7 +24,7 @@ import (
  * representing model error. Tune these variances so that Mahalanobis distances
  * of orbital differences follow χ² distribution.
  *
- * For ADITI 4.0 IAF certification, this provides traceable, physics-based
+ * For IAF certification, this provides traceable, physics-based
  * uncertainty quantification without black-box ML.
  */
 

@@ -1,5 +1,5 @@
 // pkg/telescope/asr_filter.go
-// ADITI 4.0: Atmospheric Scintillation Rejection (ASR) Filter
+// Atmospheric Scintillation Rejection (ASR) Filter
 //
 // Final filter required to move from "Digital Astronomy" to "Tactical Fire Control".
 // Implements Kinematic Kalman Filter (KKF) to separate orbital/maneuver signal
@@ -57,7 +57,7 @@ type ASRCovariance struct {
 
 // ASRFilter implements Atmospheric Scintillation Rejection
 //
-// ADITI 4.0: Synthesized Aperture via Software-Defined Physics
+// Synthesized Aperture via Software-Defined Physics
 // Allows 0.5m mirror to achieve GEODSS 1.0m tracking stability
 type ASRFilter struct {
 	// State and covariance
@@ -101,7 +101,7 @@ type PHSInterface interface {
 
 // NewASRFilter creates ASR filter with SPHS-derived process noise
 //
-// ADITI 4.0: Process noise Q learned from SPHS DiffusionNet σ(x)
+// Process noise Q learned from SPHS DiffusionNet σ(x)
 // The diffusion network knows how much "true" jitter to expect at given altitude
 func NewASRFilter(phs PHSInterface) *ASRFilter {
 	// Get Forest-Ruth coefficients from physics package
@@ -229,7 +229,7 @@ func (f *ASRFilter) PredictAndCorrect(obsAz, obsEl, snr float64, dt float64) (fi
 
 // predictSymplectic uses Forest-Ruth coefficients for manifold-aware prediction
 //
-// ADITI 4.0: Ensures filtered state stays on Hamiltonian manifold
+// Ensures filtered state stays on Hamiltonian manifold via symplectic integration
 // Replaces naive Euler integration with symplectic integration
 func (f *ASRFilter) predictSymplectic(azVel, elVel float64, dt float64) {
 	// Symplectic update for position and velocity
@@ -293,7 +293,7 @@ func (f *ASRFilter) predictCovariance(dt float64) {
 
 // orthoNormalize ensures ‖q‖ = 1 manifold integrity
 //
-// ADITI 4.0: Critical for preventing filter divergence
+// Prevents filter divergence via manifold normalization
 // Calls lie.OrthoNormalize equivalent for telescope pointing manifold
 func (f *ASRFilter) orthoNormalize() {
 	// For telescope pointing, the "manifold" is the unit sphere S²

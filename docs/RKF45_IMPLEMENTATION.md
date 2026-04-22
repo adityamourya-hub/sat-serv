@@ -1,4 +1,4 @@
-# ADITI 4.0: RKF45 Adaptive Integrator Implementation
+# : RKF45 Adaptive Integrator Implementation
 
 ## Executive Summary
 

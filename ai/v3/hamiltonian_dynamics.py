@@ -232,11 +232,13 @@ class SympNet(nn.Module):
         q, p = state.chunk(2, dim=-1)
         
         for layer in self.symplectic_layers:
-            # Symplectic update
+            # Symplectic update: apply activation to q and p separately
+            # This preserves symplectic structure (global Tanh breaks it)
             h = torch.cat([q, p], dim=-1)
             h = layer(h)
-            h = self.activation(h)
             q, p = h.chunk(2, dim=-1)
+            q = self.activation(q)
+            p = self.activation(p)
             
         return torch.cat([q, p], dim=-1)
     

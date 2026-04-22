@@ -20,7 +20,7 @@ import (
 var slewCmd = &cobra.Command{
 	Use:   "slew",
 	Short: "Adversarial telescope control with predictive settle-time",
-	Long: `Adversarial Slew Control for ADITI 4.0.
+	Long: `Adversarial Slew Control .
 
 Features:
   - Predictive slew (Hybrid-integrated manifold)

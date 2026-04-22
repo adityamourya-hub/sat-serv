@@ -3,18 +3,18 @@ package nasa42
 /**
  * NASA 42 Offline Validation Runner
  *
- * ADITI 4.0: Periodically validates ADITI propagation against NASA 42 ground truth.
+ * Periodically validates sovereign propagation against NASA 42 ground truth.
  *
  * Strategy:
  * - Sample 1% of high-risk conjunctions for ground truth comparison
- * - Detect ADITI propagation drift before operational impact
+ * - Detect propagation drift before operational impact
  * - Build confidence for DPHNO transition
  *
  * Use Case:
- * 1. ADITI detects high-risk conjunction (Pc > 1e-4)
+ * 1. Sovereign stack detects high-risk conjunction (Pc > 1e-4)
  * 2. ValidationRunner samples 1% of these events
  * 3. Propagate both objects with NASA 42 via IPC
- * 4. Compare ADITI vs 42 results
+ * 4. Compare sovereign vs 42 results
  * 5. Log deviations >100m threshold
  * 6. Export metrics for Prometheus/Grafana monitoring
  */
@@ -28,12 +28,12 @@ import (
 	"ssis/pkg/physics"
 )
 
-// ValidationResult captures comparison between ADITI and NASA 42 propagation
+// ValidationResult captures comparison between sovereign stack and NASA 42 propagation
 type ValidationResult struct {
 	Timestamp           time.Time
 	ObjectID            string
-	AditiPosition       [3]float64 // km
-	AditiVelocity       [3]float64 // km/s
+	SovereignPosition   [3]float64 // km
+	SovereignVelocity   [3]float64 // km/s
 	FortyTwoPosition    [3]float64 // km
 	FortyTwoVelocity    [3]float64 // km/s
 	PositionErrorMeters float64
@@ -128,8 +128,8 @@ func (vr *ValidationRunner) ValidateConjunction(
 	result := &ValidationResult{
 		Timestamp:           time.Now(),
 		ObjectID:            objectID,
-		AditiPosition:       [3]float64{primary.Pos[0], primary.Pos[1], primary.Pos[2]},
-		AditiVelocity:       [3]float64{primary.Vel[0], primary.Vel[1], primary.Vel[2]},
+		SovereignPosition:   [3]float64{primary.Pos[0], primary.Pos[1], primary.Pos[2]},
+		SovereignVelocity:   [3]float64{primary.Vel[0], primary.Vel[1], primary.Vel[2]},
 		FortyTwoPosition:    [3]float64{primaryResult.PosX, primaryResult.PosY, primaryResult.PosZ},
 		FortyTwoVelocity:    [3]float64{primaryResult.VelX, primaryResult.VelY, primaryResult.VelZ},
 		PositionErrorMeters: positionError,

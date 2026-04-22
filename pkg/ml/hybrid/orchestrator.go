@@ -29,7 +29,7 @@ type Thresholds struct {
 
 /**
  * Orchestrator runs classical -> ML -> fallback in one place.
- * Refactored to utilize the physics substrate schemas (ADITI 4.0).
+ * Refactored to utilize the physics substrate schemas.
  */
 type Orchestrator struct {
 	Engine     ml.InferenceEngine

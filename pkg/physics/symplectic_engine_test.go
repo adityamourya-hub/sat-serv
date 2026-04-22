@@ -1,5 +1,5 @@
 // pkg/physics/symplectic_engine_test.go
-// ADITI 4.0: Symplectic Integration Tests
+// Symplectic Integration Tests
 //
 // Tests for Forest-Ruth 4th-order symplectic integrator energy conservation.
 // Target: |H_t-H_0| < 1e-8 over 10,000 steps for Hamiltonian systems.
@@ -17,7 +17,7 @@ import (
 // TestSymplecticEnergyConservation verifies that the Forest-Ruth integrator
 // preserves Hamiltonian energy within 1e-8 over 10,000 steps.
 //
-// This is a critical test for ADITI 4.0 physics package integrity.
+// This is a critical test for physics package integrity.
 func TestSymplecticEnergyConservation(t *testing.T) {
 	// Create a simple Keplerian system (2-body problem)
 	keplerian := &KeplerianSystem{

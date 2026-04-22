@@ -1,5 +1,5 @@
 #!/bin/bash
-# setup_mtls.sh: Generate Sovereign mTLS artifacts for ADITI 4.0 gRPC Hardening
+# setup_mtls.sh: Generate Sovereign mTLS artifacts for  gRPC Hardening
 # Usage: ./scripts/setup_mtls.sh [output_dir]
 
 OUT_DIR=${1:-"./certs"}

@@ -1,4 +1,4 @@
-// pkg/catalog/tle_hybrid_converter.go - ADITI 4.0 TLE Elevation
+// pkg/catalog/tle_hybrid_converter.go - TLE Elevation
 //
 // Converts standard Two-Line Elements (TLE) into Hamiltonian-Gated states
 // for the Axiom-Zero sovereign catalog. Replaces SGP4 with Hybrid Integrator.
@@ -18,7 +18,7 @@
 // References:
 //   - SGP4 Theory: Hoots & Roehrich (1980)
 //   - Keplerian to Cartesian: Vallado, Fundamentals of Astrodynamics
-//   - ADITI 4.0: Hybrid Integrator with Strang splitting
+//   - Hybrid Integrator with Strang splitting
 
 package catalog
 
@@ -44,7 +44,7 @@ type TLE struct {
 	RevNumber    int     // Revolution number at epoch
 }
 
-// HamiltonianGatedState is the elevated TLE format for ADITI 4.0
+// HamiltonianGatedState is the elevated TLE format for the sovereign catalog
 //
 // SDE Optimization (<5ms Database Target):
 // - Fixed-size byte arrays instead of strings to avoid heap allocations
@@ -60,7 +60,7 @@ type HamiltonianGatedState struct {
 	Hamiltonian    float64 // 8 bytes [km²/s²] Specific orbital energy
 	HamiltonianTol float64 // 8 bytes Tolerance for drift detection
 
-	// ADITI 4.0 propagation parameters
+	// Propagation parameters
 	Regime    uint8   // 1 byte Enum: 0=LEO, 1=MEO, 2=GEO, 3=HGV, 4=Ballistic
 	UseHybrid bool    // 1 byte Use hybrid integrator (vs pure symplectic)
 	_         [6]byte // 6 bytes Pad to 8-byte boundary for memory alignment

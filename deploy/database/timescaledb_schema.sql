@@ -1,5 +1,5 @@
 --
--- ADITI 4.0 Space Situational Awareness Database Schema
+--  Space Situational Awareness Database Schema
 -- TimescaleDB Implementation for High-Volume TLE History
 --
 -- Features:

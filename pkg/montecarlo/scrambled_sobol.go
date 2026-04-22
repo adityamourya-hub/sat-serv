@@ -8,7 +8,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Scrambled Sobol Sequences
+ * Scrambled Sobol Sequences
  *
  * Owen Scrambling (or Digital Shift) prevents patterns/correlations
  * in high-dimensional Sobol sequences while maintaining O(1/N) convergence.
@@ -28,8 +28,8 @@ type ScrambledSobolGenerator struct {
 	skip       int
 
 	// Scrambling parameters
-	scrambleSeed int64       // For reproducibility
-	digitalShift []uint64    // Per-dimension random offset
+	scrambleSeed   int64      // For reproducibility
+	digitalShift   []uint64   // Per-dimension random offset
 	scrambleCoeffs [][]uint32 // Owen scrambling coefficients per dimension
 
 	// Base Sobol direction numbers (Joe & Kuo high-performance)
@@ -375,7 +375,7 @@ func inverseNormalCDF(p float64) float64 {
 	}
 	r = math.Log(-math.Log(r))
 
-		x := c[0] + r*(c[1]+r*(c[2]+r*(c[3]+r*(c[4]+r*(c[5]+r*(c[6]+r*(c[7]+r*c[8])))))))
+	x := c[0] + r*(c[1]+r*(c[2]+r*(c[3]+r*(c[4]+r*(c[5]+r*(c[6]+r*(c[7]+r*c[8])))))))
 
 	if y < 0 {
 		x = -x

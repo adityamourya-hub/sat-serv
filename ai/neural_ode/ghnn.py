@@ -71,20 +71,7 @@ class GHNNVectorField(nn.Module):
     def __init__(self, h_net: HamiltonianNet):
         super().__init__()
         self.h_net = h_net
-        
-        # CRITICAL FIX: Training mode flag for memory leak prevention
-        self.training_mode = True  # Default to training mode
-        self.iteration_count = 0  # For periodic memory cleanup
-    
-    def set_training_mode(self, mode: bool):
-        """Set training mode for autograd graph retention."""
-        self.training_mode = mode
-    
-    def get_memory_usage(self):
-        """Return current GPU memory usage in MB."""
-        if torch.cuda.is_available():
-            return torch.cuda.max_memory_allocated() / 1024**2
-        return 0.0
+        self.iteration_count = 0  # For periodic GPU cache cleanup
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -95,8 +82,8 @@ class GHNNVectorField(nn.Module):
             x = x.detach().requires_grad_(True)
             H = self.h_net(x)
             
-            # CRITICAL FIX: Use different autograd settings based on mode
-            if self.training_mode:
+            # Use PyTorch's built-in training flag for autograd graph retention
+            if self.training:
                 # Training: retain graph for higher-order derivatives
                 grad_H = torch.autograd.grad(
                     H, x, 
@@ -118,7 +105,7 @@ class GHNNVectorField(nn.Module):
                     retain_graph=False
                 )[0]
         
-        # CRITICAL FIX: NaN guards to prevent silent failure
+        # NaN guards: numerical gradient fallback for Hamiltonian autograd failures
         if torch.isnan(grad_H).any():
             print("[WARNING] NaN detected in Hamiltonian gradient, using fallback")
             # Fallback: numerical gradient via finite differences

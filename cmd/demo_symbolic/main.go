@@ -30,15 +30,15 @@ func (m mockManeuverModel) Predict(window []physics.ManeuverFrame) (physics.Mane
 }
 
 func main() {
-	fmt.Println("--- ADITI 4.0: Symbolic Manoeuvre Attribution Live Demo ---")
+	fmt.Println("--- Symbolic Manoeuvre Attribution Live Demo ---")
 
 	// 1. Setup Hybrid Detector with Mock ML Model
 	// We want to trigger the hook: Confidence >= 0.8 and Type == Impulsive
 	model := mockManeuverModel{
-		prob: 0.95, 
-		conf: 0.85, 
-		typ: physics.ManeuverImpulsive, 
-		dv: 0.12,
+		prob: 0.95,
+		conf: 0.85,
+		typ:  physics.ManeuverImpulsive,
+		dv:   0.12,
 	}
 	hybrid := maneuver.NewHybridManeuverDetector(model)
 
@@ -51,7 +51,7 @@ func main() {
 
 	if len(events) > 0 {
 		fmt.Printf("✅ Detected %d maneuver events.\n", len(events))
-		fmt.Printf("Event 0: Type=%v, Score=%.2f, DeltaV=%.3f km/s\n", 
+		fmt.Printf("Event 0: Type=%v, Score=%.2f, DeltaV=%.3f km/s\n",
 			events[0].Type, events[0].Score, events[0].DeltaV)
 	} else {
 		fmt.Println("❌ No maneuvers detected.")

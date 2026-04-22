@@ -51,7 +51,7 @@ type Observation struct {
 /**
  * PhysicsParams represents the environmental and structural parameters of an object.
  *
- * ADITI 4.0: BallisticCoeff enables per-object drag differentiation based on
+ * BallisticCoeff enables per-object drag differentiation based on
  * historical TLE analysis and physical object properties.
  */
 type PhysicsParams struct {

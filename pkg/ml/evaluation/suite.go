@@ -103,7 +103,7 @@ func BinaryMetrics(truth, pred []bool) (ClassificationMetrics, error) {
 
 /**
  * EvaluateManeuverAccuracy computes maneuver detection metrics using the orchestrator.
- * Refactored to utilize the physics substrate schemas (ADITI 4.0).
+ * Refactored to utilize the physics substrate schemas.
  */
 func EvaluateManeuverAccuracy(o *hybrid.Orchestrator, cases []ManeuverCase) (ClassificationMetrics, error) {
 	fmt.Printf("[TRC] Entering EvaluateManeuverAccuracy for %d cases\n", len(cases))

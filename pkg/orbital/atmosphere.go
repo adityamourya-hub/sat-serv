@@ -2,9 +2,9 @@ package orbital
 
 import (
 	"math"
+	"ssis/pkg/physics"
 	"sync"
 	"time"
-	"ssis/pkg/physics"
 )
 
 // NRLMSISE00 implements the Neutral Atmosphere Empirical Model (2001).
@@ -1503,7 +1503,7 @@ func (m *NRLMSISE00) densm(alt, d0, xm float64, tz *float64, mn3 int, zn3, tn3, 
 // Optimized for zero-allocation scaling via Pooled-State Architecture.
 func (m *NRLMSISE00) GTD7(input *Input, flags *Flags) Output {
 	var out Output
-	
+
 	// 0. Acquire state from pool to eliminate heap pressure
 	s := statePool.Get().(*state)
 	*s = state{} // Fast zero-reset
@@ -1659,17 +1659,17 @@ func JDToMSIS(jd float64) (doy int, sec float64) {
 func ECIToGeodetic(x, y, z, jd float64) (lat, long, alt float64) {
 	// 1. Rotate ECI to ECEF
 	xf, yf, zf := physics.ECIToECEF(x, y, z, jd)
-	
+
 	// 2. Convert ECEF to Geodetic (WGS-84)
 	phi, lambda, h := physics.ECEFToGeodeticWGS84(xf, yf, zf)
-	
+
 	return phi * (180.0 / math.Pi), lambda * (180.0 / math.Pi), h
 }
 
 /**
  * GetDensityUnified is the high-fidelity entry point for atmospheric density.
- * Consolidates NRLMSISE-00 with coordinate-aware transformations and 
- * robust space weather defaults for iDEX ADITI 4.0.
+ * Consolidates NRLMSISE-00 with coordinate-aware transformations and
+ * robust space weather defaults for sovereign operations.
  */
 func GetDensityUnified(x, y, z, jd float64) float64 {
 	// 1. Convert ECI to Geodetic (Lat, Lon, Alt)

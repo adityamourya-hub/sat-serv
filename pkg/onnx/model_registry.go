@@ -11,6 +11,28 @@ import (
 	"sync"
 )
 
+// ONNXSession is a placeholder for the actual ONNX runtime session.
+// The actual implementation uses pkg/ml/onnx.NativeInferrer with onnxruntime-go.
+// This stub exists for API compatibility during the transition.
+type ONNXSession struct {
+	modelPath string
+	device    string
+}
+
+// NewONNXSession creates a new ONNX session (placeholder).
+// In production, this would initialize the actual onnxruntime-go session.
+func NewONNXSession(modelPath, device string) (*ONNXSession, error) {
+	return &ONNXSession{
+		modelPath: modelPath,
+		device:    device,
+	}, nil
+}
+
+// Close releases the ONNX session resources (placeholder).
+func (s *ONNXSession) Close() error {
+	return nil
+}
+
 // ModelType represents the type of ML model
 type ModelType string
 
@@ -22,14 +44,14 @@ const (
 
 // ModelMetadata contains model configuration and validation data
 type ModelMetadata struct {
-	Name         string   // Human-readable name
-	Path         string   // Path to .onnx file
-	HessianHash  string   // SHA-256 hash of model's Hessian matrix (hex string)
-	InputShape   []int64  // Input tensor shape
-	OutputShape  []int64  // Output tensor shape
-	ModelType    ModelType
-	Device       string   // CPU|GPU|ANE (Apple Neural Engine)
-	Enabled      bool     // Whether model is active
+	Name        string  // Human-readable name
+	Path        string  // Path to .onnx file
+	HessianHash string  // SHA-256 hash of model's Hessian matrix (hex string)
+	InputShape  []int64 // Input tensor shape
+	OutputShape []int64 // Output tensor shape
+	ModelType   ModelType
+	Device      string // CPU|GPU|ANE (Apple Neural Engine)
+	Enabled     bool   // Whether model is active
 }
 
 // ModelRegistry manages all registered ONNX models

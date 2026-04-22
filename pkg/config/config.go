@@ -1,4 +1,4 @@
-// pkg/config/config.go - Viper Configuration System for ADITI 4.0
+// pkg/config/config.go - Viper Configuration System
 //
 // Air-Gap Config Mandate:
 // In an air-gapped tactical environment (like a Hanle node), operators should not
@@ -35,7 +35,7 @@ type SensorConfig struct {
 	FieldOfView float64 `mapstructure:"field_of_view"` // Field of view [rad]
 }
 
-// Config represents the complete ADITI 4.0 configuration
+// Config represents the complete application configuration
 // Viper unmarshals YAML/JSON directly into this struct
 type Config struct {
 	// Database configuration for sovereign catalog

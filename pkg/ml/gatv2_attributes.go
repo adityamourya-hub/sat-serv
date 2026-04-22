@@ -14,7 +14,7 @@ import (
 // GATv2NodeAttributes extends scenario nodes with AMOS-derived features
 // These attributes feed into GATv2 attention mechanism for threat prediction
 //
-// ADITI 4.0: Enhanced with fractional drag, spectral residuals, and MGE threat score
+// Enhanced with fractional drag, spectral residuals, and MGE threat score
 // for HGV corridor plasma wake modeling (30-80km transitional flow)
 type GATv2NodeAttributes struct {
 	// Standard scenario features
@@ -39,13 +39,13 @@ type GATv2NodeAttributes struct {
 	UDEBiasCorrection   float64   // Atmosphere bias from UDE
 	TurbulenceIndex     float64   // Non-local turbulence severity
 
-	// ADITI 4.0: Fractional drag and wake memory (HGV corridor 30-80km)
+	// Fractional drag and wake memory (HGV corridor 30-80km)
 	FractionalDragResidual float64 // Caputo D_t^β fractional drag residual
 	FractionalAlpha        float64 // Fractional Laplacian exponent α ∈ [1,2]
 	WakeMemoryLength       int     // Length of wake memory buffer
 	IonosphericTEC         float64 // Total electron content (16-dim SH embedding)
 
-	// ADITI 0.0: Enhanced MGE threat score (18 templates, CRITICAL detection)
+	// Enhanced MGE threat score (18 templates, CRITICAL detection)
 	MGETemplateScore    float64 // MGE template match score (0-1)
 	MGEThreatLevel      string  // MGE-derived threat level
 	MGEArchitectureType string  // Bus architecture (e.g., "HIGH_POWER_EW_SAR")
@@ -60,7 +60,7 @@ type GATv2NodeAttributes struct {
 
 // NewGATv2NodeAttributes creates node attributes from catalog template
 //
-// ADITI 0.0: Enhanced with fractional drag and MGE threat score for HGV corridor
+// Enhanced with fractional drag and MGE threat score for HGV corridor
 func NewGATv2NodeAttributes(template *catalog.MGETemplateExtended, position, velocity [3]float64) *GATv2NodeAttributes {
 	attrs := &GATv2NodeAttributes{
 		Position:  position,
@@ -74,7 +74,7 @@ func NewGATv2NodeAttributes(template *catalog.MGETemplateExtended, position, vel
 		PhotometricScore:  template.PhotometricMatchScore,
 		PhotometricPeriod: template.PhotometricFeatures.Period,
 
-		// ADITI 0.0: Enhanced MGE threat score (18 templates)
+		// Enhanced MGE threat score (18 templates)
 		MGETemplateScore:    template.ConfidenceComposite,
 		MGEThreatLevel:      template.ThreatLevel,
 		MGEArchitectureType: "UNKNOWN", // From MGE library, not catalog
@@ -109,7 +109,7 @@ func NewGATv2NodeAttributes(template *catalog.MGETemplateExtended, position, vel
 // computeSpectralResiduals extracts deviation from expected spectral template
 // Used by GATv2 attention to identify anomalous objects
 //
-// ADITI 0.0: Returns 32-dim residuals for ConvNeXt integration
+// Returns 32-dim residuals for ConvNeXt integration
 func computeSpectralResiduals(sig catalog.SpectralSignature) []float64 {
 	if len(sig.Intensities) == 0 {
 		return nil
@@ -142,7 +142,7 @@ func computeSpectralResiduals(sig catalog.SpectralSignature) []float64 {
 	return residuals
 }
 
-// UpdateFractionalDrag updates ADITI 0.0 fractional drag features from speckle preprocessor
+// UpdateFractionalDrag updates fractional drag features from speckle preprocessor
 //
 // Integrates with AMOS Georgia State speckle correction and UDE density bias
 func (attrs *GATv2NodeAttributes) UpdateFractionalDrag(
@@ -163,7 +163,7 @@ func (attrs *GATv2NodeAttributes) UpdateFractionalDrag(
 
 // UpdateMGEFromLibrary updates MGE features from MGE template library result
 //
-// ADITI 0.0: Integrates with ai/analytics/mge_models.py for 18-template matching
+// Integrates with ai/analytics/mge_models.py for 18-template matching
 func (attrs *GATv2NodeAttributes) UpdateMGEFromLibrary(
 	mgeScore float64,
 	threatLevel string,

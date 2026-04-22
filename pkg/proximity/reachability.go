@@ -274,7 +274,7 @@ func computeSTMReachability(ref physics.State, deltaV, t float64) (*Reachability
 	n := math.Sqrt(physics.EARTH_MU_IAU / (r * r * r))
 
 	// J2 Correction for mean motion and drift
-	j2Eff := 1.5 * physics.J2_ADITI * math.Pow(physics.EARTH_R_EQUATORIAL/r, 2)
+	j2Eff := 1.5 * physics.J2 * math.Pow(physics.EARTH_R_EQUATORIAL/r, 2)
 	lat := math.Asin(ref.Pos[2] / r)
 	n_bar := n * (1 + j2Eff*(1-1.5*math.Pow(math.Sin(lat), 2)))
 

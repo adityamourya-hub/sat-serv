@@ -10,7 +10,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Verification Test Suite
+ * Verification Test Suite
  *
  * These tests validate the physics fixes against:
  * - NASA CARA CDM benchmarks (where available)

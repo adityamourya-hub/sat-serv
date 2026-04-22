@@ -1,6 +1,6 @@
 # 3D Matched Filtering for Satellite Streak Detection
 
-**Module:** Rapid Processing (i) - IAF ADITI 4.0  
+**Module:** Rapid Processing (i) - IAF   
 **Technology:** MPDAF (MUSE Python Data Analysis Framework)  
 **Purpose:** Detect faint satellite streaks below single-frame noise floor using 3D convolution
 

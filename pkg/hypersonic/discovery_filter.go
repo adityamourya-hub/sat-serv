@@ -1,4 +1,4 @@
-// pkg/hypersonic/discovery_filter.go - ADITI 4.0 Zero-Day Discovery Filter
+// pkg/hypersonic/discovery_filter.go - Zero-Day Discovery Filter
 //
 // Implements the "Discovery Mode" for handling unknown HGV maneuvers.
 // Replaces hardcoded IMM transitions with SINDy-based latent force discovery.
@@ -523,7 +523,7 @@ func computeResidual(state HGVState, obs HGVState) float64 {
 }
 
 // =============================================================================
-// ADITI 4.0 ADVANCED FEATURES
+// ADVANCED FEATURES
 // =============================================================================
 
 // ModeSymmetryConstraint enforces SO(3) symmetry in transition predictions

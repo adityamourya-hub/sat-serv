@@ -282,7 +282,7 @@ func (n *NeuralDensityOperator) ReceiveDeltaFromJAX(delta NeuralDelta) {
 
 // analyticDensityCorrection provides physics-based correction when neural net unavailable
 //
-// ADITI 4.0: Fixed empirical atmospheric corrections with altitude-dependent scaling
+// Fixed empirical atmospheric corrections with altitude-dependent scaling
 // based on NRLMSISE-00 empirical model structure.
 //
 // Corrections:
@@ -305,7 +305,7 @@ func analyticDensityCorrection(altKm, f107, ap float64) float64 {
 	// More significant at high altitude and high latitudes
 	apCorrection := 1.0 + (ap-15.0)*0.002*math.Exp(-altKm/200.0)
 
-	// ADITI 4.0: Altitude-dependent scaling with piecewise regimes
+	// Altitude-dependent scaling with piecewise regimes
 	// Based on NRLMSISE-00 atmospheric structure
 	var altitudeScaling float64
 
@@ -347,7 +347,7 @@ var neuralOperator = NewNeuralDensityOperator()
 var spaceWeatherCache = NewSpaceWeatherCache()
 
 // AtmosphereEngine provides neural atmosphere inference with ONNX FNO integration
-// ADITI 4.0: Completes ONNX integration for neural atmosphere density prediction
+// Completes ONNX integration for neural atmosphere density prediction
 type AtmosphereEngine struct {
 	Initialized bool
 	ModelPath   string
@@ -364,7 +364,7 @@ func NewAtmosphereEngine(modelPath string) *AtmosphereEngine {
 }
 
 // Initialize loads the neural atmosphere FNO model
-// ADITI 4.0: Attempts ONNX model loading, falls back to analytic mode if unavailable
+// Attempts ONNX model loading, falls back to analytic mode if unavailable
 func (a *AtmosphereEngine) Initialize() error {
 	// Check if ONNX model file exists
 	if a.ModelPath == "" {
@@ -379,7 +379,7 @@ func (a *AtmosphereEngine) Initialize() error {
 		return nil
 	}
 
-	// ADITI 4.0: ONNX integration would load model here
+	// ONNX integration would load model here
 	// For now, mark as initialized with fallback mode
 	// Full implementation requires build tag: //go:build onnx
 	// and import: ort "github.com/yalue/onnxruntime_go"
@@ -400,7 +400,7 @@ func (a *AtmosphereEngine) Initialize() error {
 
 // GetDensityUnified provides high-fidelity density with sigmoidal blend
 //
-// ADITI 4.0: Physics-Informed Sigma-Gate for Atmospheric Guard
+// Physics-Informed Sigma-Gate for Atmospheric Guard
 // Instead of binary fallback, use sigmoidal blend to avoid gradient cliff:
 //
 //	ρ_effective = (1-α)ρ_fno + αρ_JR
@@ -432,7 +432,7 @@ func (a *AtmosphereEngine) GetDensityUnified(h, f107, ap, lat, lon float64, doy 
 }
 
 // predictFNO provides neural FNO prediction with ONNX inference
-// ADITI 4.0: Uses ONNX model when available, falls back to analytic correction
+// Uses ONNX model when available, falls back to analytic correction
 func (a *AtmosphereEngine) predictFNO(h, f107, ap, _lat, _lon float64, _doy int) float64 {
 	// If ONNX session is loaded, run inference
 	// For now, use analytic neural correction as fallback
@@ -440,7 +440,7 @@ func (a *AtmosphereEngine) predictFNO(h, f107, ap, _lat, _lon float64, _doy int)
 	neuralCorrection := analyticDensityCorrection(h, f107, ap)
 	rhoFNO := rhoJR * neuralCorrection
 
-	// ADITI 4.0: Hydrostatic equilibrium projection (bonus)
+	// Hydrostatic equilibrium projection
 	// Enforce dp/dh = -ρg constraint to prevent density drift
 	// If FNO prediction violates hydrostatic balance, project back
 	// Note: lat/lon not used in current implementation, placeholder for geographic variation
@@ -450,7 +450,7 @@ func (a *AtmosphereEngine) predictFNO(h, f107, ap, _lat, _lon float64, _doy int)
 }
 
 // projectHydrostatic enforces hydrostatic equilibrium dp/dh = -ρg
-// ADITI 4.0: Projects density predictions onto hydrostatic manifold
+// Projects density predictions onto hydrostatic manifold
 // This prevents the FNO from hallucinating unphysical density profiles
 func (a *AtmosphereEngine) projectHydrostatic(rho, h, _lat, _lon float64) float64 {
 	// Hydrostatic equilibrium: dp/dh = -ρg

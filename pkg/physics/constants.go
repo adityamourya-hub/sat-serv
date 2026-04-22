@@ -13,8 +13,8 @@ const (
 	SUN_MU_IAU   = 1.32712440018e11 // Sun's gravitational parameter (km^3/s^2)
 
 	// Earth Dimensions
-	EARTH_R_EQUATORIAL = 6378.137    // Semi-major axis (km) - WGS84
-	EARTH_R_POLAR      = 6356.7523142 // Semi-minor axis (km) - WGS84
+	EARTH_R_EQUATORIAL = 6378.137            // Semi-major axis (km) - WGS84
+	EARTH_R_POLAR      = 6356.7523142        // Semi-minor axis (km) - WGS84
 	EARTH_F            = 1.0 / 298.257223563 // Flattening factor
 
 	// Earth Rotation
@@ -24,10 +24,10 @@ const (
 	SEC_PER_DAY = 86400.0
 	JD_OFFSET   = 2440587.5 // Offset from Unix Epoch (1970-01-01) to JD
 
-	// Orbital Harmonics (Aditi Mission Standards)
-	J2_ADITI = 1.082626173852220e-3
-	J3_ADITI = -2.532656485332240e-6
-	J4_ADITI = -1.619621591367000e-6
+	// Orbital Harmonics (WGS-84 / IAU Standards)
+	J2 = 1.082626173852220e-3
+	J3 = -2.532656485332240e-6
+	J4 = -1.619621591367000e-6
 
 	// Environmental Constants
 	SOLAR_PRESSURE = 4.56e-6 // N/m^2 at 1 AU

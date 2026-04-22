@@ -4,8 +4,8 @@ import (
 	"testing"
 )
 
-func TestManifoldProjector_GradeA(t *testing.T) {
-	// Test 1: Perfect conservation (Grade A)
+func TestManifoldProjector_PerfectConservation(t *testing.T) {
+	// Test 1: Perfect conservation (no constraint violations)
 	hNet := &KeplerianHamiltonian{Mu: 398600.4418}
 	projector := NewManifoldProjector(hNet)
 
@@ -16,8 +16,8 @@ func TestManifoldProjector_GradeA(t *testing.T) {
 	result := projector.ProjectToManifold(q, p, targetE)
 	t.Logf("Result: %s", result.String())
 
-	if result.Grade != GradeA {
-		t.Errorf("Expected Grade A, got %s", result.Grade)
+	if !AllPassed(result.ConstraintViolations) {
+		t.Errorf("Expected all constraints passed, got %v", result.ConstraintViolations)
 	}
 
 	if result.FinalDrift >= 1e-12 {
@@ -25,12 +25,12 @@ func TestManifoldProjector_GradeA(t *testing.T) {
 	}
 
 	if !result.Success {
-		t.Error("Expected Success=true for Grade A")
+		t.Error("Expected Success=true for perfect conservation")
 	}
 }
 
-func TestManifoldProjector_GradeB(t *testing.T) {
-	// Test 2: Minor perturbation (Grade B)
+func TestManifoldProjector_MinorPerturbation(t *testing.T) {
+	// Test 2: Minor perturbation correction
 	hNet := &KeplerianHamiltonian{Mu: 398600.4418}
 	projector := NewManifoldProjector(hNet)
 
@@ -44,11 +44,11 @@ func TestManifoldProjector_GradeB(t *testing.T) {
 	result := projector.ProjectToManifold(q, pPert, targetE)
 	t.Logf("Initial drift: %.2e", result.InitialDrift)
 	t.Logf("Final drift: %.2e", result.FinalDrift)
-	t.Logf("Grade: %s", result.Grade)
+	t.Logf("Violations: %v", result.ConstraintViolations)
 
-	// Should achieve at least Grade B
-	if result.Grade != GradeB && result.Grade != GradeA {
-		t.Errorf("Expected Grade B or A, got %s", result.Grade)
+	// Should achieve acceptable constraints
+	if !result.Success {
+		t.Errorf("Expected projection success, got violations: %v", result.ConstraintViolations)
 	}
 
 	// Final drift should be very small
@@ -57,8 +57,8 @@ func TestManifoldProjector_GradeB(t *testing.T) {
 	}
 }
 
-func TestManifoldProjector_GradeC(t *testing.T) {
-	// Test 3: Large perturbation (Grade C)
+func TestManifoldProjector_LargePerturbation(t *testing.T) {
+	// Test 3: Large perturbation
 	hNet := &KeplerianHamiltonian{Mu: 398600.4418}
 	projector := NewManifoldProjector(hNet)
 
@@ -73,11 +73,11 @@ func TestManifoldProjector_GradeC(t *testing.T) {
 	t.Logf("Initial drift: %.2e", result.InitialDrift)
 	t.Logf("Final drift: %.2e", result.FinalDrift)
 	t.Logf("Correction: %.2f km/s", result.Correction)
-	t.Logf("Grade: %s", result.Grade)
+	t.Logf("Violations: %v", result.ConstraintViolations)
 
-	// Should handle the correction (not Grade F)
-	if result.Grade == GradeF {
-		t.Errorf("Projection failed with Grade F for large but valid perturbation")
+	// Should handle the correction (not a total failure / sovereignty breach)
+	if !result.Success {
+		t.Errorf("Projection failed for large but valid perturbation")
 	}
 
 	// Final drift should be acceptable
@@ -100,23 +100,27 @@ func TestConflictResolver_Escalation(t *testing.T) {
 	// to trigger Grade C. The projection corrects most drift to Grade A.
 	// Use a non-projectable state (energy way off)
 
-	// Simulate 3 consecutive Grade C events by manipulating the counter directly
+	// Simulate 3 consecutive significant drift events by manipulating the counter directly
 	for i := 0; i < 3; i++ {
 		projector.ConsecutiveGradeC++
 	}
 
-	t.Logf("Simulated %d consecutive Grade C events", projector.ConsecutiveGradeC)
+	t.Logf("Simulated %d consecutive drift events", projector.ConsecutiveGradeC)
 
-	// Create a Grade C result manually to test escalation
+	// Create a result with failed energy_drift constraint to test escalation
 	result := &ProjectionResult{
-		QC:           q,
-		PC:           p,
-		Grade:        GradeC,
+		QC: q,
+		PC: p,
+		ConstraintViolations: []ConstraintViolation{
+			{Constraint: "energy_drift", Value: 1e-3, Threshold: 1e-6, Unit: "relative", Passed: false},
+			{Constraint: "projection_converged", Value: 2, Threshold: 4, Unit: "iterations", Passed: true},
+			{Constraint: "extreme_drift", Value: 1e-3, Threshold: 1e-2, Unit: "relative", Passed: true},
+		},
 		InitialDrift: 1e-3,
 		FinalDrift:   1e-5,
 		Iterations:   5,
 		Correction:   1.0,
-		Success:      true,
+		Success:      false,
 	}
 
 	lastAction := resolver.Resolve(result)
@@ -124,7 +128,7 @@ func TestConflictResolver_Escalation(t *testing.T) {
 
 	// Should escalate to Manual Review
 	if lastAction != ActionManualReview {
-		t.Errorf("Expected ActionManualReview after 3 Grade C events, got %s", lastAction.String())
+		t.Errorf("Expected ActionManualReview after 3 drift events, got %s", lastAction.String())
 	}
 }
 
@@ -134,11 +138,15 @@ func TestConflictResolver_SovereigntyBreach(t *testing.T) {
 	projector := NewManifoldProjector(hNet)
 	resolver := NewConflictResolver(projector)
 
-	// Manually create a Grade F result to test breach handling
+	// Manually create a sovereignty-breach result (extreme drift) to test breach handling
 	result := &ProjectionResult{
-		QC:           Vector3{6778.137, 0, 0},
-		PC:           Vector3{0, 7.6686, 0},
-		Grade:        GradeF,
+		QC: Vector3{6778.137, 0, 0},
+		PC: Vector3{0, 7.6686, 0},
+		ConstraintViolations: []ConstraintViolation{
+			{Constraint: "energy_drift", Value: 1e-1, Threshold: 1e-6, Unit: "relative", Passed: false},
+			{Constraint: "projection_converged", Value: 5, Threshold: 4, Unit: "iterations", Passed: false},
+			{Constraint: "extreme_drift", Value: 1e-1, Threshold: 1e-2, Unit: "relative", Passed: false},
+		},
 		InitialDrift: 1.0,
 		FinalDrift:   1e-1, // Beyond 1e-2 threshold
 		Iterations:   5,
@@ -148,16 +156,16 @@ func TestConflictResolver_SovereigntyBreach(t *testing.T) {
 
 	action := resolver.Resolve(result)
 
-	t.Logf("Simulated Grade F case: Grade=%s, Action=%s", result.Grade, action.String())
+	t.Logf("Simulated breach case: Violations=%v, Action=%s", result.ConstraintViolations, action.String())
 
 	// Verify breach count incremented
 	if resolver.BreachCount < 1 {
-		t.Error("Expected BreachCount to increment for Grade F")
+		t.Error("Expected BreachCount to increment for sovereignty breach")
 	}
 
 	// Verify sovereignty breach action
 	if action != ActionSovereigntyBreach {
-		t.Errorf("Expected ActionSovereigntyBreach for Grade F, got %s", action.String())
+		t.Errorf("Expected ActionSovereigntyBreach for breach, got %s", action.String())
 	}
 }
 
@@ -177,11 +185,11 @@ func TestProjectionHook_Integration(t *testing.T) {
 	result, action := hook.ProcessStep(q1, p1)
 
 	t.Logf("Integration test: %s", result.String())
-	t.Logf("Action: %s", action.String())
+	t.Logf("Simulated breach case: Violations=%v, Action=%s", result.ConstraintViolations, action.String())
 
 	// Should handle gracefully
-	if !result.Success && result.Grade == GradeF {
-		t.Logf("Note: Grade F detected - this may indicate the perturbation was too large")
+	if !result.Success {
+		t.Logf("Note: Projection failure detected - this may indicate the perturbation was too large")
 	}
 }
 

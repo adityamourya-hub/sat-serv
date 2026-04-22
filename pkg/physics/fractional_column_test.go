@@ -1,5 +1,5 @@
 // pkg/physics/fractional_column_test.go
-// ADITI 4.0: Fractional Column Test for HGV Wake Simulation
+// Fractional Column Test for HGV Wake Simulation
 //
 // Verifies the Fractional Laplacian (Δ^α) kernel correctly compensates
 // for non-local drag in HGV transitional flow regime (Kn ∈ [0.01, 1.0]).

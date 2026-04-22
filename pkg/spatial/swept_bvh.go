@@ -3,7 +3,7 @@ package spatial
 /**
  * Swept-Volume BVH: Temporal Coherence for Space Objects
  *
- * ADITI 4.0: Geometric Mechanics Optimization #2
+ * Geometric Mechanics Optimization #2
  *
  * Problem: Rebuilding BVH every 60 seconds for 100k deterministic orbits
  * Solution: Swept-Volume AABBs that encompass entire trajectory arc
@@ -17,8 +17,7 @@ package spatial
  *   - Linear leaf update instead of full tree rebuild
  *   - 10× reduction in BVH construction time
  *
- * References:
- *   - Hoots (1981): Analytical satellite theory
+ * Reference: Volumetric Surveillance of Critical Geographies
  *   - Larsson & Akenine-Möller (2005): Collision detection with swept volumes
  */
 
@@ -28,7 +27,6 @@ import (
 )
 
 // ManeuverDetector interface for detecting non-ballistic deviations
-// Implemented by pkg/maneuver.HybridManeuverDetector
 type ManeuverDetector interface {
 	// DetectManeuver returns true if object has deviated from ballistic trajectory
 	DetectManeuver(objectID int, state physics.State) bool

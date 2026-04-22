@@ -5,7 +5,7 @@ package metal
 /**
  * Go-Metal Bridge for Visibility Computation
  *
- * ADITI 4.0: 100k × M sensor visibility checks in milliseconds
+ * 100k × M sensor visibility checks in milliseconds
  *
  * Architecture:
  * - Metal kernel: visibility.metal (ray-tracing, Earth occlusion, FOV)

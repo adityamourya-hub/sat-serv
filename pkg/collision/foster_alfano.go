@@ -5,7 +5,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Foster/Alfano Probability of Collision (Pc) Calculation
+ * Foster/Alfano Probability of Collision (Pc) Calculation
  *
  * Implements exact 2D Gaussian integral over collision disk in conjunction plane.
  * This is the ground truth for training the fast surrogate.

@@ -7,7 +7,7 @@ package sensors
  * below the sovereign handshake threshold (10^-7).
  *
  * References:
- *   - Sovereign Handshake Protocol (ADITI 4.0)
+ *   - Sovereign Handshake Protocol
  *   - Physics as Hard Constraint (Augmented Lagrangian optimization)
  */
 
@@ -20,7 +20,7 @@ import (
 // TestPHSAwareDenoisingHamiltonianDrift verifies that PHS-aware denoising
 // maintains energy conservation within sovereign handshake threshold
 func TestPHSAwareDenoisingHamiltonianDrift(t *testing.T) {
-t.Skip("Hamiltonian drift exceeds threshold - needs review")
+	t.Skip("Hamiltonian drift exceeds threshold - needs review")
 	config := DefaultDSPConfig()
 	config.EnablePHSAwareDenoising = true
 	config.HamiltonianThreshold = 1e-7
@@ -92,7 +92,7 @@ func TestFractionalFilterMemoryEffect(t *testing.T) {
 // TestDSPPipelineLatency verifies that DSP pipeline maintains <100ms latency
 // for real-time Go-reflex performance
 func TestDSPPipelineLatency(t *testing.T) {
-t.Skip("DSP pipeline latency exceeds target - needs review")
+	t.Skip("DSP pipeline latency exceeds target - needs review")
 	config := DefaultDSPConfig()
 	dsp := NewDSPPreprocessor(config)
 

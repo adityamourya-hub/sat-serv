@@ -1,4 +1,4 @@
-// pkg/physics/conformal.go - ADITI 4.0 Conformal Prediction Wrapper
+// pkg/physics/conformal.go - Conformal Prediction Wrapper
 //
 // Distribution-free uncertainty quantification for the HF-PGFM.
 // Provides mathematical guarantees that predictions will contain the true
@@ -25,7 +25,7 @@
 // References:
 //   - Vovk et al. "Algorithmic Learning in a Random World" (2005)
 //   - Angelopoulos & Bates "A Gentle Introduction to Conformal Prediction" (2021)
-//   - May 4th Audit: iDEX ADITI 4.0 Sovereign Brain
+//   - May 4th Audit: iDEX Sovereign Brain
 
 package physics
 

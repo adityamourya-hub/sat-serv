@@ -1,5 +1,5 @@
 // pkg/physics/fractional_laplacian.go
-// ADITI 4.0: Fractional Laplacian for HGV Wake Memory
+// Fractional Laplacian for HGV Wake Memory
 //
 // Implements Caputo derivative (α=0.75) for non-local drag prediction
 // in HGV transitional flow regime (Kn≈0.01–1.0, altitude 30-80km).
@@ -29,12 +29,12 @@ type FractionalLaplacian struct {
 
 	// History buffer for wake computation
 	history []float64 // Past wake values
-	times  []float64 // Timestamps
-	maxLen int       // Maximum history length
+	times   []float64 // Timestamps
+	maxLen  int       // Maximum history length
 
 	// Performance optimization
 	lookupTable []float64 // Precomputed (t-τ)^{-α} values
-	dt           float64   // Time step for lookup table
+	dt          float64   // Time step for lookup table
 
 	mu sync.RWMutex
 }
@@ -49,7 +49,7 @@ func NewFractionalLaplacian() *FractionalLaplacian {
 		Alpha:        0.75,
 		MemoryWindow: memoryWindow,
 		history:      make([]float64, 0, maxLen),
-		times:       make([]float64, 0, maxLen),
+		times:        make([]float64, 0, maxLen),
 		maxLen:       maxLen,
 		lookupTable:  make([]float64, maxLen),
 		dt:           dt,

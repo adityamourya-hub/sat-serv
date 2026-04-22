@@ -1,4 +1,4 @@
-// cmd/aditi/ingest.go - Live Data Ingestion for ADITI 4.0
+// cmd/aditi/ingest.go - Live Data Ingestion for sovereign stack
 //
 // Aggressive Data Fusion: Ingests 100Hz live feed from Hanle telescope or NETRA radar.
 // Routes raw FlatBuffers directly into Reflex Kernel, bypassing SQLite for sub-millisecond processing.
@@ -14,7 +14,7 @@ import (
 var ingestCmd = &cobra.Command{
 	Use:   "ingest",
 	Short: "Live data ingestion from telescope and radar feeds",
-	Long: `Live Data Ingestion for ADITI 4.0 Truth Stream.
+	Long: `Live Data Ingestion for Truth Stream.
 
 Aggressive Data Fusion:
   - Binds to ZMQ sockets for real-time telemetry

@@ -38,16 +38,22 @@ type SINDy struct {
 	// STLSQ parameters
 	SparsityThreshold float64
 	MaxIterations     int
+	RidgeLambda       float64 // Ridge regularization for rank-deficient libraries
+
+	// Bootstrap CI parameters
+	BootstrapResamples int // Number of bootstrap resamples for CI (default 1000)
 }
 
 // NewSINDy creates a SINDy discoverer with default parameters
 func NewSINDy() *SINDy {
 	return &SINDy{
-		PolynomialDegree:  3,
-		UseTrigonometric:  true,
-		UseExponential:    false,
-		SparsityThreshold: 0.1,
-		MaxIterations:     10,
+		PolynomialDegree:   3,
+		UseTrigonometric:   true,
+		UseExponential:     false,
+		SparsityThreshold:  0.1,
+		MaxIterations:      10,
+		RidgeLambda:        1e-2,
+		BootstrapResamples: 1000,
 	}
 }
 
@@ -71,13 +77,13 @@ type ManeuverResult struct {
 	TargetType   string  // "residual" (new) vs "derivative" (legacy)
 
 	// Symbolic Certificate (VSC) - Extended for Sovereign Handshake
-	PhysicsGrade      PhysicsGrade       // A-F based on constraint satisfaction
-	CausalProvenance  map[string]float64 // Term importance scores
-	Predictions       []Prediction       // Falsifiable 60s predictions
-	HamiltonianHash   string             // Hamiltonian Invariant Hash
-	CertificateValid  bool               // Certificate validity
-	CertificateIssued time.Time          // When certificate was issued
-	EnergyDriftSigma  float64            // σ_H for spoof detection
+	ConstraintViolations []ConstraintViolation // Physics constraint pass/fail (replaces A-F grade)
+	CausalProvenance     map[string]float64    // Term importance scores
+	Predictions          []Prediction          // Falsifiable 60s predictions
+	HamiltonianHash      string                // Hamiltonian Invariant Hash
+	CertificateValid     bool                  // Certificate validity
+	CertificateIssued    time.Time             // When certificate was issued
+	EnergyDriftSigma     float64               // σ_H for spoof detection
 }
 
 // DiscoverManeuver identifies thrust signatures from orbital residuals
@@ -99,11 +105,25 @@ func (s *SINDy) DiscoverManeuver(states [][6]float64, dt float64) (*ManeuverResu
 	// instead of full derivatives ẋ
 	residuals := s.computeResiduals(states, dt)
 
+	// Align row counts: buildLibrary returns N rows, computeResiduals returns N-2
+	// (central difference loses first and last samples). Trim theta to match.
+	tRows, tCols := theta.Dims()
+	rRows, _ := residuals.Dims()
+	if tRows != rRows {
+		trimmedData := make([]float64, rRows*tCols)
+		for i := 0; i < rRows; i++ {
+			for j := 0; j < tCols; j++ {
+				trimmedData[i*tCols+j] = theta.At(i+1, j)
+			}
+		}
+		theta = mat.NewDense(rRows, tCols, trimmedData)
+	}
+
 	// 3. Sparse Regression (STLSQ) targeting residuals
 	coefficients := s.stlsq(theta, residuals, s.SparsityThreshold)
 
 	// 4. Bootstrap Confidence Intervals
-	ciLower, ciUpper := s.bootstrapCI(coefficients, states, theta, residuals, 100)
+	ciLower, ciUpper := s.bootstrapCI(coefficients, states, theta, residuals, s.BootstrapResamples)
 
 	// 5. Interpret results
 	result := s.interpretCoefficients(coefficients, states, theta, residuals)
@@ -113,6 +133,9 @@ func (s *SINDy) DiscoverManeuver(states [][6]float64, dt float64) (*ManeuverResu
 	result.CIUpper = ciUpper
 	result.CICoverage = s.computeCICoverage(coefficients, ciLower, ciUpper)
 	result.TargetType = "residual"
+
+	// 7. Compute energy drift for sovereign handshake certificate
+	result.ComputeEnergyDrift(states)
 
 	return result, nil
 }
@@ -196,18 +219,17 @@ func (s *SINDy) buildLibrary(states [][6]float64) *mat.Dense {
 	return mat.NewDense(nSamples, nTerms, data)
 }
 
-// computeDerivatives calculates numerical derivatives (accelerations)
+// computeDerivatives calculates numerical first derivatives using central differences
 func (s *SINDy) computeDerivatives(states [][6]float64, dt float64) *mat.Dense {
 	nSamples := len(states)
 
-	// Compute derivatives using central differences
-	// For acceleration: d²x/dt² from position
+	// Compute first derivatives using central differences: (x_{i+1} - x_{i-1}) / (2*dt)
+	// This gives dx/dt for all state components (position -> velocity, velocity -> acceleration)
 	data := make([]float64, (nSamples-2)*6)
 
 	for i := 1; i < nSamples-1; i++ {
-		// Central difference: (x_{i+1} - 2*x_i + x_{i-1}) / dt²
 		for dim := 0; dim < 6; dim++ {
-			data[(i-1)*6+dim] = (states[i+1][dim] - 2*states[i][dim] + states[i-1][dim]) / (dt * dt)
+			data[(i-1)*6+dim] = (states[i+1][dim] - states[i-1][dim]) / (2.0 * dt)
 		}
 	}
 
@@ -413,11 +435,34 @@ func (s *SINDy) stlsq(theta, xDot *mat.Dense, threshold float64) []float64 {
 			}
 		}
 
-		// Least squares on reduced set
+		// Least squares on reduced set: fast path via Solve, fallback to SVD pseudo-inverse
+		// for rank-deficient libraries (e.g., vMag*vx ≈ const*vx for circular orbits)
 		var reducedCoeffs mat.Dense
 		err := reducedCoeffs.Solve(reducedTheta, xDot)
 		if err != nil {
-			break
+			// Rank-deficient: use SVD pseudo-inverse
+			var svd mat.SVD
+			if !svd.Factorize(reducedTheta, mat.SVDFull) {
+				break
+			}
+			var u mat.Dense
+			svd.UTo(&u)
+			sigma := svd.Values(nil)
+			var v mat.Dense
+			svd.VTo(&v)
+
+			mCols := len(bigIndices)
+			vSigmaInv := mat.NewDense(mCols, nSamples, nil)
+			for i := 0; i < mCols; i++ {
+				for j := 0; j < mCols && j < len(sigma); j++ {
+					if sigma[j] > 1e-10 {
+						vSigmaInv.Set(i, j, v.At(i, j)/sigma[j])
+					}
+				}
+			}
+			var pseudo mat.Dense
+			pseudo.Mul(vSigmaInv, u.T())
+			reducedCoeffs.Mul(&pseudo, xDot)
 		}
 
 		// Update full coefficient vector
@@ -538,25 +583,22 @@ func abs(x float64) float64 {
 }
 
 func (s *SINDy) buildEquationString(coeffs []float64, termNames []string) string {
-	// Build LaTeX-formatted equation
-	// Simplified: just show active terms
+	// Lightweight: comma-joined list of active terms with coefficients
+	// (Replaces LaTeX formatting which is unused in production telemetry)
 	parts := make([]string, 0)
 	nDims := 6
-
-	dimNames := []string{"\\dot{x}", "\\dot{y}", "\\dot{z}", "\\dot{v_x}", "\\dot{v_y}", "\\dot{v_z}"}
-
-	for d := 0; d < nDims; d++ {
-		eqn := dimNames[d] + " = "
-		for i, name := range termNames {
-			c := coeffs[i*nDims+d]
-			if abs(c) > s.SparsityThreshold {
-				eqn += fmt.Sprintf("%.3f%s + ", c, name)
+	for i, name := range termNames {
+		maxC := 0.0
+		for d := 0; d < nDims; d++ {
+			if c := coeffs[i*nDims+d]; abs(c) > maxC {
+				maxC = abs(c)
 			}
 		}
-		parts = append(parts, eqn[:len(eqn)-3]) // Remove trailing " + "
+		if maxC > s.SparsityThreshold {
+			parts = append(parts, fmt.Sprintf("%s:%.3e", name, maxC))
+		}
 	}
-
-	return strings.Join(parts, "; ")
+	return strings.Join(parts, ", ")
 }
 
 func (s *SINDy) computeRSquared(coeffs []float64, _states [][6]float64, theta, xDot *mat.Dense) float64 {
@@ -636,8 +678,8 @@ func (r *ManeuverResult) ValidateCertificate() bool {
 		return false
 	}
 
-	// Check physics grade
-	if r.PhysicsGrade == GradeF {
+	// Check physics constraint violations
+	if !AllPassed(r.ConstraintViolations) {
 		r.CertificateValid = false
 		return false
 	}
@@ -652,10 +694,16 @@ func (r *ManeuverResult) ValidateCertificate() bool {
 	return true
 }
 
-// ComputeHamiltonianHash computes the Hamiltonian Invariant Hash for the certificate
+// ComputeHamiltonianHash computes a tolerance-binned Hamiltonian hash for the certificate.
 //
-// This provides cryptographic proof of the physics state for sovereign handshake.
-func (r *ManeuverResult) ComputeHamiltonianHash(states [][6]float64) string {
+// Raw float hashing is an anti-pattern (tiny numerical differences flip the hash).
+// Instead, we bin the Hamiltonian values by tolerance before hashing, making the hash
+// robust to numerical noise while still detecting physically significant changes.
+func (r *ManeuverResult) ComputeHamiltonianHash(states [][6]float64, tolerance float64) string {
+	if tolerance <= 0 {
+		tolerance = 1e-6 // Default: bin at 1e-6 relative tolerance
+	}
+
 	// Compute average Hamiltonian across trajectory
 	sumH := 0.0
 	for _, state := range states {
@@ -663,44 +711,94 @@ func (r *ManeuverResult) ComputeHamiltonianHash(states [][6]float64) string {
 	}
 	avgH := sumH / float64(len(states))
 
-	// Create hash from average Hamiltonian and coefficients
+	// Tolerance-binned hash: quantize by tolerance relative to magnitude
+	scale := math.Abs(avgH)
+	if scale < 1e-10 {
+		scale = 1.0
+	}
+	binnedAvg := int64(avgH / (tolerance * scale))
+
 	h := sha256.New()
-	h.Write([]byte(fmt.Sprintf("%.15f", avgH)))
+	h.Write([]byte(fmt.Sprintf("%d", binnedAvg)))
+
+	// Also bin coefficients for robustness
 	for _, c := range r.Coefficients {
-		h.Write([]byte(fmt.Sprintf("%.15f", c)))
+		binnedC := int64(c / tolerance)
+		h.Write([]byte(fmt.Sprintf("%d", binnedC)))
 	}
 
 	r.HamiltonianHash = hex.EncodeToString(h.Sum(nil))
 	return r.HamiltonianHash
 }
 
-// ComputePhysicsGrade assigns physics consistency grade based on constraint satisfaction
-// Uses configurable GradeThresholds from certificate.go (ADITI 4.0)
-func (r *ManeuverResult) ComputePhysicsGrade(states [][6]float64) {
+// ComputeEnergyDrift computes σ_H / |H_avg| from trajectory states.
+// Sets r.EnergyDriftSigma for spoof detection: if >= 1e-7, certificate self-invalidates.
+func (r *ManeuverResult) ComputeEnergyDrift(states [][6]float64) {
+	if len(states) == 0 {
+		r.EnergyDriftSigma = 1.0
+		return
+	}
+
+	values := make([]float64, len(states))
+	sumH := 0.0
+	for i, state := range states {
+		h := computeHamiltonian(state)
+		values[i] = h
+		sumH += h
+	}
+	avgH := sumH / float64(len(states))
+
+	// Standard deviation
+	variance := 0.0
+	for _, h := range values {
+		diff := h - avgH
+		variance += diff * diff
+	}
+	stdH := math.Sqrt(variance / float64(len(values)))
+
+	// Normalized energy drift
+	if math.Abs(avgH) > 1e-10 {
+		r.EnergyDriftSigma = stdH / math.Abs(avgH)
+	} else {
+		r.EnergyDriftSigma = stdH
+	}
+}
+
+// ComputeConstraintViolations evaluates physics consistency against thresholds.
+// Replaces the A-F grade gamification with explicit pass/fail per constraint.
+func (r *ManeuverResult) ComputeConstraintViolations(states [][6]float64) {
 	th := DefaultGradeThresholds()
 
-	// Grade A: High confidence, low residual, energy conserved
-	if r.Confidence > th.MinSINDyConfidenceC &&
-		r.ResidualMean < th.MaxResidualA &&
-		r.EnergyDriftSigma < th.MaxEnergyDriftA {
-		r.PhysicsGrade = GradeA
-		return
+	r.ConstraintViolations = []ConstraintViolation{
+		{
+			Constraint: "energy_drift",
+			Value:      r.EnergyDriftSigma,
+			Threshold:  th.MaxEnergyDriftA,
+			Unit:       "relative",
+			Passed:     r.EnergyDriftSigma < th.MaxEnergyDriftA,
+		},
+		{
+			Constraint: "position_residual",
+			Value:      r.ResidualMean,
+			Threshold:  th.MaxResidualA,
+			Unit:       "meters",
+			Passed:     r.ResidualMean < th.MaxResidualA,
+		},
+		{
+			Constraint: "sindy_confidence",
+			Value:      r.Confidence,
+			Threshold:  th.MinSINDyConfidenceC,
+			Unit:       "R2",
+			Passed:     r.Confidence > th.MinSINDyConfidenceC,
+		},
+		{
+			Constraint: "maneuver_explained",
+			Value:      0.0,
+			Threshold:  0.0,
+			Unit:       "bool",
+			Passed:     !r.ThrustDetected || (r.ThrustDetected && r.Confidence > 0.7),
+		},
 	}
-
-	// Grade B: Good confidence, moderate residual
-	if r.Confidence > 0.85 && r.ResidualMean < th.MaxResidualB {
-		r.PhysicsGrade = GradeB
-		return
-	}
-
-	// Grade C: Maneuver detected, but model explains it
-	if r.ThrustDetected && r.Confidence > 0.7 {
-		r.PhysicsGrade = GradeC
-		return
-	}
-
-	// Grade F: Model divergence
-	r.PhysicsGrade = GradeF
 }
 
 // ComputeCausalProvenance calculates term importance scores for causal provenance

@@ -6,7 +6,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Hybrid SRP Engine
+ * Hybrid SRP Engine
  *
  * Tier 1: Own Assets (Box-Wing + ECOM1/5-parameter)
  * Tier 2: Unknown/Adversary (ECOM2/9-parameter)
@@ -88,10 +88,10 @@ type SRPEngine struct {
 	ModelType SRPModelType
 
 	// Model-specific parameters
-	BoxWing   *BoxWingModel
-	ECOM1     *ECOM1Params
-	ECOM2     *ECOM2Params
-	Hybrid    *HybridSRPModel
+	BoxWing *BoxWingModel
+	ECOM1   *ECOM1Params
+	ECOM2   *ECOM2Params
+	Hybrid  *HybridSRPModel
 
 	// Shadow model (conical for all tiers)
 	UseConicalShadow bool

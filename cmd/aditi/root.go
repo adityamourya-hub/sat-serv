@@ -1,7 +1,7 @@
-// cmd/aditi/root.go - Cobra Root Command for ADITI 4.0
+// cmd/aditi/root.go - Cobra Root Command
 //
 // This file initializes the root Cobra command and sets up Viper configuration.
-// The root command is the entry point for all ADITI 4.0 CLI operations.
+// The root command is the entry point for all sovereign CLI operations.
 //
 // Air-Gap Config Mandate:
 // Viper allows locking down a config.yaml file on ruggedized servers,
@@ -14,8 +14,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"ssis/pkg/config"
+
+	"github.com/spf13/cobra"
 )
 
 var cfgFile string
@@ -24,7 +25,7 @@ var cfgFile string
 var rootCmd = &cobra.Command{
 	Use:   "aditi",
 	Short: "Axiom-Zero Hamiltonian-Gated Sovereign SDA Engine",
-	Long: `ADITI 4.0 - IAF Axiom-Zero Hamiltonian-Gated Sovereign Space Domain Awareness Engine
+	Long: `Axiom-Zero Hamiltonian-Gated Sovereign Space Domain Awareness Engine
 
 The Command Center for sovereign SDA operations, providing direct control over:
   - Hybrid orbital propagation (Forest-Ruth + RKF45)

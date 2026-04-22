@@ -1,5 +1,5 @@
 // pkg/ml/dmd/tripwire.go
-// ADITI 4.0: Dynamic Mode Decomposition (DMD) Hypersonic Tripwire
+// Dynamic Mode Decomposition (DMD) Hypersonic Tripwire
 //
 // Identifies coherent structures in plasma wake while FNO handles bulk density.
 // Detects Kármán Vortex Street and Bow Shock oscillations to trigger
