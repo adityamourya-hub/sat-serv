@@ -47,7 +47,7 @@ class KeplerianOracle:
  """
  
  def __init__(self, mu: float = 398600.4418):
- self.mu = mu
+    self.mu = mu
  
  def hamiltonian(self, q: jnp.ndarray, p: jnp.ndarray) -> float:
  """H = 0.5*p² - μ/|q|"""
