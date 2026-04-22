@@ -195,27 +195,86 @@ def implicit_midpoint_step(model, z, dt, max_iter=10, tol=1e-10):
     return z_next
 
 
-# DEPRECATED: PyTorch GHNN path is deprecated.
-# The JAX Port-Hamiltonian System in ai/v3/port_hamiltonian.py is now the canonical
-# training backend. See ai/v3/train_phs_jax.py for the correct implementation
-# with Forest-Ruth 4th-order symplectic integrator (q/p split with proper c/d coefficients).
-#
-# This PyTorch path uses implicit midpoint which is NOT symplectic for non-separable
-# Hamiltonians and lacks the proper q/p alternation of Forest-Ruth.
-def forest_ruth_step(model, z, dt, max_iter=10, tol=1e-10):
+# -----------------------------------------------------------------------------
+# Forest-Ruth 4th-order symplectic integrator (Ruth 1983, Forest-Ruth 1990)
+# -----------------------------------------------------------------------------
+# For a separable Hamiltonian  H(q, p) = T(p) + V(q)  (the orbital two-body /
+# Keplerian case, H = |p|^2/2 - mu/|q|, is exactly this form), the Forest-Ruth
+# composition  exp(c1 dt X_T) exp(d1 dt X_V) exp(c2 dt X_T) exp(d2 dt X_V) ...
+# is symplectic to 4th order — the map M = dΦ/dz satisfies Mᵀ J M = J exactly
+# (up to floating-point), so phase-space volume and energy drift are bounded
+# for long rollouts. Coefficients are lifted from q/core/jax_backend.py:461-469
+# so the PyTorch and JAX training backends use bit-identical constants.
+# -----------------------------------------------------------------------------
+
+# Ruth-4 (Forest-Ruth) constants — see jax_backend.py:461-469
+_THETA_R4 = 1.2599210498948732  # 2^(1/3)
+_W1_R4 = 1.0 / (2.0 - _THETA_R4)
+_W0_R4 = -_THETA_R4 / (2.0 - _THETA_R4)
+_C1_R4 = _C4_R4 = _W1_R4 / 2.0
+_C2_R4 = _C3_R4 = (_W0_R4 + _W1_R4) / 2.0
+_D1_R4 = _D3_R4 = _W1_R4
+_D2_R4 = _W0_R4
+_FOREST_RUTH_COEFFS = (
+    (_C1_R4, _D1_R4),
+    (_C2_R4, _D2_R4),
+    (_C3_R4, _D3_R4),
+    (_C4_R4, 0.0),  # final drift, no kick
+)
+
+
+def forest_ruth_step(model, z, dt, max_iter=None, tol=None):
     """
-    DEPRECATED: Use JAX PHS implementation instead.
-    
-    This function is kept for backwards compatibility but will be removed.
-    It does NOT implement actual Forest-Ruth integration - it uses implicit midpoint.
+    Forest-Ruth 4th-order symplectic integrator for a port-Hamiltonian vector
+    field that returns [dH/dp, -dH/dq] given state z = [q, p].
+
+    State layout: z[..., :3] = q (position), z[..., 3:] = p (momentum).
+
+    The model is expected to output dz/dt in the canonical Hamiltonian form:
+        model(z) = [ ∂H/∂p , -∂H/∂q ]   shape [..., 6]
+    which is exactly what GHNNVectorField / PortHamiltonianSystem produce.
+
+    We split the step into alternating drift (q update) and kick (p update):
+        drift(c): q ← q + c · dt · ∂H/∂p    (read from model[..., :3])
+        kick (d): p ← p - d · dt · ∂H/∂q    (read from -model[..., 3:])
+                = p + d · dt · model[..., 3:]
+
+    For a separable H this is provably symplectic to O(dt^5) local error.
+    For a weakly non-separable H (learned dissipation R small), the scheme
+    remains symplectic-to-leading-order, strictly better than the prior
+    implicit-midpoint fallback which was silently aliased here.
+
+    Args:
+        model: callable z -> dz/dt with z shape [..., 6]
+        z: state tensor [..., 6] laid out as [q(3), p(3)]
+        dt: scalar time step
+        max_iter, tol: accepted for signature compatibility (unused — the
+            Forest-Ruth step is explicit)
+
+    Returns:
+        z_next: [..., 6]
     """
-    import warnings
-    warnings.warn(
-        "PyTorch GHNN forest_ruth_step is deprecated. "
-        "Use JAX PortHamiltonianSystem in ai/v3/train_phs_jax.py for correct Yoshida-4 integration.",
-        DeprecationWarning, stacklevel=2
-    )
-    return implicit_midpoint_step(model, z, dt, max_iter, tol)
+    del max_iter, tol  # explicit integrator; args kept for API compat
+
+    # Work on a clone so callers' autograd graphs stay intact when they pass
+    # leaf tensors — gradient flows through in-place operations here.
+    z_new = z.clone()
+    for c, d in _FOREST_RUTH_COEFFS:
+        # --- drift: q += c * dt * dH/dp ---
+        if c != 0.0:
+            dzdt = model(z_new)
+            dH_dp = dzdt[..., :3]
+            q_new = z_new[..., :3] + c * dt * dH_dp
+            z_new = torch.cat([q_new, z_new[..., 3:]], dim=-1)
+
+        # --- kick: p -= d * dt * dH/dq  ≡  p += d * dt * model[..., 3:] ---
+        if d != 0.0:
+            dzdt = model(z_new)
+            neg_dH_dq = dzdt[..., 3:]
+            p_new = z_new[..., 3:] + d * dt * neg_dH_dq
+            z_new = torch.cat([z_new[..., :3], p_new], dim=-1)
+
+    return z_new
 
 
 def get_symplectic_form(device):

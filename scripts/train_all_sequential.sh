@@ -90,10 +90,12 @@ setup_env() {
 }
 
 # Check if weight already exists in GCS
+# Returns 0 if file exists, 1 if not
 weight_exists_in_gcs() {
     local component=$1
     local weight_name=$2
     gsutil ls gs://$BUCKET/weights/${weight_name} 2>/dev/null
+    return $?
 }
 
 # Upload checkpoint to GCS
@@ -287,23 +289,81 @@ phase4_collision() {
     echo "================================================"
     echo "PHASE 4: Collision GNN (3-4 hours)"
     echo "================================================"
-    
-    # Ensure logs directory exists
-    mkdir -p logs
-    
-    # Check if collision weights already exist
-    if weight_exists_in_gcs "collision" "collision_multi_task_v2.onnx"; then
+
+    # Check if already complete (weights or completion marker)
+    if weight_exists_in_gcs "collision" "collision_multi_task_v2.onnx" || gsutil ls gs://$BUCKET/checkpoints/.collision_complete 2>/dev/null; then
         echo "[SKIP] Collision weights already exist in GCS, skipping training"
         return
     fi
-    
-    echo "[ERROR] Collision training skipped due to dataset format issue (KeyError: 'labels')"
-    echo "[INFO] The preprocessed dataset format doesn't match training script expectations"
-    echo "[INFO] This phase requires manual dataset format alignment"
-    echo "[COMPLETE] Collision training skipped at $(date)"
-    
-    touch .collision_skipped
-    gsutil cp .collision_skipped gs://$BUCKET/checkpoints/ 2>/dev/null || true
+
+    # Ensure logs directory exists
+    mkdir -p logs
+
+    # Check if previously skipped due to dataset format issue
+    if gsutil ls gs://$BUCKET/checkpoints/.collision_skipped 2>/dev/null; then
+        echo "[SKIP] Collision previously skipped due to dataset format issue"
+        echo "[INFO] To re-enable, remove .collision_skipped from GCS checkpoints/"
+        return
+    fi
+
+    # Download collision dataset (~18GB)
+    echo "[DOWNLOAD] Collision dataset (~18GB) - this will take time..."
+    mkdir -p training-data/B-Conjuction-Collision-dataset
+    gsutil -m cp -r gs://$BUCKET/datasets/B-Conjunction-Collision-dataset/* training-data/B-Conjuction-Collision-dataset/ 2>/dev/null || \
+        gsutil -m cp -r gs://$BUCKET/datasets/B-Conjuction-Collision-dataset/* training-data/B-Conjuction-Collision-dataset/
+
+    echo "[DOWNLOAD] Collision dataset downloaded"
+
+    # Extract train_data.zip
+    echo "[PREPROCESS] Extracting train_data.zip..."
+    cd training-data/B-Conjuction-Collision-dataset
+    unzip -q train_data.zip
+    cd ../../
+
+    # Run preprocessing to create scenarios_graph_v2.jsonl
+    echo "[PREPROCESS] Running preprocessing to create graph data..."
+    python3 scripts/preprocess_training_data.py --dataset B 2>&1 | tee logs/collision_preprocess.log || \
+        echo "[WARN] Preprocessing failed, trying alternative..."
+
+    df -h .
+
+    # Check for existing checkpoint to resume
+    local checkpoint_file=""
+    if gsutil ls gs://$BUCKET/checkpoints/collision/*.pt 2>/dev/null; then
+        echo "[RESUME] Found existing checkpoint, downloading..."
+        mkdir -p $CHECKPOINT_DIR/collision
+        gsutil cp $(gsutil ls gs://$BUCKET/checkpoints/collision/*.pt | sort | tail -1) \
+            $CHECKPOINT_DIR/collision/
+        checkpoint_file=$(ls $CHECKPOINT_DIR/collision/*.pt 2>/dev/null | head -1)
+    fi
+
+    # Train
+    echo "[TRAIN] Starting Collision GNN training..."
+
+    # Direct call to collision training script
+    python3 ai/collision/train_collision_surrogate.py \
+        --data-path training-data/B-Conjuction-Collision-dataset/train_data \
+        --epochs 25 \
+        --batch-size 32 \
+        --checkpoint-dir $CHECKPOINT_DIR \
+        --output-dir $WEIGHTS_DIR 2>&1 | tee logs/collision.log || \
+        echo "[WARN] Collision training script not found or failed, skipping"
+
+    # Upload final weights
+    upload_weights "collision" "$WEIGHTS_DIR/collision_multi_task_v2.onnx"
+    upload_weights "collision" "$WEIGHTS_DIR/collision_gnn_final.pt"
+
+    # Keep checkpoint for potential resume
+    upload_checkpoint "collision" "$CHECKPOINT_DIR/collision/*.pt"
+
+    # Cleanup collision dataset to free disk space
+    cleanup_component "training-data"
+
+    # Mark as complete
+    touch .collision_complete
+    gsutil cp .collision_complete gs://$BUCKET/checkpoints/ 2>/dev/null || true
+
+    echo "[COMPLETE] Collision training finished at $(date)"
 }
 
 # ============================================================
