@@ -1,4 +1,4 @@
-// cmd/daemon/main.go - ADITI 4.0 Sovereign Brain Runtime
+// cmd/daemon/main.go - Sovereign Brain Runtime
 //
 // High-Fidelity Cognitive Loop for HGV Tracking in Siliguri Corridor
 // Integrates Neural Atmosphere, PHS Baseline, and SINDy Intent Inference
@@ -29,7 +29,7 @@
 //   - Neural Atmosphere: q/core/hno.py (HydrostaticAtmosphere)
 //   - PHS Model: ai/v3/port_hamiltonian.py (LatentHamiltonian)
 //   - SINDy: pkg/physics/sliding_sindy.go (HGVPrimitives)
-//   - May 4th Audit: iDEX ADITI 4.0 Sovereign Brain
+//   - May 4th Audit: iDEX Sovereign Brain
 
 package main
 
@@ -452,7 +452,7 @@ func logDashboard(
 }
 
 // =============================================================================
-// Manifold Gate (ADITI 4.0 Delhi War-Room)
+// Manifold Gate (Delhi War-Room)
 // =============================================================================
 
 // ManifoldGate validates geometric constraints (S², SO(3)) before 100Hz tick
@@ -564,7 +564,7 @@ func repeatString(s string, n int) string {
 
 func main() {
 	log.Println(repeatString("=", 70))
-	log.Println("ADITI 4.0 Sovereign Brain - High-Fidelity Cognitive Loop")
+	log.Println("Sovereign Brain - High-Fidelity Cognitive Loop")
 	log.Println("May 4th Audit Configuration - 100Hz Physics-Aware Intent Engine")
 	log.Println(repeatString("=", 70))
 
@@ -588,7 +588,7 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// 3. ADITI 4.0: Manifold Gate - Validate geometric constraints before 100Hz tick
+	// 3. Manifold Gate - Validate geometric constraints before 100Hz tick
 	// Ensures S² (unit sphere) and SO(3) (rotation group) invariants are preserved
 	// Rejects states that would violate Hamiltonian structure
 	log.Println("[INIT] Initializing Manifold Gate...")
@@ -617,7 +617,7 @@ func main() {
 				continue
 			}
 
-			// A.1 ADITI 4.0: Manifold Gate - Validate geometric constraints
+			// A.1 Manifold Gate - Validate geometric constraints
 			valid, reason := manifoldGate.Validate(state)
 			if !valid {
 				log.Printf("[MANIFOLD] Rejected state: %s\n", reason)

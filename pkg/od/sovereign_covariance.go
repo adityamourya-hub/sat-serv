@@ -3,7 +3,7 @@ package od
 /**
  * Sovereign Covariance Generation
  *
- * ADITI 4.0 - Synthetic Orbit Determination (OD) Loop
+ * Synthetic Orbit Determination (OD) Loop
  *
  * Problem: TLEs have km-level errors and no covariance.
  * Solution: Use Batch Least Squares (BLS) to ingest 24 hours
@@ -440,7 +440,7 @@ func extractStandardDeviations(cov *mat.SymDense) (pos, vel [3]float64) {
 // ExampleUsage demonstrates the sovereign OD workflow
 func ExampleUsage() {
 	fmt.Println("╔════════════════════════════════════════════════════════════╗")
-	fmt.Println("║     ADITI 4.0 - Sovereign Covariance Generation           ║")
+	fmt.Println("║     Sovereign Covariance Generation                       ║")
 	fmt.Println("║     From TLE (km errors) → Sovereign (meter errors)       ║")
 	fmt.Println("╚════════════════════════════════════════════════════════════╝")
 

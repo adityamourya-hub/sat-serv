@@ -1,4 +1,4 @@
-# ADITI 4.0 TimescaleDB Deployment Guide
+#  TimescaleDB Deployment Guide
 
 ## Overview
 

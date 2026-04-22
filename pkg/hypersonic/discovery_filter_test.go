@@ -124,20 +124,20 @@ func TestDiscoveryIMM_ModeTransitions(t *testing.T) {
 
 	// Check initial transition matrix
 	// Row 0 (Ballistic): should have high self-transition
-	if dimm.TransMatrix[0][0] < 0.8 {
-		t.Errorf("Ballistic self-transition too low: %.2f", dimm.TransMatrix[0][0])
+	if dimm.TransMatrix[0*TotalModes+0] < 0.8 {
+		t.Errorf("Ballistic self-transition too low: %.2f", dimm.TransMatrix[0*TotalModes+0])
 	}
 
 	// Row 3 (Discovery): should have decent self-transition
-	if dimm.TransMatrix[3][3] < 0.3 {
-		t.Errorf("Discovery self-transition too low: %.2f", dimm.TransMatrix[3][3])
+	if dimm.TransMatrix[3*TotalModes+3] < 0.3 {
+		t.Errorf("Discovery self-transition too low: %.2f", dimm.TransMatrix[3*TotalModes+3])
 	}
 
 	// Check rows sum to 1
 	for i := 0; i < TotalModes; i++ {
 		sum := 0.0
 		for j := 0; j < TotalModes; j++ {
-			sum += dimm.TransMatrix[i][j]
+			sum += dimm.TransMatrix[i*TotalModes+j]
 		}
 		if math.Abs(sum-1.0) > 0.001 {
 			t.Errorf("Row %d doesn't sum to 1: %.3f", i, sum)
@@ -240,7 +240,7 @@ func TestDiscoveryIMM_LearnTransitions(t *testing.T) {
 	dimm := NewDiscoveryIMM(hgv)
 
 	// Initial transition to Discovery
-	initialTrans := dimm.TransMatrix[0][ModeIndexDiscovery]
+	initialTrans := dimm.TransMatrix[0*TotalModes+ModeIndexDiscovery]
 
 	// Set high discovery probability
 	dimm.ModeProbs[ModeIndexDiscovery] = 0.5
@@ -249,7 +249,7 @@ func TestDiscoveryIMM_LearnTransitions(t *testing.T) {
 	dimm.learnTransitions()
 
 	// Check transition to Discovery increased
-	newTrans := dimm.TransMatrix[0][ModeIndexDiscovery]
+	newTrans := dimm.TransMatrix[0*TotalModes+ModeIndexDiscovery]
 	if newTrans <= initialTrans {
 		t.Logf("Note: Transition to Discovery: %.3f -> %.3f", initialTrans, newTrans)
 	} else {
@@ -260,7 +260,7 @@ func TestDiscoveryIMM_LearnTransitions(t *testing.T) {
 	for i := 0; i < TotalModes; i++ {
 		sum := 0.0
 		for j := 0; j < TotalModes; j++ {
-			sum += dimm.TransMatrix[i][j]
+			sum += dimm.TransMatrix[i*TotalModes+j]
 		}
 		if math.Abs(sum-1.0) > 0.01 {
 			t.Errorf("Row %d doesn't sum to 1 after learning: %.3f", i, sum)

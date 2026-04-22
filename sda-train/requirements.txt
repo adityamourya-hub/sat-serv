@@ -1,4 +1,4 @@
-# ADITI 4.0 Training Environment Requirements
+#  Training Environment Requirements
 # Expert-tier libraries for sovereign SSA neural-physics training
 
 # Core ML Framework

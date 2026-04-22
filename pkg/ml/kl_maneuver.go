@@ -3,7 +3,7 @@ package ml
 /**
  * Kullback-Leibler Divergence for Information-Theoretic Maneuver Detection
  *
- * ADITI 4.0: Geometric Mechanics Optimization #5
+ * Geometric Mechanics Optimization #5
  *
  * Problem: PINN processes all objects, causing "feature fatigue"
  * Solution: KL divergence triggers wake-up only on surprising observations

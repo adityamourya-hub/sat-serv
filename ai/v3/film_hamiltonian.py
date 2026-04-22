@@ -5,27 +5,27 @@ Enables H(x, z) to physically reconfigure energy surface based on latent regime 
 Replaces standard MLP with modulated architecture for regime-conditioned dynamics.
 
 Architecture:
-    - State dim: 6 (pos, vel)
-    - Latent dim: 32 (z_orbital, z_ballistic, z_hgv anchors)
-    - Width: 128, Depth: 4
-    - Modulation: FiLM (γ(z) * h + β(z)) at each layer
-    - Activation: Tanh for Hamiltonian energy smoothness
+ - State dim: 6 (pos, vel)
+ - Latent dim: 32 (z_orbital, z_ballistic, z_hgv anchors)
+ - Width: 128, Depth: 4
+ - Modulation: FiLM (γ(z) * h + β(z)) at each layer
+ - Activation: Tanh for Hamiltonian energy smoothness
 
 Key Features:
-    1. Autodiff Cleanliness: ∇_x H(x, z) flows only through state path
-    2. Mode Interpolation: z_current = α·z1 + (1-α)·z2 for smooth transitions
-    3. M2 Air Optimization: cond_net depth=1, width=64 (<10μs on Apple AMX)
-    4. Unified Training: Single model for Orbital/Ballistic/HGV regimes
+ 1. Autodiff Cleanliness: ∇_x H(x, z) flows only through state path
+ 2. Mode Interpolation: z_current = α·z1 + (1-α)·z2 for smooth transitions
+ 3. M2 Air Optimization: cond_net depth=1, width=64 (<10μs on Apple AMX)
+ 4. Unified Training: Single model for Orbital/Ballistic/HGV regimes
 
 Integration:
-    - Called by LCPHSTrainer during H100 joint training
-    - Used by port_hamiltonian.py for H_net with FiLM conditioning
-    - Deployed to M2 Air via ONNX with 32-dim latent input
+ - Called by LCPHSTrainer during H100 joint training
+ - Used by port_hamiltonian.py for H_net with FiLM conditioning
+ - Deployed to M2 Air via ONNX with 32-dim latent input
 
 References:
-    - FiLM: Perez et al. "FiLM: Visual Reasoning with Conditioning"
-    - LC-PHS: Latent-Conditioned Port-Hamiltonian Systems
-    - ADITI 4.0: May 4th deployment target
+ - FiLM: Perez et al. "FiLM: Visual Reasoning with Conditioning"
+ - LC-PHS: Latent-Conditioned Port-Hamiltonian Systems
+ - : May 4th deployment target
 """
 
 from typing import Tuple
@@ -35,146 +35,146 @@ import equinox as eqx
 
 
 class FiLMLayer(eqx.Module):
-    """
-    Feature-wise Linear Modulation Layer for Hamiltonian conditioning.
-    
-    FiLM Equation: h' = tanh(γ(z) ⊙ (W·x + b) + β(z))
-    
-    The conditioning network cond_net maps latent z to:
-        - γ (scale): modulation amplitude
-        - β (shift): modulation bias
-    """
-    
-    linear: eqx.nn.Linear       # Standard linear: W·x + b
-    cond_net: eqx.nn.MLP        # Conditioning: z → [γ, β]
-    
-    def __init__(self, in_size: int, out_size: int, latent_dim: int, key: jax.random.PRNGKey):
-        k1, k2 = jax.random.split(key)
-        
-        # Standard linear transformation
-        self.linear = eqx.nn.Linear(in_size, out_size, key=k1)
-        
-        # Conditioning network: shallow for M2 Air speed
-        # Maps latent z to gamma and beta (2*out_size outputs)
-        self.cond_net = eqx.nn.MLP(
-            in_size=latent_dim,
-            out_size=out_size * 2,  # Gamma and Beta concatenated
-            width_size=64,           # Small width for <10μs computation
-            depth=1,                 # Single hidden layer (fast)
-            activation=jax.nn.tanh,
-            key=k2,
-        )
-    
-    def __call__(self, x: jnp.ndarray, z: jnp.ndarray) -> jnp.ndarray:
-        """
-        Forward pass with FiLM modulation.
-        
-        Args:
-            x: [in_size] input features (state)
-            z: [latent_dim] latent regime code
-            
-        Returns:
-            h: [out_size] modulated output
-        """
-        # 1. Standard linear transformation
-        h = self.linear(x)
-        
-        # 2. Generate FiLM parameters from latent code
-        cond = self.cond_net(z)
-        gamma, beta = jnp.split(cond, 2)
-        
-        # 3. FiLM modulation: γ ⊙ h + β
-        # Tanh activation ensures Hamiltonian energy smoothness
-        return jax.nn.tanh(gamma * h + beta)
+ """
+ Feature-wise Linear Modulation Layer for Hamiltonian conditioning.
+ 
+ FiLM Equation: h' = tanh(γ(z) ⊙ (W·x + b) + β(z))
+ 
+ The conditioning network cond_net maps latent z to:
+ - γ (scale): modulation amplitude
+ - β (shift): modulation bias
+ """
+ 
+ linear: eqx.nn.Linear # Standard linear: W·x + b
+ cond_net: eqx.nn.MLP # Conditioning: z → [γ, β]
+ 
+ def __init__(self, in_size: int, out_size: int, latent_dim: int, key: jax.random.PRNGKey):
+ k1, k2 = jax.random.split(key)
+ 
+ # Standard linear transformation
+ self.linear = eqx.nn.Linear(in_size, out_size, key=k1)
+ 
+ # Conditioning network: shallow for M2 Air speed
+ # Maps latent z to gamma and beta (2*out_size outputs)
+ self.cond_net = eqx.nn.MLP(
+ in_size=latent_dim,
+ out_size=out_size * 2, # Gamma and Beta concatenated
+ width_size=64, # Small width for <10μs computation
+ depth=1, # Single hidden layer (fast)
+ activation=jax.nn.tanh,
+ key=k2,
+)
+ 
+ def __call__(self, x: jnp.ndarray, z: jnp.ndarray) -> jnp.ndarray:
+ """
+ Forward pass with FiLM modulation.
+ 
+ Args:
+ x: [in_size] input features (state)
+ z: [latent_dim] latent regime code
+ 
+ Returns:
+ h: [out_size] modulated output
+ """
+ # 1. Standard linear transformation
+ h = self.linear(x)
+ 
+ # 2. Generate FiLM parameters from latent code
+ cond = self.cond_net(z)
+ gamma, beta = jnp.split(cond, 2)
+ 
+ # 3. FiLM modulation: γ ⊙ h + β
+ # Tanh activation ensures Hamiltonian energy smoothness
+ return jax.nn.tanh(gamma * h + beta)
 
 
 class LatentHamiltonian(eqx.Module):
-    """
-    Latent-Conditioned Hamiltonian H(x, z) with FiLM architecture.
-    
-    Enables unified training on Orbital, Ballistic, and HGV regimes by
-    reconfiguring the energy surface via latent code z.
-    
-    Architecture:
-        Input: x ∈ ℝ⁶ (state), z ∈ ℝ³² (latent regime)
-        → FiLM Layer 1: [6 → 128]
-        → FiLM Layer 2: [128 → 128]
-        → FiLM Layer 3: [128 → 128]
-        → FiLM Layer 4: [128 → 128]
-        → Output Head: [128 → 1] (scalar energy)
-    """
-    
-    layers: list      # List of FiLMLayer
-    output_head: eqx.nn.Linear  # Scalar energy output
-    
-    def __init__(
-        self,
-        state_dim: int = 6,
-        latent_dim: int = 32,
-        width: int = 128,
-        depth: int = 4,
-        key: jax.random.PRNGKey = None,
-    ):
-        if key is None:
-            key = jax.random.PRNGKey(0)
-        
-        keys = jax.random.split(key, depth + 1)
-        
-        # Build FiLM layer stack
-        self.layers = []
-        current_dim = state_dim
-        
-        for i in range(depth):
-            self.layers.append(
-                FiLMLayer(current_dim, width, latent_dim, keys[i])
-            )
-            current_dim = width
-        
-        # Scalar output for Hamiltonian energy
-        self.output_head = eqx.nn.Linear(width, 1, key=keys[-1])
-    
-    def __call__(self, x: jnp.ndarray, z: jnp.ndarray) -> float:
-        """
-        Compute regime-conditioned Hamiltonian H(x, z).
-        
-        Args:
-            x: [state_dim] state vector (pos, vel)
-            z: [latent_dim] latent regime code
-            
-        Returns:
-            H: Scalar energy value
-            
-        Example:
-            # Orbital regime
-            z_orb = REGIME_ANCHORS["orbital"]
-            H_orb = film_hamiltonian(x, z_orb)
-            
-            # Interpolated regime (Karman line transition)
-            z_blend = 0.5 * z_orb + 0.5 * z_bal
-            H_blend = film_hamiltonian(x, z_blend)
-        """
-        h = x
-        for layer in self.layers:
-            h = layer(h, z)
-        
-        # Return scalar H(x, z)
-        return jnp.squeeze(self.output_head(h))
-    
-    def get_energy_gradient(self, x: jnp.ndarray, z: jnp.ndarray) -> jnp.ndarray:
-        """
-        Compute ∇_x H(x, z) for Port-Hamiltonian dynamics.
-        
-        The gradient flows only through the state path x, with z treated
-        as constant. This maintains 100Hz OODA loop speed.
-        
-        Args:
-            x: [state_dim] state
-            z: [latent_dim] fixed latent code
-            
-        Returns:
-            grad_H: [state_dim] ∂H/∂x
-        """
-        return jax.grad(lambda x_: self.__call__(x_, z))(x)
+ """
+ Latent-Conditioned Hamiltonian H(x, z) with FiLM architecture.
+ 
+ Enables unified training on Orbital, Ballistic, and HGV regimes by
+ reconfiguring the energy surface via latent code z.
+ 
+ Architecture:
+ Input: x ∈ ℝ⁶ (state), z ∈ ℝ³² (latent regime)
+ → FiLM Layer 1: [6 → 128]
+ → FiLM Layer 2: [128 → 128]
+ → FiLM Layer 3: [128 → 128]
+ → FiLM Layer 4: [128 → 128]
+ → Output Head: [128 → 1] (scalar energy)
+ """
+ 
+ layers: list # List of FiLMLayer
+ output_head: eqx.nn.Linear # Scalar energy output
+ 
+ def __init__(
+ self,
+ state_dim: int = 6,
+ latent_dim: int = 32,
+ width: int = 128,
+ depth: int = 4,
+ key: jax.random.PRNGKey = None,
+):
+ if key is None:
+ key = jax.random.PRNGKey(0)
+ 
+ keys = jax.random.split(key, depth + 1)
+ 
+ # Build FiLM layer stack
+ self.layers = []
+ current_dim = state_dim
+ 
+ for i in range(depth):
+ self.layers.append(
+ FiLMLayer(current_dim, width, latent_dim, keys[i])
+)
+ current_dim = width
+ 
+ # Scalar output for Hamiltonian energy
+ self.output_head = eqx.nn.Linear(width, 1, key=keys[-1])
+ 
+ def __call__(self, x: jnp.ndarray, z: jnp.ndarray) -> float:
+ """
+ Compute regime-conditioned Hamiltonian H(x, z).
+ 
+ Args:
+ x: [state_dim] state vector (pos, vel)
+ z: [latent_dim] latent regime code
+ 
+ Returns:
+ H: Scalar energy value
+ 
+ Example:
+ # Orbital regime
+ z_orb = REGIME_ANCHORS["orbital"]
+ H_orb = film_hamiltonian(x, z_orb)
+ 
+ # Interpolated regime (Karman line transition)
+ z_blend = 0.5 * z_orb + 0.5 * z_bal
+ H_blend = film_hamiltonian(x, z_blend)
+ """
+ h = x
+ for layer in self.layers:
+ h = layer(h, z)
+ 
+ # Return scalar H(x, z)
+ return jnp.squeeze(self.output_head(h))
+ 
+ def get_energy_gradient(self, x: jnp.ndarray, z: jnp.ndarray) -> jnp.ndarray:
+ """
+ Compute ∇_x H(x, z) for Port-Hamiltonian dynamics.
+ 
+ The gradient flows only through the state path x, with z treated
+ as constant. This maintains 100Hz OODA loop speed.
+ 
+ Args:
+ x: [state_dim] state
+ z: [latent_dim] fixed latent code
+ 
+ Returns:
+ grad_H: [state_dim] ∂H/∂x
+ """
+ return jax.grad(lambda x_: self.__call__(x_, z))(x)
 
 
 # =============================================================================
@@ -182,63 +182,63 @@ class LatentHamiltonian(eqx.Module):
 # =============================================================================
 
 REGIME_ANCHORS = {
-    "orbital": jnp.zeros(32),   # Vacuum, J2 perturbations
-    "ballistic": jnp.zeros(32), # Atmospheric entry, drag
-    "hgv": jnp.zeros(32),       # Skip-glide, lift/drag coupling
+ "orbital": jnp.zeros(32), # Vacuum, J2 perturbations
+ "ballistic": jnp.zeros(32), # Atmospheric entry, drag
+ "hgv": jnp.zeros(32), # Skip-glide, lift/drag coupling
 }
 
 
 def interpolate_regimes(regime1: str, regime2: str, alpha: float) -> jnp.ndarray:
-    """
-    Linear interpolation between regime anchors for smooth transitions.
-    
-    Mode Interpolation Example:
-        - Re-entry at 100km (Karman line):
-          z = 0.5 * z_orbital + 0.5 * z_ballistic
-        - The FiLM layers produce intermediate energy surface
-          physically grounded in both regimes
-    
-    Args:
-        regime1: First regime name (e.g., "orbital")
-        regime2: Second regime name (e.g., "ballistic")
-        alpha: Interpolation parameter [0, 1]
-        
-    Returns:
-        z_interp: [32] interpolated latent code
-    """
-    z1 = REGIME_ANCHORS[regime1]
-    z2 = REGIME_ANCHORS[regime2]
-    return alpha * z1 + (1 - alpha) * z2
+ """
+ Linear interpolation between regime anchors for smooth transitions.
+ 
+ Mode Interpolation Example:
+ - Re-entry at 100km (Karman line):
+ z = 0.5 * z_orbital + 0.5 * z_ballistic
+ - The FiLM layers produce intermediate energy surface
+ physically grounded in both regimes
+ 
+ Args:
+ regime1: First regime name (e.g., "orbital")
+ regime2: Second regime name (e.g., "ballistic")
+ alpha: Interpolation parameter [0, 1]
+ 
+ Returns:
+ z_interp: [32] interpolated latent code
+ """
+ z1 = REGIME_ANCHORS[regime1]
+ z2 = REGIME_ANCHORS[regime2]
+ return alpha * z1 + (1 - alpha) * z2
 
 
 def altitude_to_latent(altitude_km: float) -> jnp.ndarray:
-    """
-    Map altitude to appropriate latent code with automatic interpolation.
-    
-    Altitude bands:
-        > 200 km: Pure orbital (vacuum)
-        100-200 km: Blend orbital/ballistic (Karman line)
-        50-100 km: Blend ballistic/HGV (re-entry)
-        < 50 km: Pure HGV (endurance)
-        
-    Args:
-        altitude_km: Altitude in kilometers
-        
-    Returns:
-        z: [32] latent code for this altitude
-    """
-    if altitude_km > 200:
-        return REGIME_ANCHORS["orbital"]
-    elif altitude_km > 100:
-        # Transition: orbital → ballistic
-        alpha = (200 - altitude_km) / 100.0
-        return interpolate_regimes("orbital", "ballistic", alpha)
-    elif altitude_km > 50:
-        # Transition: ballistic → HGV
-        alpha = (100 - altitude_km) / 50.0
-        return interpolate_regimes("ballistic", "hgv", alpha)
-    else:
-        return REGIME_ANCHORS["hgv"]
+ """
+ Map altitude to appropriate latent code with automatic interpolation.
+ 
+ Altitude bands:
+ > 200 km: Pure orbital (vacuum)
+ 100-200 km: Blend orbital/ballistic (Karman line)
+ 50-100 km: Blend ballistic/HGV (re-entry)
+ < 50 km: Pure HGV (endurance)
+ 
+ Args:
+ altitude_km: Altitude in kilometers
+ 
+ Returns:
+ z: [32] latent code for this altitude
+ """
+ if altitude_km > 200:
+ return REGIME_ANCHORS["orbital"]
+ elif altitude_km > 100:
+ # Transition: orbital → ballistic
+ alpha = (200 - altitude_km) / 100.0
+ return interpolate_regimes("orbital", "ballistic", alpha)
+ elif altitude_km > 50:
+ # Transition: ballistic → HGV
+ alpha = (100 - altitude_km) / 50.0
+ return interpolate_regimes("ballistic", "hgv", alpha)
+ else:
+ return REGIME_ANCHORS["hgv"]
 
 
 # =============================================================================
@@ -246,93 +246,93 @@ def altitude_to_latent(altitude_km: float) -> jnp.ndarray:
 # =============================================================================
 
 def create_film_port_hamiltonian(key: jax.random.PRNGKey = None) -> Tuple[LatentHamiltonian, dict]:
-    """
-    Create FiLM-conditioned Port-Hamiltonian system.
-    
-    Returns:
-        (film_hamiltonian, regime_anchors)
-    """
-    if key is None:
-        key = jax.random.PRNGKey(42)
-    
-    # Initialize Hamiltonian with FiLM
-    film_hamiltonian = LatentHamiltonian(
-        state_dim=6,
-        latent_dim=32,
-        width=128,
-        depth=4,
-        key=key,
-    )
-    
-    return film_hamiltonian, REGIME_ANCHORS
+ """
+ Create FiLM-conditioned Port-Hamiltonian system.
+ 
+ Returns:
+ (film_hamiltonian, regime_anchors)
+ """
+ if key is None:
+ key = jax.random.PRNGKey(42)
+ 
+ # Initialize Hamiltonian with FiLM
+ film_hamiltonian = LatentHamiltonian(
+ state_dim=6,
+ latent_dim=32,
+ width=128,
+ depth=4,
+ key=key,
+)
+ 
+ return film_hamiltonian, REGIME_ANCHORS
 
 
 def demo_film_hamiltonian():
-    """Demonstrate FiLM Hamiltonian capabilities."""
-    print("=" * 70)
-    print("FiLM Hamiltonian (H(x, z)) Demo")
-    print("=" * 70)
-    
-    # Initialize
-    key = jax.random.PRNGKey(42)
-    film_h, anchors = create_film_port_hamiltonian(key)
-    
-    print("\n1. Architecture:")
-    print(f"   State dim: 6 (pos, vel)")
-    print(f"   Latent dim: 32 (regime code)")
-    print(f"   Width: 128, Depth: 4")
-    print(f"   FiLM: γ(z) ⊙ h + β(z) per layer")
-    
-    # Test state (LEO)
-    x = jnp.array([6878.0, 0.0, 0.0, 0.0, 7.5, 0.0])  # 500km altitude
-    
-    print(f"\n2. Test State: pos=[{x[0]:.1f}, {x[1]:.1f}, {x[2]:.1f}] km, "
-          f"vel=[{x[3]:.1f}, {x[4]:.1f}, {x[5]:.1f}] km/s")
-    
-    # Compute H(x, z) for each regime
-    print("\n3. Regime-Conditioned Energies:")
-    for regime, z in anchors.items():
-        H = film_h(x, z)
-        grad_H = film_h.get_energy_gradient(x, z)
-        print(f"   {regime:12s}: H = {H:10.4f}, |∇H| = {float(jnp.linalg.norm(grad_H)):6.4f}")
-    
-    # Demonstrate interpolation
-    print("\n4. Mode Interpolation (Karman Line at 100km):")
-    z_orb = anchors["orbital"]
-    z_bal = anchors["ballistic"]
-    for alpha in [0.0, 0.25, 0.5, 0.75, 1.0]:
-        z_interp = alpha * z_orb + (1 - alpha) * z_bal
-        H_interp = film_h(x, z_interp)
-        regime_label = f"{alpha*100:.0f}% orbital"
-        print(f"   {regime_label:15s}: H = {H_interp:10.4f}")
-    
-    # Gradient timing benchmark
-    print("\n5. Performance (M2 Air target: <10μs):")
-    z_test = anchors["hgv"]
-    
-    # JIT compile
-    grad_fn = jax.jit(lambda x_: film_h.get_energy_gradient(x_, z_test))
-    _ = grad_fn(x)  # Warmup
-    
-    # Benchmark
-    import time
-    n_runs = 1000
-    start = time.time()
-    for _ in range(n_runs):
-        _ = grad_fn(x)
-    elapsed = (time.time() - start) / n_runs * 1e6  # μs
-    
-    print(f"   ∇_x H(x, z) computation: {elapsed:.2f} μs")
-    print(f"   100Hz compatible: {'✅ YES' if elapsed < 100 else '❌ NO'}")
-    
-    print("\n" + "=" * 70)
-    print("Key Features:")
-    print("  - Autodiff cleanliness: ∇_x flows only through state path")
-    print("  - Mode interpolation: smooth regime transitions")
-    print("  - M2 Air optimized: <10μs on Apple AMX")
-    print("  - Unified training: Orbital + Ballistic + HGV")
-    print("=" * 70)
+ """Demonstrate FiLM Hamiltonian capabilities."""
+ print("=" * 70)
+ print("FiLM Hamiltonian (H(x, z)) Demo")
+ print("=" * 70)
+ 
+ # Initialize
+ key = jax.random.PRNGKey(42)
+ film_h, anchors = create_film_port_hamiltonian(key)
+ 
+ print("\n1. Architecture:")
+ print(f" State dim: 6 (pos, vel)")
+ print(f" Latent dim: 32 (regime code)")
+ print(f" Width: 128, Depth: 4")
+ print(f" FiLM: γ(z) ⊙ h + β(z) per layer")
+ 
+ # Test state (LEO)
+ x = jnp.array([6878.0, 0.0, 0.0, 0.0, 7.5, 0.0]) # 500km altitude
+ 
+ print(f"\n2. Test State: pos=[{x[0]:.1f}, {x[1]:.1f}, {x[2]:.1f}] km, "
+ f"vel=[{x[3]:.1f}, {x[4]:.1f}, {x[5]:.1f}] km/s")
+ 
+ # Compute H(x, z) for each regime
+ print("\n3. Regime-Conditioned Energies:")
+ for regime, z in anchors.items():
+ H = film_h(x, z)
+ grad_H = film_h.get_energy_gradient(x, z)
+ print(f" {regime:12s}: H = {H:10.4f}, |∇H| = {float(jnp.linalg.norm(grad_H)):6.4f}")
+ 
+ # Demonstrate interpolation
+ print("\n4. Mode Interpolation (Karman Line at 100km):")
+ z_orb = anchors["orbital"]
+ z_bal = anchors["ballistic"]
+ for alpha in [0.0, 0.25, 0.5, 0.75, 1.0]:
+ z_interp = alpha * z_orb + (1 - alpha) * z_bal
+ H_interp = film_h(x, z_interp)
+ regime_label = f"{alpha*100:.0f}% orbital"
+ print(f" {regime_label:15s}: H = {H_interp:10.4f}")
+ 
+ # Gradient timing benchmark
+ print("\n5. Performance (M2 Air target: <10μs):")
+ z_test = anchors["hgv"]
+ 
+ # JIT compile
+ grad_fn = jax.jit(lambda x_: film_h.get_energy_gradient(x_, z_test))
+ _ = grad_fn(x) # Warmup
+ 
+ # Benchmark
+ import time
+ n_runs = 1000
+ start = time.time()
+ for _ in range(n_runs):
+ _ = grad_fn(x)
+ elapsed = (time.time() - start) / n_runs * 1e6 # μs
+ 
+ print(f" ∇_x H(x, z) computation: {elapsed:.2f} μs")
+ print(f" 100Hz compatible: {'✅ YES' if elapsed < 100 else '❌ NO'}")
+ 
+ print("\n" + "=" * 70)
+ print("Key Features:")
+ print(" - Autodiff cleanliness: ∇_x flows only through state path")
+ print(" - Mode interpolation: smooth regime transitions")
+ print(" - M2 Air optimized: <10μs on Apple AMX")
+ print(" - Unified training: Orbital + Ballistic + HGV")
+ print("=" * 70)
 
 
 if __name__ == "__main__":
-    demo_film_hamiltonian()
+ demo_film_hamiltonian()

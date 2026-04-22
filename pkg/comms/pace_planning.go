@@ -224,9 +224,9 @@ type PACEStatus struct {
 	AutoFailover bool
 }
 
-// CreateDefaultADITI4PACE creates a default PACE plan for ADITI 4.0
+// CreateDefaultADITI4PACE creates a default PACE plan for sovereign communications
 func CreateDefaultADITI4PACE() *PACEPlan {
-	plan := NewPACEPlan("ADITI4-COMMS")
+	plan := NewPACEPlan("SOVEREIGN-COMMS")
 
 	// Primary: Reticulum Mesh (LXMF)
 	plan.SetPrimary(&PACEMethod{

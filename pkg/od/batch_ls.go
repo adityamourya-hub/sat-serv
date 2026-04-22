@@ -3,7 +3,7 @@ package od
 /**
  * Batch Least Squares Orbit Determination
  *
- * ADITI 4.0: Generates osculating state + 6x6 covariance from
+ * Generates osculating state + 6x6 covariance from
  * a batch of sensor observations (radar/optical).
  *
  * This addresses the critical gap: TLEs don't have covariance,

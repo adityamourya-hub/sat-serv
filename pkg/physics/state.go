@@ -13,13 +13,19 @@ type Vector3 [3]float64
 /**
  * State represents the orbital state (position and velocity) in ECI coordinates.
  * Hardened for Clean Architecture: Separates data from behavior.
+ *
+ * SDE Optimization (<1ms Reflex Target):
+ * - Covariance flattened to [36]float64 for contiguous memory layout
+ * - Guarantees cache locality and SIMD-friendly access pattern
+ * - Reduces stack copying overhead in tight loops
+ * - Use StatePool from state_pool.go for zero-allocation recycling
  */
 type State struct {
-	Pos        Vector3
-	Vel        Vector3
-	EpochJD    float64       // Julian Date
-	E_hal      float64       // Hamiltonian Energy for auditing
-	Covariance [6][6]float64 // Position/velocity covariance (km², km²/s²) - added for ADITI 4.0 Pc computation
+	Pos        Vector3     // 24 bytes
+	Vel        Vector3     // 24 bytes
+	EpochJD    float64     // 8 bytes
+	E_hal      float64     // 8 bytes
+	Covariance [36]float64 // Flattened 6x6 matrix (288 bytes) - cache-friendly, SIMD-ready
 }
 
 /**
@@ -45,7 +51,7 @@ type Observation struct {
 /**
  * PhysicsParams represents the environmental and structural parameters of an object.
  *
- * ADITI 4.0: BallisticCoeff enables per-object drag differentiation based on
+ * BallisticCoeff enables per-object drag differentiation based on
  * historical TLE analysis and physical object properties.
  */
 type PhysicsParams struct {
@@ -199,14 +205,17 @@ const (
  * TLE-derived covariance is CONSERVATIVE - actual errors may be smaller.
  * This enables Pc computation from TLE data where no formal covariance exists.
  *
+ * SDE Optimization: Returns flattened [36]float64 for cache locality.
+ * Indexing: cov[i*6 + j] for element at row i, column j.
+ *
  * Typical TLE errors (1-sigma):
  *   LEO:  1.0 km position, 0.001 km/s velocity
  *   GEO:  5.0 km position, 0.0005 km/s velocity (worse due to SRP/tesseral effects)
  *
  * @param tle The TLE data
- * @return 6x6 covariance matrix [km², km²/s²]
+ * @return Flattened 6x6 covariance matrix [36]float64 [km², km²/s²]
  */
-func ConstructDefaultCovarianceFromTLE(tle TLE) [6][6]float64 {
+func ConstructDefaultCovarianceFromTLE(tle TLE) [36]float64 {
 	// Determine orbit regime from TLE parameters
 	regime := classifyOrbitRegime(tle)
 
@@ -237,27 +246,28 @@ func ConstructDefaultCovarianceFromTLE(tle TLE) [6][6]float64 {
 
 	// Build diagonal covariance (uncorrelated position/velocity errors)
 	// State order: [x, y, z, vx, vy, vz]
-	var cov [6][6]float64
+	// Flattened indexing: cov[i*6 + j] for element at row i, column j
+	var cov [36]float64
 
 	// Position variances (diagonal)
-	cov[0][0] = posSigma * posSigma
-	cov[1][1] = posSigma * posSigma * 0.25 // In-track typically better (0.5 km for LEO)
-	cov[2][2] = posSigma * posSigma * 0.25 // Cross-track typically better
+	cov[0] = posSigma * posSigma
+	cov[7] = posSigma * posSigma * 0.25  // In-track typically better (0.5 km for LEO)
+	cov[14] = posSigma * posSigma * 0.25 // Cross-track typically better
 
 	// Velocity variances (diagonal)
-	cov[3][3] = velSigma * velSigma
-	cov[4][4] = velSigma * velSigma
-	cov[5][5] = velSigma * velSigma
+	cov[21] = velSigma * velSigma
+	cov[28] = velSigma * velSigma
+	cov[35] = velSigma * velSigma
 
 	// Add small cross-correlation for realistic covariance structure
 	// Position-velocity correlation is small but non-zero for TLE data
 	corrCoeff := 0.1
-	cov[0][3] = corrCoeff * posSigma * velSigma
-	cov[3][0] = cov[0][3]
-	cov[1][4] = corrCoeff * posSigma * velSigma * 0.5
-	cov[4][1] = cov[1][4]
-	cov[2][5] = corrCoeff * posSigma * velSigma * 0.5
-	cov[5][2] = cov[2][5]
+	cov[3] = corrCoeff * posSigma * velSigma        // [0][3]
+	cov[18] = cov[3]                                // [3][0]
+	cov[10] = corrCoeff * posSigma * velSigma * 0.5 // [1][4]
+	cov[25] = cov[10]                               // [4][1]
+	cov[17] = corrCoeff * posSigma * velSigma * 0.5 // [2][5]
+	cov[32] = cov[17]                               // [5][2]
 
 	return cov
 }

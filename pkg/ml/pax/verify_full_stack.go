@@ -351,7 +351,7 @@ func ConcurrentValidation(goroutines int, framesPerGoroutine int) *ValidationRes
 
 func main() {
 	fmt.Println("╔══════════════════════════════════════════════════════════════════╗")
-	fmt.Println("║        iDEX ADITI 4.0 - Unified Stack Validation                   ║")
+	fmt.Println("║        iDEX - Unified Stack Validation                             ║")
 	fmt.Println("║        PAX Controller → IMM → SINDy (500ms Constraint)            ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════════════╝")
 	fmt.Println()

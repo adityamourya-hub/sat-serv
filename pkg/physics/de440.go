@@ -139,7 +139,7 @@ func (e *DE440Ephemeris) Initialize() error {
 	}
 
 	// Note: Actual SPICE loading would happen here via cgo CSPICE
-	// ADITI 4.0: STUB - Requires CSPICE toolkit integration (cgo)
+	// STUB - Requires CSPICE toolkit integration (cgo)
 	// TODO: Implement actual CSPICE kernel loading via cgo
 	// Reference: https://naif.jpl.nasa.gov/naif/toolkit.html
 	// For now, we mark as "loaded" for the Go interface
@@ -150,7 +150,7 @@ func (e *DE440Ephemeris) Initialize() error {
 
 // GetBodyPosition returns ECI position (km) of a celestial body at given JD
 //
-// ADITI 4.0: Prioritizes CSPICE kernel data over analytical fallback
+// Prioritizes CSPICE kernel data over analytical fallback
 // If CSPICE is available, uses official JPL ephemeris from DE440 kernels.
 // Otherwise, falls back to analytical models (deprecated).
 func (e *DE440Ephemeris) GetBodyPosition(bodyName string, jd float64) ([3]float64, error) {
@@ -166,7 +166,7 @@ func (e *DE440Ephemeris) GetBodyPosition(bodyName string, jd float64) ([3]float6
 		return [3]float64{}, fmt.Errorf("unknown body: %s", bodyName)
 	}
 
-	// ADITI 4.0: Try CSPICE first (Go-native gospice wrapper)
+	// Try CSPICE first (Go-native gospice wrapper)
 	if CSPICEAvailable() {
 		cspice := GetGlobalCSPICE()
 		pos, _, err := cspice.GetBodyPosition(bodyName, jd, "J2000", "LT")
@@ -178,7 +178,7 @@ func (e *DE440Ephemeris) GetBodyPosition(bodyName string, jd float64) ([3]float6
 	}
 
 	// Fallback: Use high-precision analytical models (deprecated)
-	// ADITI 4.0: This should be removed once CSPICE is fully integrated
+	// This should be removed once CSPICE is fully integrated
 	fmt.Printf("[DE440] WARNING: Using analytical fallback for %s (CSPICE not available)\n", bodyName)
 	return e.analyticalPosition(bodyID, jd)
 }

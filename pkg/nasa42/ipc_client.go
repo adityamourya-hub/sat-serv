@@ -3,7 +3,7 @@ package nasa42
 /**
  * NASA 42 IPC Client - Go to C Communication Bridge
  *
- * ADITI 4.0: Connects Go orchestration layer to NASA 42 simulator
+ * Connects Go orchestration layer to NASA 42 simulator
  * for high-fidelity physics validation.
  *
  * Architecture:
@@ -20,7 +20,7 @@ package nasa42
  * 1. Detect high-risk conjunction in Go (Pc > 1e-4)
  * 2. Hand off object pair to NASA 42 via IPC
  * 3. Get NASA-validated high-fidelity trajectory
- * 4. Update ADITI with "ground truth" for critical events
+ * 4. Update catalog with "ground truth" for critical events
  *
  * References:
  * - NASA 42: github.com/ericstoneking/42

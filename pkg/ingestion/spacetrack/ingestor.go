@@ -15,7 +15,7 @@ import (
 
 /**
  * Ingestor implements a production-grade incremental TLE ingestion loop
- * for ADITI 4.0 Live Catalog Updates.
+ * for sovereign Live Catalog Updates.
  *
  * Features:
  * - Rate-limited queries (20 req/min max)
@@ -54,7 +54,7 @@ type Ingestor struct {
 	// Catalog lookup for determining new/updated/decayed objects
 	LookupCatalog func(noradID int) (*physics.TLE, bool) // Returns existing TLE if found
 
-	// ADITI 4.0: Hamiltonian Invariant Firewall for anti-spoof verification
+	// Hamiltonian Invariant Firewall for anti-spoof verification
 	HamiltonianValidator *sda.HamiltonianValidator
 }
 
@@ -70,14 +70,14 @@ type IngestionMetrics struct {
 	QueryDuration  time.Duration
 	Errors         []string
 
-	// ADITI 4.0: Hamiltonian validation metrics
+	// Hamiltonian validation metrics
 	HamiltonianValidated int
 	HamiltonianRejected  int
 	HamiltonianDriftSum  float64 // Sum of σ_H / H_avg for all validated objects
 }
 
 /**
- * NewIngestor creates a configured ingestion loop for ADITI 4.0 operations.
+ * NewIngestor creates a configured ingestion loop for sovereign operations.
  *
  * @param pollInterval: How often to poll (5-15 min recommended)
  * @param windowHours: Lookback window for detecting changes (1-4 hours recommended)
@@ -95,7 +95,7 @@ func NewIngestor(username, password string, pollInterval time.Duration) (*Ingest
 		minInterval:          3 * time.Second, // 20 requests per minute max
 		pollInterval:         pollInterval,
 		windowHours:          4.0,                           // 4 hour lookback by default
-		HamiltonianValidator: sda.NewHamiltonianValidator(), // ADITI 4.0: Anti-spoof protection
+		HamiltonianValidator: sda.NewHamiltonianValidator(), // Anti-spoof protection
 	}, nil
 }
 
@@ -204,7 +204,7 @@ func (i *Ingestor) processTLEBatch(tles []*physics.TLE, metrics *IngestionMetric
 
 		processed++
 
-		// ADITI 4.0: Hamiltonian Invariant Firewall - Anti-spoof validation
+		// Hamiltonian Invariant Firewall - Anti-spoof validation
 		// Every TLE must pass physics-based energy conservation check
 		if i.HamiltonianValidator != nil {
 			// Convert TLE orbital elements to state vectors for validation

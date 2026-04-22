@@ -9,7 +9,7 @@ import (
 )
 
 /**
- * ADITI 4.0: Reachability Risk Index (RRI)
+ * Reachability Risk Index (RRI)
  *
  * Polynomial approximation of reachability sets for fast threat assessment.
  * Stores Taylor series coefficients for O(1) reachability queries.

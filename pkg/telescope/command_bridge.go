@@ -40,13 +40,13 @@ type CommandAcknowledgment struct {
 // AMOS 2025: "Deep Multi-Task Learning for Atmospheric Turbulence Prediction"
 // Physics: Speckle statistics encode non-local turbulence modes
 //
-// ADITI 4.0: Integrated with fractional FNO block and UDE density bias removal
+// Integrated with fractional FNO block and UDE density bias removal
 // for HGV corridor plasma wake modeling (30-80km transitional flow regime)
 type SpecklePreprocessor struct {
 	ZernikeCoefficients []float64 // Zernike modes for turbulence correction
 	FrameBuffer         []SpeckleFrame
 	BufferSize          int
-	frameIndex          int // CRITICAL FIX: Circular buffer index
+	frameIndex          int // Circular buffer index
 
 	// AMOS Multi-Task Learning Features
 	MultiTaskFeatures []float64 // Shared representation for Zernike + seeing + scintillation
@@ -59,7 +59,7 @@ type SpecklePreprocessor struct {
 	// Fractional FNO Integration
 	FractionalKernel float64   // Fractional Laplacian exponent (α ∈ [1,2])
 	NonLocalMemory   []float64 // Wake memory buffer for fractional transport
-	memoryIndex      int       // CRITICAL FIX: Circular buffer index for wake memory
+	memoryIndex      int       // Circular buffer index for wake memory
 }
 
 // SpeckleFrame represents a single focal-plane speckle image
@@ -72,12 +72,12 @@ type SpeckleFrame struct {
 
 // NewSpecklePreprocessor creates preprocessor for non-local turbulence correction
 //
-// ADITI 4.0: Initializes AMOS multi-task learning features and UDE density bias
+// Initializes AMOS multi-task learning features and UDE density bias
 // for HGV plasma wake modeling in fractional FNO block
 func NewSpecklePreprocessor(bufferSize int) *SpecklePreprocessor {
 	return &SpecklePreprocessor{
 		ZernikeCoefficients: make([]float64, 15),              // Z1-Z15 for tip/tilt through higher order
-		FrameBuffer:         make([]SpeckleFrame, bufferSize), // CRITICAL FIX: Pre-allocated
+		FrameBuffer:         make([]SpeckleFrame, bufferSize), // Pre-allocated circular buffer
 		BufferSize:          bufferSize,
 		frameIndex:          0, // Initialize circular index
 
@@ -91,7 +91,7 @@ func NewSpecklePreprocessor(bufferSize int) *SpecklePreprocessor {
 
 		// Fractional FNO
 		FractionalKernel: 1.5,                 // Default α for transitional flow
-		NonLocalMemory:   make([]float64, 50), // CRITICAL FIX: Pre-allocated
+		NonLocalMemory:   make([]float64, 50), // Pre-allocated wake memory buffer
 		memoryIndex:      0,                   // Initialize circular index
 	}
 }
@@ -99,10 +99,10 @@ func NewSpecklePreprocessor(bufferSize int) *SpecklePreprocessor {
 // ProcessFrame extracts Zernike coefficients from speckle image
 // AMOS 2025 technique: Multi-task learning predicts/corrects Zernike coefficients
 //
-// ADITI 4.0: Computes UDE density bias and fractional FNO corrections
+// Computes UDE density bias and fractional FNO corrections
 // for HGV plasma wake modeling (30-80km transitional flow)
 func (sp *SpecklePreprocessor) ProcessFrame(frame SpeckleFrame) []float64 {
-	// CRITICAL FIX: Use circular buffer instead of append
+	// Circular buffer update (avoids per-frame allocation)
 	sp.FrameBuffer[sp.frameIndex] = frame
 	sp.frameIndex = (sp.frameIndex + 1) % sp.BufferSize
 
@@ -158,7 +158,7 @@ func (sp *SpecklePreprocessor) updateZernikeFromSpeckle() {
 
 // computeMultiTaskFeatures computes shared representation for AMOS multi-task learning
 //
-// ADITI 4.0: Predicts Zernike + seeing + scintillation simultaneously
+// Predicts Zernike + seeing + scintillation simultaneously
 // using shared encoder (Georgia State technique)
 func (sp *SpecklePreprocessor) computeMultiTaskFeatures() {
 	if len(sp.FrameBuffer) < 3 {
@@ -194,7 +194,7 @@ func (sp *SpecklePreprocessor) computeMultiTaskFeatures() {
 
 // computeUDEBias computes Unresolved Density Estimation bias (Slingshot AMOS 2025)
 //
-// ADITI 4.0: Removes density bias from unresolved spectral features
+// Removes density bias from unresolved spectral features
 // Critical for HGV plasma wake where electron density ~10^15-10^18 m^-3
 func (sp *SpecklePreprocessor) computeUDEBias() {
 	if len(sp.MultiTaskFeatures) == 0 {
@@ -225,10 +225,9 @@ func (sp *SpecklePreprocessor) computeUDEBias() {
 
 // updateFractionalMemory updates non-local wake memory for fractional FNO
 //
-// ADITI 4.0: Implements Caputo D_t^β temporal memory for HGV wake
-// Fractional Laplacian (−Δ)^α for spatial non-locality
+// updateFractionalMemory implements Caputo temporal memory for HGV wake.
 func (sp *SpecklePreprocessor) updateFractionalMemory() {
-	// CRITICAL FIX: Use circular buffer instead of append
+	// Circular buffer update (avoids per-frame allocation)
 	sp.NonLocalMemory[sp.memoryIndex] = sp.DensityCorrection
 	sp.memoryIndex = (sp.memoryIndex + 1) % 50
 
@@ -272,7 +271,7 @@ func computeMeanVariance(data []float64) (mean, variance float64) {
 
 // GetFNOCorrection returns density correction for fractional FNO integration
 //
-// ADITI 4.0: Provides UDE bias removal + fractional memory correction
+// Provides UDE bias removal + fractional memory correction
 // for integration with FNO atmosphere operator in PredictiveSlew
 func (sp *SpecklePreprocessor) GetFNOCorrection() (densityCorrection float64, fractionalAlpha float64) {
 	return sp.DensityCorrection, sp.FractionalKernel
@@ -280,7 +279,7 @@ func (sp *SpecklePreprocessor) GetFNOCorrection() (densityCorrection float64, fr
 
 // GetTurbulenceProfile returns altitude-resolved C_n^2 profile
 //
-// ADITI 0.0: For integration with fractional atmosphere model
+// For integration with fractional atmosphere model
 func (sp *SpecklePreprocessor) GetTurbulenceProfile() []float64 {
 	return sp.TurbulenceProfile
 }
@@ -310,7 +309,7 @@ func DefaultAMOSBenchmarks() AMOSLatencyBenchmarks {
 // AMOS 2025: Extended with speckle preprocessing for non-local turbulence mitigation
 // Target: Beat GEODSS Deep STARE (<100ms tracking loop, <500ms slew settling)
 //
-// ADITI 4.0: Extended with INDI protocol support via Python proxy for <50ms telescope latency
+// Extended with INDI protocol support via Python proxy for <50ms telescope latency
 type CommandBridge struct {
 	socket     *zmq4.Socket
 	endpoint   string
@@ -329,29 +328,29 @@ type CommandBridge struct {
 	// Latency tracking
 	LatencyHistory []float64 // Recent command latencies
 
-	// ADITI 4.0: MFBD Vision Engine (Tier 3 morphological intelligence)
+	// MFBD Vision Engine (Tier 3 morphological intelligence)
 	VisionEngine *VisionEngine
 	ASRFilter    *ASRFilter
 
-	// ADITI 4.0: Fractional Laplacian for HGV wake memory
+	// Fractional Laplacian for HGV wake memory
 	FractionalLaplacian *physics.FractionalLaplacian
 
-	// ADITI 4.0: INDI protocol support
+	// INDI protocol support
 	INDIEndpoint string // ZMQ endpoint for INDI proxy (localhost:5555)
 	INDISocket   *zmq4.Socket
 	INDIEnabled  bool
 
-	// ADITI 4.0: INDI health monitoring
-	indiHealthMu         sync.RWMutex // CRITICAL FIX: Protect INDIHealth from race conditions
+	// INDI health monitoring
+	indiHealthMu         sync.RWMutex // Protects INDIHealth from race conditions
 	INDIHealth           INDIHealthStatus
 	INDIReconnectBackoff time.Duration
 	INDILastCmdTime      time.Time
 	INDIAvgLatencyMs     float64
 
-	// ADITI 4.0: Centroid-to-PHS Feedback
+	// Centroid-to-PHS Feedback
 	CentroidBridge *CentroidBridge
 
-	// ADITI 4.0: Observation Report Builder
+	// Observation Report Builder
 	ReportBuilder *ObservationReportBuilder
 }
 
@@ -364,7 +363,7 @@ type INDIHealthStatus struct {
 	IsHealthy         bool
 }
 
-// CRITICAL FIX: Typed structs for INDI commands to eliminate interface{} allocations
+// INDICommand is a typed command struct to avoid interface{} allocations.
 type INDICommand struct {
 	Type   string  `json:"type"`
 	Action string  `json:"action,omitempty"`  // CONNECT/DISCONNECT
@@ -389,7 +388,7 @@ type INDIResponse struct {
 	Error     string  `json:"error,omitempty"`
 }
 
-// CRITICAL FIX: sync.Pool for INDI command buffers to eliminate allocations
+// indiCommandPool reuses INDI command structs to reduce GC pressure.
 var indiCommandPool = sync.Pool{
 	New: func() interface{} {
 		return &INDICommand{}
@@ -433,27 +432,27 @@ func NewCommandBridge(endpoint string, lat, lon, alt float64) (*CommandBridge, e
 
 		LatencyHistory: make([]float64, 0, 100),
 
-		// ADITI 4.0: Initialize MFBD vision system (Tier 3)
+		// Initialize MFBD vision system (Tier 3)
 		ASRFilter: NewASRFilter(nil), // PHS interface set later
 
-		// ADITI 4.0: Initialize Fractional Laplacian for HGV wake memory
+		// Initialize Fractional Laplacian for HGV wake memory
 		FractionalLaplacian: physics.NewFractionalLaplacian(),
 
-		// ADITI 4.0: INDI protocol (disabled by default)
+		// INDI protocol (disabled by default)
 		INDIEndpoint: "tcp://localhost:5555",
 		INDIEnabled:  false,
 
-		// ADITI 4.0: INDI health monitoring
+		// INDI health monitoring
 		INDIHealth: INDIHealthStatus{
 			Connected: false,
 			IsHealthy: false,
 		},
 		INDIReconnectBackoff: 1 * time.Second,
 
-		// ADITI 4.0: Centroid-to-PHS Feedback (initialized on vision engine init)
+		// Centroid-to-PHS Feedback (initialized on vision engine init)
 		CentroidBridge: nil,
 
-		// ADITI 4.0: Report builder (initialized on first use)
+		// Report builder (initialized on first use)
 		ReportBuilder: nil,
 	}
 
@@ -472,7 +471,7 @@ func min(a, b time.Duration) time.Duration {
 }
 
 // InitializeVisionEngine creates VisionEngine after ASR is ready
-// ADITI 4.0: Also initializes CentroidBridge for closed-loop feedback
+// Also initializes CentroidBridge for closed-loop feedback
 func (cb *CommandBridge) InitializeVisionEngine(efeSolver interface{}) {
 	config := DefaultMFBDConfig()
 	cb.VisionEngine = NewVisionEngine(config, cb.ASRFilter)
@@ -496,7 +495,7 @@ func (cb *CommandBridge) InitializeReportBuilder(nodeID, stationID string) error
 }
 
 // ProcessCentroidObservation processes MFBD output and feeds to EFE solver
-// ADITI 4.0: Closed-loop feedback for kinetic custody
+// Closed-loop feedback for kinetic custody
 func (cb *CommandBridge) ProcessCentroidObservation(geometry *ObjectGeometry, predictedAz, predictedEl float64) (float64, error) {
 	if cb.CentroidBridge == nil {
 		return 0, fmt.Errorf("CentroidBridge not initialized")
@@ -550,7 +549,7 @@ func (cb *CommandBridge) Close() {
 
 // EnableINDI connects to the INDI proxy for <50ms telescope latency
 //
-// ADITI 4.0: Enables INDI protocol support via Python proxy.
+// Enables INDI protocol support via Python proxy.
 // Go logic → ZMQ port 5555 → Python proxy → INDI server port 7624 → Telescope
 func (cb *CommandBridge) EnableINDI() error {
 	socket, err := zmq4.NewSocket(zmq4.REQ)
@@ -573,8 +572,7 @@ func (cb *CommandBridge) EnableINDI() error {
 	return nil
 }
 
-// SendINDICommand sends a command to the INDI proxy
-// CRITICAL FIX: Uses typed structs to eliminate interface{} allocations
+// SendINDICommand sends a command to the INDI proxy.
 func (cb *CommandBridge) SendINDICommand(command INDICommand) (INDIResponse, error) {
 	if !cb.INDIEnabled || cb.INDISocket == nil {
 		return INDIResponse{}, fmt.Errorf("INDI not enabled")
@@ -712,61 +710,58 @@ func (cb *CommandBridge) INDIAbort() error {
 }
 
 // indiHealthMonitor runs in background to monitor INDI proxy health
-// ADITI 4.0: Auto-reconnect with exponential backoff for fault tolerance
+// Auto-reconnect with exponential backoff for fault tolerance
 func (cb *CommandBridge) indiHealthMonitor() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			if !cb.INDIEnabled {
+	for range ticker.C {
+		if !cb.INDIEnabled {
+			continue
+		}
+
+		// Ping INDI proxy with health check
+		cmd := INDICommand{
+			Type: "HEALTH_CHECK",
+		}
+
+		start := time.Now()
+		resp, err := cb.SendINDICommand(cmd)
+		latency := time.Since(start)
+
+		// Lock before updating INDIHealth
+		cb.indiHealthMu.Lock()
+		cb.INDILastCmdTime = time.Now()
+
+		if err != nil {
+			cb.INDIHealth.ConsecutiveErrors++
+			cb.INDIHealth.IsHealthy = false
+			cb.INDIHealth.Connected = false
+
+			// Exponential backoff for reconnection
+			if cb.INDIHealth.ConsecutiveErrors > 3 {
+				cb.indiHealthMu.Unlock()
+				fmt.Printf("[TELESCOPE] INDI unhealthy (%d errors), attempting reconnect...\n",
+					cb.INDIHealth.ConsecutiveErrors)
+				cb.attemptINDIReconnect()
 				continue
 			}
+		} else {
+			cb.INDIHealth.ConsecutiveErrors = 0
+			cb.INDIHealth.Connected = true
+			cb.INDIHealth.LastPingTime = time.Now()
+			cb.INDIHealth.IsHealthy = resp.Status == "ACK"
 
-			// Ping INDI proxy with health check
-			cmd := INDICommand{
-				Type: "HEALTH_CHECK",
+			// Update latency tracking
+			latencyMs := float64(latency.Milliseconds())
+			cb.INDIAvgLatencyMs = 0.9*cb.INDIAvgLatencyMs + 0.1*latencyMs // EWMA
+			cb.INDIHealth.AvgLatencyMs = cb.INDIAvgLatencyMs
+
+			if latencyMs > 50 {
+				fmt.Printf("[TELESCOPE] WARNING: INDI latency %.1fms exceeds 50ms target\n", latencyMs)
 			}
-
-			start := time.Now()
-			resp, err := cb.SendINDICommand(cmd)
-			latency := time.Since(start)
-
-			// CRITICAL FIX: Lock before writing to INDIHealth
-			cb.indiHealthMu.Lock()
-			cb.INDILastCmdTime = time.Now()
-
-			if err != nil {
-				cb.INDIHealth.ConsecutiveErrors++
-				cb.INDIHealth.IsHealthy = false
-				cb.INDIHealth.Connected = false
-
-				// Exponential backoff for reconnection
-				if cb.INDIHealth.ConsecutiveErrors > 3 {
-					cb.indiHealthMu.Unlock()
-					fmt.Printf("[TELESCOPE] INDI unhealthy (%d errors), attempting reconnect...\n",
-						cb.INDIHealth.ConsecutiveErrors)
-					cb.attemptINDIReconnect()
-					continue
-				}
-			} else {
-				cb.INDIHealth.ConsecutiveErrors = 0
-				cb.INDIHealth.Connected = true
-				cb.INDIHealth.LastPingTime = time.Now()
-				cb.INDIHealth.IsHealthy = resp.Status == "ACK"
-
-				// Update latency tracking
-				latencyMs := float64(latency.Milliseconds())
-				cb.INDIAvgLatencyMs = 0.9*cb.INDIAvgLatencyMs + 0.1*latencyMs // EWMA
-				cb.INDIHealth.AvgLatencyMs = cb.INDIAvgLatencyMs
-
-				if latencyMs > 50 {
-					fmt.Printf("[TELESCOPE] WARNING: INDI latency %.1fms exceeds 50ms target\n", latencyMs)
-				}
-			}
-			cb.indiHealthMu.Unlock()
 		}
+		cb.indiHealthMu.Unlock()
 	}
 }
 
@@ -789,15 +784,14 @@ func (cb *CommandBridge) attemptINDIReconnect() {
 		fmt.Printf("[TELESCOPE] INDI reconnected successfully\n")
 		cb.INDIReconnectBackoff = 1 * time.Second // Reset backoff
 
-		// CRITICAL FIX: Lock before writing to INDIHealth
+		// Lock before updating INDIHealth
 		cb.indiHealthMu.Lock()
 		cb.INDIHealth.ConsecutiveErrors = 0
 		cb.indiHealthMu.Unlock()
 	}
 }
 
-// GetINDIHealth returns current INDI health status
-// CRITICAL FIX: Thread-safe with mutex, returns copy to avoid race after unlock
+// GetINDIHealth returns current INDI health status (thread-safe copy).
 func (cb *CommandBridge) GetINDIHealth() INDIHealthStatus {
 	cb.indiHealthMu.RLock()
 	defer cb.indiHealthMu.RUnlock()
@@ -844,7 +838,7 @@ func (cb *CommandBridge) Slew(cmd TelescopeCommand) (*CommandAcknowledgment, err
 
 // PredictiveSlew calculates future Az/El for "Slew and Stare" tracking
 //
-// ADITI 4.0: Enhanced with Fractional Laplacian for HGV wake memory.
+// Enhanced with Fractional Laplacian for HGV wake memory.
 // For HGV corridor (30-80km altitude), applies Caputo derivative correction
 // to account for non-local drag effects from persistent plasma wakes.
 func (cb *CommandBridge) PredictiveSlew(propagator orbital.Propagator, targetID int, leadTimeSec float64) (*CommandAcknowledgment, error) {
@@ -867,7 +861,7 @@ func (cb *CommandBridge) PredictiveSlew(propagator orbital.Propagator, targetID 
 		return nil, fmt.Errorf("target below horizon (El=%.1f°) in %.1fs", el, leadTimeSec)
 	}
 
-	// ADITI 4.0: Apply Fractional Laplacian correction for HGV wake memory
+	// Apply Fractional Laplacian correction for HGV wake memory
 	// Only apply in HGV corridor (30-80km altitude)
 	altitudeKm := math.Sqrt(futureState.Pos[0]*futureState.Pos[0]+
 		futureState.Pos[1]*futureState.Pos[1]+

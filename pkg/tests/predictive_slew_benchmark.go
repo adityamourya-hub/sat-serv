@@ -1,5 +1,5 @@
 // pkg/tests/predictive_slew_benchmark.go
-// ADITI 4.0: PredictiveSlew End-to-End Latency Benchmark
+// PredictiveSlew End-to-End Latency Benchmark
 //
 // Benchmarks full pipeline: Detection → Track Init → Predictive Slew → Centroid Lock
 // Target latency: < 100ms from detection to first centroid
@@ -23,7 +23,7 @@ const (
 
 // TestPredictiveSlewLatency benchmarks end-to-end PredictiveSlew latency
 func TestPredictiveSlewLatency(t *testing.T) {
-	fmt.Println("=== ADITI 4.0: PredictiveSlew Latency Benchmark ===")
+	fmt.Println("=== PredictiveSlew Latency Benchmark ===")
 	fmt.Printf("Target Latency: %.0f ms\n", 100.0)
 	fmt.Printf("GEODSS Benchmark: %.0f ms\n", AMOSBenchmarkMs)
 	fmt.Println()

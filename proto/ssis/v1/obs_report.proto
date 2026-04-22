@@ -1,5 +1,5 @@
 // proto/ssis/v1/obs_report.proto
-// ADITI 4.0: Sovereign ObservationReport Schema
+// Sovereign ObservationReport Schema
 //
 // Payload that transforms raw tracking data into Signed Intelligence Product.
 // Compact for Reticulum Network Stack (100Hz edge path) but rich enough for

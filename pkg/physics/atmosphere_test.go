@@ -1,5 +1,5 @@
 // pkg/physics/atmosphere_test.go
-// ADITI 4.0: Atmospheric Density Model Tests
+// Atmospheric Density Model Tests
 //
 // Tests for FNO vs Jacchia-Roberts atmospheric density models.
 // Verifies the sigmoidal blend implementation and density accuracy.
@@ -57,7 +57,7 @@ func TestAtmosphereSigmoidalBlend(t *testing.T) {
 
 // TestJacchiaRobertsDensity verifies Jacchia-Roberts density model implementation
 func TestJacchiaRobertsDensity(t *testing.T) {
-t.Skip("Density values off by orders of magnitude - needs review")
+	t.Skip("Density values off by orders of magnitude - needs review")
 	// Test at standard atmosphere altitudes
 	testCases := []struct {
 		altitude float64 // km

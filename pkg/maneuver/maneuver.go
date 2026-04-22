@@ -21,8 +21,8 @@ type ManeuverInferenceModel interface {
  * HybridManeuverDetector orchestrates model-first detection with CUSUM fallback.
  * This preserves deterministic behavior even when the ML model is unavailable or uncertain.
  *
- * ADITI 4.0: Added FractionalLaplacian for HGV wake memory correction in transitional flow regime (30-80km).
- * ADITI 4.0: Added PAX controller integration for adaptive tier selection based on maneuver confidence.
+ * Added FractionalLaplacian for HGV wake memory correction in transitional flow regime (30-80km).
+ * Added PAX controller integration for adaptive tier selection based on maneuver confidence.
  */
 type HybridManeuverDetector struct {
 	Model               ManeuverInferenceModel
@@ -32,11 +32,11 @@ type HybridManeuverDetector struct {
 	MinConfidence       float64
 	SuppressAfterDetect int
 
-	// ADITI 4.0: HGV wake memory correction
+	// HGV wake memory correction
 	FractionalLaplacian *physics.FractionalLaplacian
 	EnableHGVCorrection bool // Enable fractional correction for HGV targets
 
-	// ADITI 4.0: PAX controller integration
+	// PAX controller integration
 	PAXController    interface{} // Use interface to avoid circular dependency with pkg/ml/pax
 	EnablePAXTiering bool        // Enable adaptive tier selection based on confidence
 }
@@ -44,8 +44,8 @@ type HybridManeuverDetector struct {
 /**
  * NewHybridManeuverDetector initializes a detector with a specific ML model and default fallback settings.
  *
- * ADITI 4.0: Initializes FractionalLaplacian for HGV wake memory correction.
- * ADITI 4.0: Initializes PAX controller integration for adaptive tier selection.
+ * Initializes FractionalLaplacian for HGV wake memory correction.
+ * Initializes PAX controller integration for adaptive tier selection.
  */
 func NewHybridManeuverDetector(model ManeuverInferenceModel) *HybridManeuverDetector {
 	fmt.Printf("[TRC] Entering NewHybridManeuverDetector\n")
@@ -67,7 +67,7 @@ func NewHybridManeuverDetector(model ManeuverInferenceModel) *HybridManeuverDete
 /**
  * SetPAXController sets the PAX controller for adaptive tier selection.
  *
- * ADITI 4.0: Enables PAX tier selection based on maneuver confidence.
+ * Enables PAX tier selection based on maneuver confidence.
  * High-confidence maneuvers escalate to Tier 2/3 for higher fidelity processing.
  */
 func (h *HybridManeuverDetector) SetPAXController(controller interface{}) {
@@ -122,7 +122,7 @@ type CUSUMDetector struct {
 	threshold float64
 	posSum    float64
 	negSum    float64
-	regime    InputRegime // Added for regime-aware thresholds (ADITI 4.0)
+	regime    InputRegime // Added for regime-aware thresholds
 }
 
 /**
@@ -146,7 +146,7 @@ func NewCUSUMDetector(drift, threshold float64) *CUSUMDetector {
 /**
  * NewCUSUMDetectorForRegime creates a CUSUM detector with regime-appropriate thresholds.
  *
- * ADITI 4.0: Calibrated thresholds for different input data quality levels.
+ * Calibrated thresholds for different input data quality levels.
  *
  * TLE Input (σ_pos ~ 1km, σ_vel ~ 1m/s):
  *   - drift = 0.5 (100× less sensitive than SP)
@@ -310,7 +310,7 @@ func DetectManeuversHybrid(objectID int, residuals []float64, deltaVs []float64,
 /**
  * DetectManeuversHybridWithState dispatches to ML model or CUSUM fallback with HGV state correction.
  *
- * ADITI 4.0: Applies Fractional Laplacian correction for HGV targets in transitional flow regime (30-80km).
+ * Applies Fractional Laplacian correction for HGV targets in transitional flow regime (30-80km).
  *
  * Args:
  *   - altitudeKm: Current altitude in km (used to determine if in HGV corridor)
@@ -374,7 +374,7 @@ func DetectManeuversHybridWithState(objectID int, residuals []float64, deltaVs [
 					deltaVRSW = [3]float64{0, maxOr(inf.DeltaV, deltaVs[i]), 0}
 				}
 
-				// ADITI 4.0: Apply fractional Laplacian correction for HGV targets in transitional flow regime
+				// Apply fractional Laplacian correction for HGV targets in transitional flow regime
 				if hybrid.EnableHGVCorrection && hybrid.FractionalLaplacian != nil {
 					// Check if in HGV corridor (30-80km altitude)
 					if altitudeKm >= 30.0 && altitudeKm <= 80.0 && velocityKms > 5.0 {
@@ -655,7 +655,7 @@ func maxOr(a, b float64) float64 {
 /**
  * InvokeSymbolicAttribution bridges Go detection to SINDy-based force decomposition.
  *
- * ADITI 4.0: Replaces Python subprocess with native Go SINDy ControlInference.
+ * Replaces Python subprocess with native Go SINDy ControlInference.
  * Provides symbolic equation string for VSC (Symbolic Certificate) and force attribution.
  *
  * Returns:
@@ -667,7 +667,7 @@ func InvokeSymbolicAttribution(objectID int, window []physics.ManeuverFrame) (st
 	fmt.Printf("[TRC] Entering InvokeSymbolicAttribution for object %d\n", objectID)
 	defer fmt.Printf("[TRC] Exiting InvokeSymbolicAttribution\n")
 
-	// ADITI 4.0: Use SINDy ControlInference for force decomposition
+	// Use SINDy ControlInference for force decomposition
 	// Convert ManeuverFrame to state residuals for SINDy
 	if len(window) < 5 {
 		return "", 0.0, fmt.Errorf("insufficient window size for SINDy: need >=5, got %d", len(window))

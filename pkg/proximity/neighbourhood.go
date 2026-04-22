@@ -23,7 +23,7 @@ type ProximityAlert struct {
 
 /**
  * ScreenIndianAssets implements the 'Neighbourhood Watch' screening requirement
- * for the ADITI 4.0 challenge.
+ * for sovereign neighborhood-watch screening.
  * It uses the high-performance 4D ST-BVH for O(n log n) spatial-temporal queries,
  * ensuring that only objects proximal in both space and time are flagged.
  * Entry Point: Logs the current catalog size and threat radius.

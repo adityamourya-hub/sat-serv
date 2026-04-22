@@ -11,7 +11,7 @@ import (
  * derived from historical TLE data. This addresses the "corrupted B*" problem
  * where SGP4 fitting absorbs unmodeled perturbations.
  *
- * Reference: ADITI 4.0 High-Fidelity Drag Differentiation Requirements
+ * Reference: High-Fidelity Drag Differentiation Requirements
  */
 type BStarSmoothed struct {
 	SatelliteNumber int
@@ -93,7 +93,7 @@ type BStarSmoother struct {
 }
 
 /**
- * NewBStarSmoother creates a default MWLS smoother with ADITI 4.0 standards.
+ * NewBStarSmoother creates a default MWLS smoother with production standards.
  */
 func NewBStarSmoother() *BStarSmoother {
 	return &BStarSmoother{

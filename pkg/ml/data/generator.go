@@ -17,7 +17,7 @@ func dayOfYearFraction(t time.Time) float64 {
 
 /**
  * SyntheticDataGenerator generates realistic training data via TLE + J2 propagation + noise.
- * Hardened to use the physics substrate schema for ADITI 4.0 data fidelity.
+ * Hardened to use the physics substrate schema for data fidelity.
  */
 type SyntheticDataGenerator struct {
 	config   DataConfig
@@ -130,7 +130,7 @@ func (g *SyntheticDataGenerator) GenerateDataset() ([]Sample, error) {
 
 			trackLost := g.rng.Float64() < g.config.TrackingErrorRate
 			if trackLost {
-				obsX += g.rng.NormFloat64() * g.config.NoiseSTDKm * 100.0 
+				obsX += g.rng.NormFloat64() * g.config.NoiseSTDKm * 100.0
 				obsY += g.rng.NormFloat64() * g.config.NoiseSTDKm * 100.0
 				obsZ += g.rng.NormFloat64() * g.config.NoiseSTDKm * 100.0
 			}

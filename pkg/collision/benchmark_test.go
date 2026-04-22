@@ -12,7 +12,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Performance Benchmark Suite
+ * Performance Benchmark Suite
  *
  * Benchmarks all critical paths for operational deployment:
  * - Alfano Pc computation (series convergence, grid evaluation)
@@ -380,7 +380,7 @@ func BenchmarkCDMParsing(b *testing.B) {
  * PrintBenchmarkSummary generates a human-readable performance report.
  */
 func PrintBenchmarkSummary() {
-	fmt.Println("\n=== ADITI 4.0 Performance Benchmark Summary ===")
+	fmt.Println("\n=== Performance Benchmark Summary ===")
 	fmt.Println()
 	fmt.Println("Critical Path Performance Targets:")
 	fmt.Println("  - Alfano Pc:           < 1 ms per conjunction")

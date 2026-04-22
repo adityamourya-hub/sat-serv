@@ -6,7 +6,7 @@ import (
 )
 
 /**
- * ADITI 4.0 SRP Engine Factory
+ * SRP Engine Factory
  *
  * Provides intelligent model selection based on target type:
  * - Own Assets (GSAT, INSAT, Cartosat): Hybrid (Box-Wing + ECOM1)

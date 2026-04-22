@@ -21,11 +21,11 @@ import (
  * - Planetary K-index (Kp): https://services.swpc.noaa.gov/json/planetary_k_index_1m.json
  * - Ap Index: Derived from Kp
  *
- * ADITI 4.0: Space weather drives atmospheric density variations for drag modeling.
+ * Space weather drives atmospheric density variations for drag modeling.
  */
 type NOAAClient struct {
-	httpClient  *http.Client
-	baseURL     string
+	httpClient *http.Client
+	baseURL    string
 
 	// Rate limiting (NOAA is generous, but be polite)
 	mu          sync.Mutex
@@ -33,15 +33,15 @@ type NOAAClient struct {
 	minInterval time.Duration
 
 	// Cache
-	cache       *physics.SpaceWeatherCache
+	cache *physics.SpaceWeatherCache
 }
 
 /**
  * NOAAF107Data represents the F10.7 flux JSON structure from NOAA.
  */
 type NOAAF107Data []struct {
-	TimeTag string  `json:"time_tag"`
-	Flux    float64 `json:"flux"`
+	TimeTag  string  `json:"time_tag"`
+	Flux     float64 `json:"flux"`
 	Observed float64 `json:"observed_flux"`
 	Adjusted float64 `json:"adjusted_flux"`
 }
@@ -50,8 +50,8 @@ type NOAAF107Data []struct {
  * NOAAKpData represents the Kp index JSON structure from NOAA.
  */
 type NOAAKpData []struct {
-	TimeTag string `json:"time_tag"`
-	Kp      string `json:"kp"`
+	TimeTag string  `json:"time_tag"`
+	Kp      string  `json:"kp"`
 	KpValue float64 // Parsed from string "3+" etc.
 }
 

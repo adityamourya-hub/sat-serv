@@ -8,7 +8,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Monte Carlo Sampler with QMC/PRNG Hybrid Strategy
+ * Monte Carlo Sampler with QMC/PRNG Hybrid Strategy
  *
  * Primary: Quasi-Monte Carlo (Sobol/Halton) for fast O(1/N) convergence
  * Fallback: PRNG (MT19937) for validation and high-dimensional cases

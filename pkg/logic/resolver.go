@@ -1,4 +1,4 @@
-// Package logic provides the Conflict Resolver for ADITI 4.0
+// Package logic provides the Conflict Resolver for sovereign arbitration
 //
 // The Conflict Resolver acts as the "Supreme Court" of the software stack,
 // arbitrating between the Go-native physics engine (Heart) and the JAX-based
@@ -22,7 +22,7 @@
 //   - ANOMALY: Total disagreement (potential spoofing/manifold breach)
 //
 // References:
-//   - ADITI 4.0 HF-PGFM Architecture
+//   - HF-PGFM Architecture
 //   - iDEX May 4th Demo Requirements
 //   - Bayesian Trust Theory for Safety-Critical Systems
 
@@ -70,7 +70,7 @@ type ResolutionResult struct {
 	Reason           string      // Human-readable explanation
 }
 
-// ConflictResolver is the "Supreme Court" of ADITI 4.0
+// ConflictResolver is the "Supreme Court" of the sovereign stack
 // It arbitrates between Go-native physics and JAX-based AI
 type ConflictResolver struct {
 	mu              sync.RWMutex

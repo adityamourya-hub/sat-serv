@@ -14,7 +14,7 @@ import (
  * IAF SDA CLI - Axiom-Zero Hamiltonian-Gated Sovereign Engine
  *
  * Command-line interface for the Indian Air Force's sovereign space domain awareness system.
- * Implements the May 4th ADITI 4.0 audit requirements.
+ * Implements the May 4th sovereign audit requirements.
  */
 
 func main() {
@@ -267,7 +267,7 @@ func handleAudit() {
 	fmt.Printf("Generating Symbolic Certificate...\n")
 	fmt.Printf("Output: %s\n", outputFile)
 
-	fmt.Println("\n=== ADITI 4.0 Sovereign Handshake Certificate ===")
+	fmt.Println("\n=== Sovereign Handshake Certificate ===")
 	fmt.Println("Timestamp:", time.Now().Format("2006-01-02 15:04:05 UTC"))
 	fmt.Println()
 	fmt.Println("Hamiltonian Invariant Hash: [COMPUTED]")

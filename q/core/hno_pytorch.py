@@ -1,6 +1,6 @@
 """
 PyTorch FNO-based Hydrostatic Atmosphere Operator
-(c) 2026 QIDT Labs / ADITI 4.0 Indigenous Technology Stack
+(c) 2026 QIDT Labs / Indigenous Technology Stack
 
 Implements a Fourier Neural Operator (FNO) for atmospheric density prediction
 with hard hydrostatic equilibrium projection.
@@ -12,19 +12,19 @@ Key Components:
 4. Differentiable Physics Field: C∞ smooth gradients for symplectic integration
 
 Mathematical Framework:
-    ρ_nn(h, F10.7, Ap, lat, lon, DOY) = exp(FNO(inputs))
-    
-    Hydrostatic constraint (hard):
-        dp/dh = -ρ(h) * g(h)
-        P(h) = ∫_∞^h ρ(h') * g(h') dh'
-        
-    Projection step ensures model weights reside on hydrostatic manifold:
-        After each optimizer step, project weights to satisfy constraint
+ ρ_nn(h, F10.7, Ap, lat, lon, DOY) = exp(FNO(inputs))
+ 
+ Hydrostatic constraint (hard):
+ dp/dh = -ρ(h) * g(h)
+ P(h) = ∫_∞^h ρ(h') * g(h') dh'
+ 
+ Projection step ensures model weights reside on hydrostatic manifold:
+ After each optimizer step, project weights to satisfy constraint
 
 Integration:
-    - Replaces NRLMSISE-00 C-calls with single GPU/NPU forward pass
-    - Wires into PHS dissipation matrix R(x) for HGV drag
-    - Provides smooth gradients for symplectic integrator
+ - Replaces NRLMSISE-00 C-calls with single GPU/NPU forward pass
+ - Wires into PHS dissipation matrix R(x) for HGV drag
+ - Provides smooth gradients for symplectic integrator
 """
 
 import torch
@@ -35,640 +35,615 @@ import math
 
 
 class SpectralConv1d(nn.Module):
-    """
-    1D Spectral Convolution Layer for FNO.
-    
-    Performs convolution in Fourier domain by filtering low-frequency modes.
-    This captures global dependencies in the altitude dimension efficiently.
-    """
-    def __init__(self, in_channels: int, out_channels: int, modes: int):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.modes = modes
-        
-        # Complex weight tensor for spectral convolution
-        # Shape: (in_channels, out_channels, modes)
-        self.scale = 1.0 / (in_channels * out_channels)
-        self.weights = nn.Parameter(
-            self.scale * torch.rand(in_channels, out_channels, modes, dtype=torch.cfloat)
-        )
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass with spectral convolution.
-        
-        Args:
-            x: Input tensor of shape (batch, in_channels, seq_len)
-            
-        Returns:
-            Output tensor of shape (batch, out_channels, seq_len)
-        """
-        batchsize = x.shape[0]
-        
-        # Transform to Fourier domain
-        # rfft: real-to-complex FFT (efficient for real inputs)
-        x_ft = torch.fft.rfft(x)
-        
-        # Get the actual number of frequency modes from FFT output
-        n_freq_modes = x_ft.shape[-1]
-        
-        # Create output tensor
-        out_ft = torch.zeros(batchsize, self.out_channels, n_freq_modes, 
-                            dtype=torch.cfloat, device=x.device)
-        
-        # Spectral convolution: multiply Fourier components
-        # Only multiply for modes that exist (min of self.modes and n_freq_modes)
-        n_modes = min(self.modes, n_freq_modes)
-        
-        if n_modes > 0:
-            # x_ft[:, :, :n_modes] shape: (batch, in_channels, n_modes)
-            # weights shape: (in_channels, out_channels, self.modes)
-            # We need to slice weights to match n_modes
-            weights_sliced = self.weights[:, :, :n_modes]
-            
-            # Result: (batch, out_channels, n_modes)
-            out_ft[:, :, :n_modes] = torch.einsum(
-                "bix,iox->box", 
-                x_ft[:, :, :n_modes], 
-                weights_sliced
-            )
-        
-        # Transform back to spatial domain
-        x_out = torch.fft.irfft(out_ft, n=x.size(-1))
-        
-        return x_out
+ """
+ 1D Spectral Convolution Layer for FNO.
+ 
+ Performs convolution in Fourier domain by filtering low-frequency modes.
+ This captures global dependencies in the altitude dimension efficiently.
+ """
+ def __init__(self, in_channels: int, out_channels: int, modes: int):
+ super().__init__()
+ self.in_channels = in_channels
+ self.out_channels = out_channels
+ self.modes = modes
+ 
+ # Complex weight tensor for spectral convolution
+ # Shape: (in_channels, out_channels, modes)
+ # Xavier-like init for complex: scale by sqrt(2 / (fan_in + fan_out))
+ fan_in = in_channels * modes
+ fan_out = out_channels * modes
+ scale = (2.0 / (fan_in + fan_out)) ** 0.5
+ self.weights = nn.Parameter(
+ torch.complex(
+ torch.randn(in_channels, out_channels, modes) * scale / 2**0.5,
+ torch.randn(in_channels, out_channels, modes) * scale / 2**0.5,
+)
+)
+ 
+ def forward(self, x: torch.Tensor) -> torch.Tensor:
+ """
+ Forward pass with spectral convolution.
+ 
+ Args:
+ x: Input tensor of shape (batch, in_channels, seq_len)
+ 
+ Returns:
+ Output tensor of shape (batch, out_channels, seq_len)
+ """
+ batchsize = x.shape[0]
+ 
+ # Transform to Fourier domain
+ # rfft: real-to-complex FFT (efficient for real inputs)
+ x_ft = torch.fft.rfft(x)
+ 
+ # Get the actual number of frequency modes from FFT output
+ n_freq_modes = x_ft.shape[-1]
+ 
+ # Create output tensor
+ out_ft = torch.zeros(batchsize, self.out_channels, n_freq_modes, 
+ dtype=torch.cfloat, device=x.device)
+ 
+ # Spectral convolution: multiply Fourier components
+ # Only multiply for modes that exist (min of self.modes and n_freq_modes)
+ n_modes = min(self.modes, n_freq_modes)
+ 
+ if n_modes > 0:
+ # x_ft[:, :, :n_modes] shape: (batch, in_channels, n_modes)
+ # weights shape: (in_channels, out_channels, self.modes)
+ # We need to slice weights to match n_modes
+ weights_sliced = self.weights[:, :, :n_modes]
+ 
+ # Result: (batch, out_channels, n_modes)
+ out_ft[:, :, :n_modes] = torch.einsum(
+ "bix,iox->box", 
+ x_ft[:, :, :n_modes], 
+ weights_sliced
+)
+ 
+ # Transform back to spatial domain
+ x_out = torch.fft.irfft(out_ft, n=x.size(-1))
+ 
+ return x_out
 
 
 class SpectralConv2d(nn.Module):
-    """
-    2D Spectral Convolution Layer for FNO.
-    
-    ADITI 4.0: Upgrade from 1D to 2D spectral convolution over (lat, h) dimensions.
-    Captures global dependencies in both latitude and altitude simultaneously.
-    
-    Performs convolution in 2D Fourier domain by filtering low-frequency modes.
-    """
-    def __init__(self, in_channels: int, out_channels: int, modes1: int, modes2: int):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.modes1 = modes1  # modes for first dimension (latitude)
-        self.modes2 = modes2  # modes for second dimension (altitude)
-        
-        # Complex weight tensor for 2D spectral convolution
-        # Shape: (in_channels, out_channels, modes1, modes2)
-        self.scale = 1.0 / (in_channels * out_channels * modes1 * modes2)
-        self.weights = nn.Parameter(
-            self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat)
-        )
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass with 2D spectral convolution.
-        
-        Args:
-            x: Input tensor of shape (batch, in_channels, H, W)
-               where H = latitude grid, W = altitude grid
-               
-        Returns:
-            Output tensor of shape (batch, out_channels, H, W)
-        """
-        batchsize = x.shape[0]
-        
-        # Transform to 2D Fourier domain
-        # rfft2: 2D real-to-complex FFT
-        x_ft = torch.fft.rfft2(x)
-        
-        # Get actual frequency dimensions from FFT output
-        n_freq1 = x_ft.shape[-2]  # latitude frequency modes
-        n_freq2 = x_ft.shape[-1]  # altitude frequency modes
-        
-        # Create output tensor
-        out_ft = torch.zeros(batchsize, self.out_channels, n_freq1, n_freq2,
-                            dtype=torch.cfloat, device=x.device)
-        
-        # Spectral convolution: multiply Fourier components
-        n_modes1 = min(self.modes1, n_freq1)
-        n_modes2 = min(self.modes2, n_freq2)
-        
-        if n_modes1 > 0 and n_modes2 > 0:
-            # Slice weights to match actual frequency dimensions
-            weights_sliced = self.weights[:, :, :n_modes1, :n_modes2]
-            
-            # x_ft[:, :, :n_modes1, :n_modes2] shape: (batch, in_channels, n_modes1, n_modes2)
-            # weights_sliced shape: (in_channels, out_channels, n_modes1, n_modes2)
-            # Result: (batch, out_channels, n_modes1, n_modes2)
-            out_ft[:, :, :n_modes1, :n_modes2] = torch.einsum(
-                "bixy,ioxy->boxy",
-                x_ft[:, :, :n_modes1, :n_modes2],
-                weights_sliced
-            )
-        
-        # Transform back to spatial domain
-        x_out = torch.fft.irfft2(out_ft, s=x.shape[-2:])
-        
-        return x_out
+ """
+ 2D Spectral Convolution Layer for FNO.
+ 
+ : Upgrade from 1D to 2D spectral convolution over (lat, h) dimensions.
+ Captures global dependencies in both latitude and altitude simultaneously.
+ 
+ Performs convolution in 2D Fourier domain by filtering low-frequency modes.
+ """
+ def __init__(self, in_channels: int, out_channels: int, modes1: int, modes2: int):
+ super().__init__()
+ self.in_channels = in_channels
+ self.out_channels = out_channels
+ self.modes1 = modes1 # modes for first dimension (latitude)
+ self.modes2 = modes2 # modes for second dimension (altitude)
+ 
+ # Complex weight tensor for 2D spectral convolution
+ # Shape: (in_channels, out_channels, modes1, modes2)
+ # Xavier-like init for complex: scale by sqrt(2 / (fan_in + fan_out))
+ fan_in = in_channels * modes1 * modes2
+ fan_out = out_channels * modes1 * modes2
+ scale = (2.0 / (fan_in + fan_out)) ** 0.5
+ self.weights = nn.Parameter(
+ torch.complex(
+ torch.randn(in_channels, out_channels, modes1, modes2) * scale / 2**0.5,
+ torch.randn(in_channels, out_channels, modes1, modes2) * scale / 2**0.5,
+)
+)
+ 
+ def forward(self, x: torch.Tensor) -> torch.Tensor:
+ """
+ Forward pass with 2D spectral convolution.
+ 
+ Args:
+ x: Input tensor of shape (batch, in_channels, H, W)
+ where H = latitude grid, W = altitude grid
+ 
+ Returns:
+ Output tensor of shape (batch, out_channels, H, W)
+ """
+ batchsize = x.shape[0]
+ 
+ # Transform to 2D Fourier domain
+ # rfft2: 2D real-to-complex FFT
+ x_ft = torch.fft.rfft2(x)
+ 
+ # Get actual frequency dimensions from FFT output
+ n_freq1 = x_ft.shape[-2] # latitude frequency modes
+ n_freq2 = x_ft.shape[-1] # altitude frequency modes
+ 
+ # Create output tensor
+ out_ft = torch.zeros(batchsize, self.out_channels, n_freq1, n_freq2,
+ dtype=torch.cfloat, device=x.device)
+ 
+ # Spectral convolution: multiply Fourier components
+ n_modes1 = min(self.modes1, n_freq1)
+ n_modes2 = min(self.modes2, n_freq2)
+ 
+ if n_modes1 > 0 and n_modes2 > 0:
+ # Slice weights to match actual frequency dimensions
+ weights_sliced = self.weights[:, :, :n_modes1, :n_modes2]
+ 
+ # x_ft[:, :, :n_modes1, :n_modes2] shape: (batch, in_channels, n_modes1, n_modes2)
+ # weights_sliced shape: (in_channels, out_channels, n_modes1, n_modes2)
+ # Result: (batch, out_channels, n_modes1, n_modes2)
+ out_ft[:, :, :n_modes1, :n_modes2] = torch.einsum(
+ "bixy,ioxy->boxy",
+ x_ft[:, :, :n_modes1, :n_modes2],
+ weights_sliced
+)
+ 
+ # Transform back to spatial domain
+ x_out = torch.fft.irfft2(out_ft, s=x.shape[-2:])
+ 
+ return x_out
 
 
 class NeuralAtmosphereFNO(nn.Module):
-    """
-    FNO-based Hydrostatic Atmosphere Operator (1D version).
-    
-    Maps atmospheric state to density via spectral neural operator.
-    Input: [batch, seq_len, 6] -> (h, F10.7, Ap, lat, lon, DOY)
-    Output: rho (density) in kg/m³
-    
-    Architecture:
-        1. Lifting layer: Map 6 scalar inputs to high-dim feature space
-        2. Spectral Convolution: Learn global dependencies in altitude dimension
-        3. Projection layer: Map back to density scalar
-        4. Exp activation: Ensure positive density
-    """
-    def __init__(self, modes: int = 16, width: int = 64):
-        super().__init__()
-        self.modes = modes
-        self.width = width
-        
-        # Lifting layer: Map scalars to high-dim feature space
-        self.fc0 = nn.Linear(6, self.width)
-        
-        # Spectral Convolution over the altitude 'h' dimension
-        self.spectral_conv = nn.Sequential(
-            SpectralConv1d(self.width, self.width, self.modes),
-            nn.GELU(),
-            SpectralConv1d(self.width, self.width, self.modes),
-            nn.GELU(),
-            SpectralConv1d(self.width, self.width, self.modes),
-        )
-        
-        # Projection layer: Map back to density scalar
-        self.fc1 = nn.Linear(self.width, 1)
-        
-        # Normalization parameters for inputs
-        self.register_buffer('alt_norm', torch.tensor(1000.0))  # km
-        self.register_buffer('f107_norm', torch.tensor(300.0))   # SFU
-        self.register_buffer('ap_norm', torch.tensor(200.0))     # index
-        self.register_buffer('lat_norm', torch.tensor(90.0))     # degrees
-        self.register_buffer('lon_norm', torch.tensor(180.0))    # degrees
-        self.register_buffer('doy_norm', torch.tensor(365.0))    # days
+ """
+ FNO-based Hydrostatic Atmosphere Operator (1D version).
+ 
+ Maps atmospheric state to density via spectral neural operator.
+ Input: [batch, seq_len, 6] -> (h, F10.7, Ap, lat, lon, DOY)
+ Output: rho (density) in kg/m³
+ 
+ Architecture:
+ 1. Lifting layer: Map 6 scalar inputs to high-dim feature space
+ 2. Spectral Convolution: Learn global dependencies in altitude dimension
+ 3. Projection layer: Map back to density scalar
+ 4. Exp activation: Ensure positive density
+ """
+ def __init__(self, modes: int = 16, width: int = 64):
+ super().__init__()
+ self.modes = modes
+ self.width = width
+ 
+ # Lifting layer: Map scalars to high-dim feature space
+ self.fc0 = nn.Linear(6, self.width)
+ 
+ # Spectral Convolution over the altitude 'h' dimension
+ self.spectral_conv = nn.Sequential(
+ SpectralConv1d(self.width, self.width, self.modes),
+ nn.GELU(),
+ SpectralConv1d(self.width, self.width, self.modes),
+ nn.GELU(),
+ SpectralConv1d(self.width, self.width, self.modes),
+)
+ 
+ # Projection layer: Map back to density scalar
+ self.fc1 = nn.Linear(self.width, 1)
+ 
+ # Normalization parameters for inputs
+ self.register_buffer('alt_norm', torch.tensor(1000.0)) # km
+ self.register_buffer('f107_norm', torch.tensor(300.0)) # SFU
+ self.register_buffer('ap_norm', torch.tensor(200.0)) # index
+ self.register_buffer('lat_norm', torch.tensor(90.0)) # degrees
+ self.register_buffer('lon_norm', torch.tensor(180.0)) # degrees
+ self.register_buffer('doy_norm', torch.tensor(365.0)) # days
+
+ def normalize_inputs(self, x: torch.Tensor) -> torch.Tensor:
+ """
+ Normalize inputs to [-1, 1] range.
+
+ Args:
+ x: Input tensor [batch, seq_len, 6] with columns:
+ [h (km), F10.7 (SFU), Ap, lat (deg), lon (deg), DOY]
+
+ Returns:
+ Normalized tensor
+ """
+ x_norm = torch.zeros_like(x)
+ x_norm[..., 0] = 2.0 * (x[..., 0] / self.alt_norm) - 1.0 # altitude
+ x_norm[..., 1] = 2.0 * (x[..., 1] / self.f107_norm) - 1.0 # F10.7
+ x_norm[..., 2] = 2.0 * (x[..., 2] / self.ap_norm) - 1.0 # Ap
+ x_norm[..., 3] = 2.0 * (x[..., 3] / self.lat_norm) - 1.0 # lat
+ x_norm[..., 4] = 2.0 * (x[..., 4] / self.lon_norm) - 1.0 # lon
+ x_norm[..., 5] = 2.0 * (x[..., 5] / self.doy_norm) - 1.0 # DOY
+
+ return x_norm
+
+ def forward(self, x: torch.Tensor) -> torch.Tensor:
+ """
+ Forward pass.
+
+ Args:
+ x: Input tensor [batch, seq_len, 6]
+ Columns: [h (km), F10.7 (SFU), Ap, lat (deg), lon (deg), DOY]
+
+ Returns:
+ Density tensor [batch, seq_len, 1] in kg/m³
+ """
+ # Normalize inputs
+ x = self.normalize_inputs(x)
+
+ # Lifting to feature space: [batch, seq_len, 6] -> [batch, seq_len, width]
+ x = self.fc0(x)
+
+ # Transpose for spectral conv: [batch, seq_len, width] -> [batch, width, seq_len]
+ x = x.permute(0, 2, 1)
+
+ # Spectral convolution layers
+ x = self.spectral_conv(x)
+
+ # Transpose back: [batch, width, seq_len] -> [batch, seq_len, width]
+ x = x.permute(0, 2, 1)
+
+ # Projection to density: [batch, seq_len, width] -> [batch, seq_len, 1]
+ x = self.fc1(x)
+
+ # Exp activation to ensure positive density
+ rho = torch.exp(x)
+
+ return rho
 
 
 class NeuralAtmosphereFNO2D(nn.Module):
-    """
-    ADITI 4.0: 2D FNO-based Hydrostatic Atmosphere Operator.
-    
-    Maps atmospheric state to density via 2D spectral neural operator over (lat, h).
-    Input: [batch, lat_grid, h_grid, 4] -> (F10.7, Ap, lon, DOY) with lat, h as spatial dims
-    Output: rho (density) in kg/m³
-    
-    Architecture:
-        1. Lifting layer: Map 4 scalar inputs to high-dim feature space
-        2. 2D Spectral Convolution: Learn global dependencies in (lat, h) dimensions
-        3. Projection layer: Map back to density scalar
-        4. Exp activation: Ensure positive density
-    
-    Key Upgrade:
-        - Captures latitudinal atmospheric structure (e.g., equatorial bulge, polar regions)
-        - Better handles latitudinal density variations
-        - Improved accuracy for high-latitude HGV trajectories
-    """
-    def __init__(self, modes_lat: int = 16, modes_h: int = 16, width: int = 64):
-        super().__init__()
-        self.modes_lat = modes_lat
-        self.modes_h = modes_h
-        self.width = width
-        
-        # Lifting layer: Map 4 scalar inputs to high-dim feature space
-        # (F10.7, Ap, lon, DOY) - lat and h are spatial dimensions
-        self.fc0 = nn.Linear(4, self.width)
-        
-        # 2D Spectral Convolution over (lat, h) dimensions
-        self.spectral_conv = nn.Sequential(
-            SpectralConv2d(self.width, self.width, self.modes_lat, self.modes_h),
-            nn.GELU(),
-            SpectralConv2d(self.width, self.width, self.modes_lat, self.modes_h),
-            nn.GELU(),
-            SpectralConv2d(self.width, self.width, self.modes_lat, self.modes_h),
-        )
-        
-        # Projection layer: Map back to density scalar
-        self.fc1 = nn.Linear(self.width, 1)
-        
-        # Normalization parameters for inputs
-        self.register_buffer('f107_norm', torch.tensor(300.0))   # SFU
-        self.register_buffer('ap_norm', torch.tensor(200.0))     # index
-        self.register_buffer('lon_norm', torch.tensor(180.0))    # degrees
-        self.register_buffer('doy_norm', torch.tensor(365.0))    # days
-    
-    def normalize_inputs(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Normalize inputs to [-1, 1] range.
-        
-        Args:
-            x: Input tensor [batch, lat_grid, h_grid, 4] with columns:
-               [F10.7, Ap, lon, DOY]
-               
-        Returns:
-            Normalized tensor
-        """
-        x_norm = torch.zeros_like(x)
-        x_norm[..., 0] = 2.0 * (x[..., 0] / self.f107_norm) - 1.0  # F10.7
-        x_norm[..., 1] = 2.0 * (x[..., 1] / self.ap_norm) - 1.0    # Ap
-        x_norm[..., 2] = 2.0 * (x[..., 2] / self.lon_norm) - 1.0    # lon
-        x_norm[..., 3] = 2.0 * (x[..., 3] / self.doy_norm) - 1.0    # DOY
-        
-        return x_norm
-    
-    def forward(self, x: torch.Tensor, lat_grid: torch.Tensor, h_grid: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass.
-        
-        Args:
-            x: Input tensor [batch, lat_grid, h_grid, 4]
-               Columns: [F10.7 (SFU), Ap, lon (deg), DOY]
-            lat_grid: Latitude grid [lat_grid] in degrees
-            h_grid: Altitude grid [h_grid] in km
-            
-        Returns:
-            Density tensor [batch, lat_grid, h_grid, 1] in kg/m³
-        """
-        # Normalize inputs
-        x = self.normalize_inputs(x)
-        
-        # Lifting to feature space
-        out = self.fc0(x)  # [batch, lat_grid, h_grid, width]
-        
-        # Permute for 2D spectral conv: [batch, width, lat_grid, h_grid]
-        out = out.permute(0, 3, 1, 2)
-        
-        # Perform 2D Fourier filtering over (lat, h)
-        out = self.spectral_conv(out)
-        
-        # Permute back: [batch, lat_grid, h_grid, width]
-        out = out.permute(0, 2, 3, 1)
-        
-        # Project to density (log scale for stability)
-        out = self.fc1(out)
-        
-        # Exponential to ensure positive density
-        rho = torch.exp(out) * 1e-12  # Base scale factor
-        
-        return rho
+ """
+ : 2D FNO-based Hydrostatic Atmosphere Operator.
+ 
+ Maps atmospheric state to density via 2D spectral neural operator over (lat, h).
+ Input: [batch, lat_grid, h_grid, 4] -> (F10.7, Ap, lon, DOY) with lat, h as spatial dims
+ Output: rho (density) in kg/m³
+ 
+ Architecture:
+ 1. Lifting layer: Map 4 scalar inputs to high-dim feature space
+ 2. 2D Spectral Convolution: Learn global dependencies in (lat, h) dimensions
+ 3. Projection layer: Map back to density scalar
+ 4. Exp activation: Ensure positive density
+ 
+ Key Upgrade:
+ - Captures latitudinal atmospheric structure (e.g., equatorial bulge, polar regions)
+ - Better handles latitudinal density variations
+ - Improved accuracy for high-latitude HGV trajectories
+ """
+ def __init__(self, modes_lat: int = 16, modes_h: int = 16, width: int = 64):
+ super().__init__()
+ self.modes_lat = modes_lat
+ self.modes_h = modes_h
+ self.width = width
+ 
+ # Lifting layer: Map 4 scalar inputs to high-dim feature space
+ # (F10.7, Ap, lon, DOY) - lat and h are spatial dimensions
+ self.fc0 = nn.Linear(4, self.width)
+ 
+ # 2D Spectral Convolution over (lat, h) dimensions
+ self.spectral_conv = nn.Sequential(
+ SpectralConv2d(self.width, self.width, self.modes_lat, self.modes_h),
+ nn.GELU(),
+ SpectralConv2d(self.width, self.width, self.modes_lat, self.modes_h),
+ nn.GELU(),
+ SpectralConv2d(self.width, self.width, self.modes_lat, self.modes_h),
+)
+ 
+ # Projection layer: Map back to density scalar
+ self.fc1 = nn.Linear(self.width, 1)
+ 
+ # Normalization parameters for inputs
+ self.register_buffer('f107_norm', torch.tensor(300.0)) # SFU
+ self.register_buffer('ap_norm', torch.tensor(200.0)) # index
+ self.register_buffer('lon_norm', torch.tensor(180.0)) # degrees
+ self.register_buffer('doy_norm', torch.tensor(365.0)) # days
+ 
+ def normalize_inputs(self, x: torch.Tensor) -> torch.Tensor:
+ """
+ Normalize inputs to [-1, 1] range.
+ 
+ Args:
+ x: Input tensor [batch, lat_grid, h_grid, 4] with columns:
+ [F10.7, Ap, lon, DOY]
+ 
+ Returns:
+ Normalized tensor
+ """
+ x_norm = torch.zeros_like(x)
+ x_norm[..., 0] = 2.0 * (x[..., 0] / self.f107_norm) - 1.0 # F10.7
+ x_norm[..., 1] = 2.0 * (x[..., 1] / self.ap_norm) - 1.0 # Ap
+ x_norm[..., 2] = 2.0 * (x[..., 2] / self.lon_norm) - 1.0 # lon
+ x_norm[..., 3] = 2.0 * (x[..., 3] / self.doy_norm) - 1.0 # DOY
+ 
+ return x_norm
+ 
+ def forward(self, x: torch.Tensor, lat_grid: torch.Tensor, h_grid: torch.Tensor) -> torch.Tensor:
+ """
+ Forward pass.
+ 
+ Args:
+ x: Input tensor [batch, lat_grid, h_grid, 4]
+ Columns: [F10.7 (SFU), Ap, lon (deg), DOY]
+ lat_grid: Latitude grid [lat_grid] in degrees
+ h_grid: Altitude grid [h_grid] in km
+ 
+ Returns:
+ Density tensor [batch, lat_grid, h_grid, 1] in kg/m³
+ """
+ # Normalize inputs
+ x = self.normalize_inputs(x)
+ 
+ # Lifting to feature space
+ out = self.fc0(x) # [batch, lat_grid, h_grid, width]
+ 
+ # Permute for 2D spectral conv: [batch, width, lat_grid, h_grid]
+ out = out.permute(0, 3, 1, 2)
+ 
+ # Perform 2D Fourier filtering over (lat, h)
+ out = self.spectral_conv(out)
+ 
+ # Permute back: [batch, lat_grid, h_grid, width]
+ out = out.permute(0, 2, 3, 1)
+ 
+ # Project to density (log scale for stability)
+ out = self.fc1(out)
+ 
+ # Exponential to ensure positive density
+ # base_scale = 1e-12 kg/m^3: order-of-magnitude thermospheric density at ~300 km altitude
+ rho = torch.exp(out) * 1e-12
+ 
+ return rho
 
 
 class HydrostaticProjector:
-    """
-    Hydrostatic Projection Operator.
-    
-    Projects neural density predictions onto the hydrostatic equilibrium manifold.
-    Unlike soft penalties, this guarantees physical consistency after each iteration.
-    
-    Enforces: dp/dh = -ρ(h) * g(h)
-    
-    The projection step:
-        1. Compute pressure from neural density via integration
-        2. Compute hydrostatic residual
-        3. Project density to satisfy constraint
-        4. Adjust network weights to reside on constraint manifold
-    """
-    
-    def __init__(self, g0: float = 9.80665, R_earth: float = 6371.0):
-        """
-        Initialize projector with physical constants.
-        
-        Args:
-            g0: Standard gravity at sea level (m/s²)
-            R_earth: Earth radius (km)
-        """
-        self.g0 = g0
-        self.R_earth = R_earth
-    
-    def compute_gravity(self, altitude_km: torch.Tensor) -> torch.Tensor:
-        """
-        Compute gravity at altitude using inverse square law.
-        
-        g(h) = g0 * (R_earth / (R_earth + h))²
-        
-        Args:
-            altitude_km: Altitude in kilometers
-            
-        Returns:
-            Gravity in m/s²
-        """
-        return self.g0 * (self.R_earth / (self.R_earth + altitude_km)) ** 2
-    
-    def integrate_pressure(self, altitude_km: torch.Tensor, rho: torch.Tensor) -> torch.Tensor:
-        """
-        Integrate hydrostatic equation to compute pressure.
-        
-        P(h) = ∫_∞^h ρ(h') * g(h') dh'
-        
-        Uses trapezoidal integration from top of atmosphere down.
-        
-        Args:
-            altitude_km: Altitude grid (km), shape [seq_len]
-            rho: Density profile (kg/m³), shape [seq_len]
-            
-        Returns:
-            Pressure profile (Pa), shape [seq_len]
-        """
-        # Compute gravity at each altitude
-        g = self.compute_gravity(altitude_km)
-        
-        # Integrand: ρ * g
-        integrand = rho * g
-        
-        # Reverse for integration from top down
-        integrand_rev = torch.flip(integrand, dims=[0])
-        alt_rev = torch.flip(altitude_km, dims=[0])
-        
-        # Convert altitude differences to meters
-        # Pad altitude at top for boundary condition
-        alt_padded = torch.cat([alt_rev[:1] + 0.1, alt_rev])  # Add small increment at top
-        dz = torch.diff(alt_padded) * 1000  # Convert km to m
-        dz = torch.abs(dz)
-        
-        # Cumulative trapezoidal integration
-        pressure_rev = torch.cumsum(integrand_rev * dz, dim=0)
-        
-        # Flip back to original order
-        pressure = torch.flip(pressure_rev, dims=[0])
-        
-        return pressure
-    
-    def compute_hydrostatic_residual(self, altitude_km: torch.Tensor, 
-                                    rho: torch.Tensor) -> torch.Tensor:
-        """
-        Compute hydrostatic equilibrium residual.
-        
-        Residual = |dp/dh + ρ*g| (should be ~0)
-        
-        Args:
-            altitude_km: Altitude grid (km)
-            rho: Density profile (kg/m³)
-            
-        Returns:
-            Residual at each point
-        """
-        # Compute pressure
-        pressure = self.integrate_pressure(altitude_km, rho)
-        
-        # Compute dp/dh via finite differences
-        # spacing parameter: convert altitude to meters
-        dP_dh = torch.gradient(pressure, spacing=(altitude_km * 1000).diff().mean())[0]
-        
-        # Compute -ρ*g
-        g = self.compute_gravity(altitude_km)
-        rho_g = -rho * g
-        
-        # Residual
-        residual = torch.abs(dP_dh - rho_g)
-        
-        return residual
-    
-    def project_density(self, altitude_km: torch.Tensor, rho_nn: torch.Tensor,
-                        n_iterations: int = 10) -> torch.Tensor:
-        """
-        Project neural density onto hydrostatic manifold.
-        
-        Uses an iterative Poisson-style solver to find the nearest
-        physically valid density profile.
-        
-        Args:
-            altitude_km: Altitude grid (km)
-            rho_nn: Neural density prediction (kg/m³)
-            n_iterations: Number of projection iterations
-            
-        Returns:
-            Projected density satisfying hydrostatic equilibrium
-        """
-        rho_proj = rho_nn.clone()
-        
-        for _ in range(n_iterations):
-            # Compute current hydrostatic residual
-            pressure = self.integrate_pressure(altitude_km, rho_proj)
-            g = self.compute_gravity(altitude_km)
-            
-            # Compute target density from hydrostatic equation
-            # ρ_target = -(1/g) * dP/dh
-            spacing = (altitude_km * 1000).diff().mean()
-            dP_dh = torch.gradient(pressure, spacing=spacing)[0]
-            rho_target = -dP_dh / g
-            
-            # Blend with neural prediction (avoid over-correction)
-            alpha = 0.5  # Projection strength
-            rho_proj = alpha * rho_target + (1 - alpha) * rho_proj
-            
-            # Ensure positivity
-            rho_proj = torch.clamp(rho_proj, min=1e-15, max=10.0)
-        
-        return rho_proj
-    
-    def project_weights(self, model: nn.Module, altitude_grid: torch.Tensor,
-                       g_profile: torch.Tensor) -> None:
-        """
-        Projection Step: Ensures model weights reside on hydrostatic manifold.
-        
-        Adjusts weights so the density field honors the hydrostatic constraint.
-        This is called after each optimizer step during training.
-        
-        Args:
-            model: NeuralAtmosphereFNO model
-            altitude_grid: Altitude grid for projection
-            g_profile: Gravity profile at altitudes
-        """
-        with torch.no_grad():
-            # Get current density prediction
-            # This requires a dummy input - in practice, use training batch
-            # For now, we implement the weight adjustment logic
-            
-            for param in model.parameters():
-                if param.grad is not None:
-                    # 1. Compute current predicted rho (would need forward pass)
-                    # 2. Compute residual of hydrostatic identity
-                    # 3. Project gradient onto null-space of constraint
-                    
-                    # Simplified: scale weights to preserve physical structure
-                    # This is a placeholder - full implementation requires
-                    # backprop through the constraint manifold
-                    
-                    # Weight clipping to prevent unphysical extremes
-                    param.data = torch.clamp(param.data, -10.0, 10.0)
+ """
+ Hydrostatic Projection Operator.
+ 
+ Projects neural density predictions onto the hydrostatic equilibrium manifold.
+ Unlike soft penalties, this guarantees physical consistency after each iteration.
+ 
+ Enforces: dp/dh = -ρ(h) * g(h)
+ 
+ The projection step:
+ 1. Compute pressure from neural density via integration
+ 2. Compute hydrostatic residual
+ 3. Project density to satisfy constraint
+ 4. Adjust network weights to reside on constraint manifold
+ """
+ 
+ def __init__(self, g0: float = 9.80665, R_earth: float = 6378.137):
+ """
+ Initialize projector with physical constants.
+ 
+ Args:
+ g0: Standard gravity at sea level (m/s²)
+ R_earth: Earth radius (km) - WGS84 equatorial, matches pkg/physics/constants.go
+ """
+ self.g0 = g0
+ self.R_earth = R_earth
+ 
+ def compute_gravity(self, altitude_km: torch.Tensor) -> torch.Tensor:
+ """
+ Compute gravity at altitude using inverse square law.
+ 
+ g(h) = g0 * (R_earth / (R_earth + h))²
+ 
+ Args:
+ altitude_km: Altitude in kilometers
+ 
+ Returns:
+ Gravity in m/s²
+ """
+ return self.g0 * (self.R_earth / (self.R_earth + altitude_km)) ** 2
+ 
+ def integrate_pressure(self, altitude_km: torch.Tensor, rho: torch.Tensor) -> torch.Tensor:
+ """
+ Integrate hydrostatic equation to compute pressure.
+ 
+ P(h) = ∫_∞^h ρ(h') * g(h') dh'
+ 
+ Uses trapezoidal integration from top of atmosphere down.
+ 
+ Args:
+ altitude_km: Altitude grid (km), shape [seq_len]
+ rho: Density profile (kg/m³), shape [seq_len]
+ 
+ Returns:
+ Pressure profile (Pa), shape [seq_len]
+ """
+ # Compute gravity at each altitude
+ g = self.compute_gravity(altitude_km)
+ 
+ # Integrand: ρ * g
+ integrand = rho * g
+ 
+ # Reverse for integration from top down
+ integrand_rev = torch.flip(integrand, dims=[0])
+ alt_rev = torch.flip(altitude_km, dims=[0])
+ 
+ # Convert altitude differences to meters
+ # Pad altitude at top for boundary condition
+ alt_padded = torch.cat([alt_rev[:1] + 0.1, alt_rev]) # Add small increment at top
+ dz = torch.diff(alt_padded) * 1000 # Convert km to m
+ dz = torch.abs(dz)
+ 
+ # Cumulative trapezoidal integration
+ pressure_rev = torch.cumsum(integrand_rev * dz, dim=0)
+ 
+ # Flip back to original order
+ pressure = torch.flip(pressure_rev, dims=[0])
+ 
+ return pressure
+ 
+ def compute_hydrostatic_residual(self, altitude_km: torch.Tensor, 
+ rho: torch.Tensor) -> torch.Tensor:
+ """
+ Compute hydrostatic equilibrium residual.
+ 
+ Residual = |dp/dh + ρ*g| (should be ~0)
+ 
+ Args:
+ altitude_km: Altitude grid (km)
+ rho: Density profile (kg/m³)
+ 
+ Returns:
+ Residual at each point
+ """
+ # Compute pressure
+ pressure = self.integrate_pressure(altitude_km, rho)
+ 
+ # Compute dp/dh via finite differences
+ # spacing parameter: convert altitude to meters
+ dP_dh = torch.gradient(pressure, spacing=(altitude_km * 1000).diff().mean())[0]
+ 
+ # Compute -ρ*g
+ g = self.compute_gravity(altitude_km)
+ rho_g = -rho * g
+ 
+ # Residual
+ residual = torch.abs(dP_dh - rho_g)
+ 
+ return residual
+ 
+ def project_density(self, altitude_km: torch.Tensor, rho_nn: torch.Tensor,
+ n_iterations: int = 10) -> torch.Tensor:
+ """
+ Project neural density onto hydrostatic manifold.
+ 
+ Uses an iterative Poisson-style solver to find the nearest
+ physically valid density profile.
+ 
+ Args:
+ altitude_km: Altitude grid (km)
+ rho_nn: Neural density prediction (kg/m³)
+ n_iterations: Number of projection iterations
+ 
+ Returns:
+ Projected density satisfying hydrostatic equilibrium
+ """
+ rho_proj = rho_nn.clone()
+ 
+ for _ in range(n_iterations):
+ # Compute current hydrostatic residual
+ pressure = self.integrate_pressure(altitude_km, rho_proj)
+ g = self.compute_gravity(altitude_km)
+ 
+ # Compute target density from hydrostatic equation
+ # ρ_target = -(1/g) * dP/dh
+ spacing = (altitude_km * 1000).diff().mean()
+ dP_dh = torch.gradient(pressure, spacing=spacing)[0]
+ rho_target = -dP_dh / g
+ 
+ # Blend with neural prediction (avoid over-correction)
+ alpha = 0.5 # Projection strength
+ rho_proj = alpha * rho_target + (1 - alpha) * rho_proj
+ 
+ # Ensure positivity
+ rho_proj = torch.clamp(rho_proj, min=1e-15, max=10.0)
+ 
+ return rho_proj
+ 
+ def project_weights(self, model: nn.Module, altitude_grid: torch.Tensor,
+ g_profile: torch.Tensor) -> None:
+ """
+ Projection Step: Ensures model weights reside on hydrostatic manifold.
+ 
+ Adjusts weights so the density field honors the hydrostatic constraint.
+ This is called after each optimizer step during training.
+ 
+ Args:
+ model: NeuralAtmosphereFNO model
+ altitude_grid: Altitude grid for projection
+ g_profile: Gravity profile at altitudes
+ """
+ with torch.no_grad():
+ # Get current density prediction
+ # This requires a dummy input - in practice, use training batch
+ # For now, we implement the weight adjustment logic
+ 
+ for param in model.parameters():
+ if param.grad is not None:
+ # 1. Compute current predicted rho (would need forward pass)
+ # 2. Compute residual of hydrostatic identity
+ # 3. Project gradient onto null-space of constraint
+ 
+ # Simplified: scale weights to preserve physical structure
+ # This is a placeholder - full implementation requires
+ # backprop through the constraint manifold
+ 
+ # Weight clipping to prevent unphysical extremes
+ param.data = torch.clamp(param.data, -10.0, 10.0)
 
 
 def apply_hydrostatic_projection(model: nn.Module, altitude_grid: torch.Tensor,
-                                  g_profile: torch.Tensor) -> None:
-    """
-    Projection Step: Ensures dp/dh = -ρ*g.
-    
-    Adjusts weights so the density field honors the hydrostatic constraint.
-    This function is called after each optimizer step during training.
-    
-    Args:
-        model: NeuralAtmosphereFNO model
-        altitude_grid: Altitude grid (km) for projection
-        g_profile: Gravity profile (m/s²) at altitudes
-    """
-    projector = HydrostaticProjector()
-    projector.project_weights(model, altitude_grid, g_profile)
+ g_profile: torch.Tensor) -> None:
+ """
+ Projection Step: Ensures dp/dh = -ρ*g.
+ 
+ Adjusts weights so the density field honors the hydrostatic constraint.
+ This function is called after each optimizer step during training.
+ 
+ Args:
+ model: NeuralAtmosphereFNO model
+ altitude_grid: Altitude grid (km) for projection
+ g_profile: Gravity profile (m/s²) at altitudes
+ """
+ projector = HydrostaticProjector()
+ projector.project_weights(model, altitude_grid, g_profile)
 
 
 class HydrostaticAtmosphereFNO(nn.Module):
-    """
-    Complete FNO Atmosphere Operator with Hydrostatic Projection.
-    
-    Combines the FNO architecture with the hydrostatic projection step
-    to guarantee physical consistency.
-    """
-    def __init__(self, modes: int = 16, width: int = 64):
-        super().__init__()
-        self.fno = NeuralAtmosphereFNO(modes, width)
-        self.projector = HydrostaticProjector()
-    
-    def forward(self, x: torch.Tensor, apply_projection: bool = True) -> Dict[str, torch.Tensor]:
-        """
-        Forward pass with optional hydrostatic projection.
-        
-        Args:
-            x: Input tensor [batch, seq_len, 6]
-            apply_projection: Whether to apply hydrostatic projection
-            
-        Returns:
-            Dictionary with:
-                - 'density': Predicted density (kg/m³)
-                - 'pressure': Hydrostatic pressure (Pa)
-                - 'scale_height': Local scale height (km)
-                - 'residual': Hydrostatic residual
-        """
-        # Get neural density prediction
-        batch_size, seq_len, _ = x.shape
-        rho_nn = self.fno(x).squeeze(-1)  # [batch, seq_len]
-        
-        # Extract altitude (first column)
-        altitude_km = x[0, :, 0]  # Assume same grid for all in batch
-        
-        # Apply hydrostatic projection if requested
-        if apply_projection and seq_len > 1:
-            rho_final = self.projector.project_density(altitude_km, rho_nn[0])
-            rho_final = rho_final.unsqueeze(0).expand(batch_size, -1)
-        else:
-            rho_final = rho_nn
-        
-        # Compute derived quantities
-        g = self.projector.compute_gravity(altitude_km)
-        
-        if seq_len > 1:
-            pressure = self.projector.integrate_pressure(altitude_km, rho_final[0])
-            pressure = pressure.unsqueeze(0).expand(batch_size, -1)
-            scale_height = pressure / (rho_final * g.unsqueeze(0)) / 1000.0  # km
-            residual = self.projector.compute_hydrostatic_residual(altitude_km, rho_final[0])
-            residual = residual.unsqueeze(0).expand(batch_size, -1)
-        else:
-            # For single point, use simple approximations
-            pressure = torch.zeros_like(rho_final)
-            scale_height = torch.ones_like(rho_final) * 50.0  # Default scale height
-            residual = torch.zeros_like(rho_final)
-        
-        return {
-            'density': rho_final,
-            'density_raw': rho_nn,
-            'pressure': pressure,
-            'scale_height': scale_height,
-            'residual': residual,
-        }
+ """
+ Complete FNO Atmosphere Operator with Hydrostatic Projection.
+ 
+ Combines the FNO architecture with the hydrostatic projection step
+ to guarantee physical consistency.
+ """
+ def __init__(self, modes: int = 16, width: int = 64):
+ super().__init__()
+ self.fno = NeuralAtmosphereFNO(modes, width)
+ self.projector = HydrostaticProjector()
+ 
+ def forward(self, x: torch.Tensor, apply_projection: bool = True) -> Dict[str, torch.Tensor]:
+ """
+ Forward pass with optional hydrostatic projection.
+ 
+ Args:
+ x: Input tensor [batch, seq_len, 6]
+ apply_projection: Whether to apply hydrostatic projection
+ 
+ Returns:
+ Dictionary with:
+ - 'density': Predicted density (kg/m³)
+ - 'pressure': Hydrostatic pressure (Pa)
+ - 'scale_height': Local scale height (km)
+ - 'residual': Hydrostatic residual
+ """
+ # Get neural density prediction
+ batch_size, seq_len, _ = x.shape
+ rho_nn = self.fno(x).squeeze(-1) # [batch, seq_len]
+ 
+ # Extract altitude (first column)
+ altitude_km = x[0, :, 0] # Assume same grid for all in batch
+ 
+ # Apply hydrostatic projection if requested
+ if apply_projection and seq_len > 1:
+ rho_final = self.projector.project_density(altitude_km, rho_nn[0])
+ rho_final = rho_final.unsqueeze(0).expand(batch_size, -1)
+ else:
+ rho_final = rho_nn
+ 
+ # Compute derived quantities
+ g = self.projector.compute_gravity(altitude_km)
+ 
+ if seq_len > 1:
+ pressure = self.projector.integrate_pressure(altitude_km, rho_final[0])
+ pressure = pressure.unsqueeze(0).expand(batch_size, -1)
+ scale_height = pressure / (rho_final * g.unsqueeze(0)) / 1000.0 # km
+ residual = self.projector.compute_hydrostatic_residual(altitude_km, rho_final[0])
+ residual = residual.unsqueeze(0).expand(batch_size, -1)
+ else:
+ # For single point, use simple approximations
+ pressure = torch.zeros_like(rho_final)
+ scale_height = torch.ones_like(rho_final) * 50.0 # Default scale height
+ residual = torch.zeros_like(rho_final)
+ 
+ return {
+ 'density': rho_final,
+ 'density_raw': rho_nn,
+ 'pressure': pressure,
+ 'scale_height': scale_height,
+ 'residual': residual,
+ }
 
 
-def demo_fno_atmosphere():
-    """
-    Demonstrate the FNO-based atmosphere operator.
-    """
-    print("=" * 70)
-    print("FNO-based Hydrostatic Atmosphere Operator Demo")
-    print("=" * 70)
-    
-    # Create model
-    model = HydrostaticAtmosphereFNO(modes=16, width=64)
-    model.eval()
-    
-    print("\n1. Model Architecture:")
-    print(f"   Fourier modes: {model.fno.modes}")
-    print(f"   Hidden width: {model.fno.width}")
-    print(f"   Input: [h, F10.7, Ap, lat, lon, DOY]")
-    print(f"   Output: density (kg/m³)")
-    
-    # Create altitude grid
-    seq_len = 100
-    altitude_km = torch.linspace(0, 500, seq_len)
-    
-    # Create sample input (batch_size=1)
-    # Conditions: F10.7=150, Ap=15, lat=28.5, lon=-80.5, DOY=100
-    f107 = 150.0
-    ap = 15.0
-    lat = 28.5
-    lon = -80.5
-    doy = 100
-    
-    x = torch.zeros(1, seq_len, 6)
-    x[0, :, 0] = altitude_km
-    x[0, :, 1] = f107
-    x[0, :, 2] = ap
-    x[0, :, 3] = lat
-    x[0, :, 4] = lon
-    x[0, :, 5] = doy
-    
-    print("\n2. Test Conditions:")
-    print(f"   Altitude range: 0-500 km")
-    print(f"   F10.7: {f107} SFU")
-    print(f"   Ap: {ap}")
-    print(f"   Location: {lat}°N, {lon}°E")
-    print(f"   Day of year: {doy}")
-    
-    # Forward pass without projection
-    print("\n3. Forward Pass (without projection):")
-    with torch.no_grad():
-        result_no_proj = model(x, apply_projection=False)
-    
-    rho_no_proj = result_no_proj['density'][0]
-    print(f"   Surface density: {rho_no_proj[0]:.4e} kg/m³")
-    print(f"   100 km density: {rho_no_proj[20]:.4e} kg/m³")
-    print(f"   400 km density: {rho_no_proj[80]:.4e} kg/m³")
-    
-    # Forward pass with projection
-    print("\n4. Forward Pass (with hydrostatic projection):")
-    with torch.no_grad():
-        result_proj = model(x, apply_projection=True)
-    
-    rho_proj = result_proj['density'][0]
-    pressure = result_proj['pressure'][0]
-    scale_height = result_proj['scale_height'][0]
-    residual = result_proj['residual'][0]
-    
-    print(f"   Surface density: {rho_proj[0]:.4e} kg/m³")
-    print(f"   100 km density: {rho_proj[20]:.4e} kg/m³")
-    print(f"   400 km density: {rho_proj[80]:.4e} kg/m³")
-    print(f"   100 km pressure: {pressure[20]:.4e} Pa")
-    print(f"   100 km scale height: {scale_height[20]:.2f} km")
-    print(f"   Mean hydrostatic residual: {residual.mean():.4e}")
-    
-    # Compare
-    print("\n5. Projection Effect:")
-    diff = torch.abs(rho_proj - rho_no_proj).mean()
-    print(f"   Mean correction: {diff:.4e} kg/m³")
-    
-    print("\n6. Technical Advantages:")
-    print("   ✓ Zero latency: Single GPU forward pass replaces C-calls")
-    print("   ✓ Smooth gradients: C∞ continuous for symplectic integration")
-    print("   ✓ F10.7/Ap sensitivity: Learns atmospheric breathing")
-    print("   ✓ Hard constraint: Hydrostatic equilibrium enforced")
-    
-    print("\n7. PHS Integration:")
-    print("   Dissipation matrix R(x) = DragCoeff · ρ_nn(x) · ||v||")
-    print("   → Jacobian of Hamiltonian sees density gradient")
-    print("   → Automatic drag adjustment with altitude")
-    
-    print("\n" + "=" * 70)
-
-
-if __name__ == "__main__":
-    demo_fno_atmosphere()

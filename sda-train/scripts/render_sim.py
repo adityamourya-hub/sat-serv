@@ -1,5 +1,5 @@
 """
-Pixel Engine for ADITI 4.0 Training
+Pixel Engine for Sovereign Training
 Transforms Go "Truth" states into "Dirty" optical frames with realistic PSF, noise, and artifacts
 """
 

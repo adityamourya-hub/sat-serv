@@ -1,5 +1,5 @@
 """
-integrity_gate.py - ADITI 4.0 Sovereign Physics Integrity Module
+integrity_gate.py - Sovereign Physics Integrity Module
 
 Provides cryptographic proof of Hamiltonian model integrity via:
 1. Hessian Hash: Second-order curvature signature (prevents adversarial weight tuning)
@@ -7,21 +7,21 @@ Provides cryptographic proof of Hamiltonian model integrity via:
 3. Axiom Point Verification: Fixed reference states for reproducible auditing
 
 Mathematical Foundation:
-    The Hessian Trace (Laplacian) of the Hamiltonian:
-        Tr(∇²H) = Σᵢ ∂²H/∂zᵢ²
-    
-    This measures the local curvature of the energy landscape. Any adversarial
-    perturbation that changes the dynamics will alter this trace, invalidating
-    the cryptographic signature.
+ The Hessian Trace (Laplacian) of the Hamiltonian:
+ Tr(∇²H) = Σᵢ ∂²H/∂zᵢ²
+ 
+ This measures the local curvature of the energy landscape. Any adversarial
+ perturbation that changes the dynamics will alter this trace, invalidating
+ the cryptographic signature.
 
-ADITI 4.0 Delhi War-Room: The hash is computed at 6 canonical "Axiom Points"
+ Delhi War-Room: The hash is computed at 6 canonical "Axiom Points"
 representing key orbital regimes (LEO circular, HGV entry, etc.). The hash is
 stored in the Sovereign Certificate and verified on every model load.
 
 References:
-    - certificate.go: HessianInvariant, ComputeHessianInvariant
-    - train_phs_jax.py: PortHamiltonianSystem with H_net
-    - foundation.md §6: Verification plan
+ - certificate.go: HessianInvariant, ComputeHessianInvariant
+ - train_phs_jax.py: PortHamiltonianSystem with H_net
+ - foundation.md §6: Verification plan
 """
 
 import torch
@@ -36,488 +36,488 @@ from pathlib import Path
 
 @dataclass
 class AxiomPoint:
-    """
-    Canonical reference point in phase space for Hessian evaluation.
-    
-    These points are hard-coded and represent key physical regimes:
-    - LEO_CIRCULAR: 400km altitude circular orbit
-    - HGV_ENTRY: Hypersonic glide vehicle at atmospheric entry
-    - GEO_STATIONARY: Geostationary orbit
-    - ELLIPTICAL_HIGH: Highly elliptical orbit (Molniya-like)
-    - SUBORBITAL: Sub-orbital trajectory (ballistic missile)
-    - DEBRIS_CLOUD: Fragmentation debris at collision point
-    """
-    name: str
-    q: np.ndarray  # Position [3] in km
-    p: np.ndarray  # Momentum [3] in km/s (for unit mass)
-    regime: str    # "orbital", "hgv", "ballistic", "debris"
-    
-    def to_tensor(self, device='cpu') -> torch.Tensor:
-        """Convert to torch tensor [6]."""
-        state = np.concatenate([self.q, self.p])
-        return torch.tensor(state, dtype=torch.float32, device=device)
+ """
+ Canonical reference point in phase space for Hessian evaluation.
+ 
+ These points are hard-coded and represent key physical regimes:
+ - LEO_CIRCULAR: 400km altitude circular orbit
+ - HGV_ENTRY: Hypersonic glide vehicle at atmospheric entry
+ - GEO_STATIONARY: Geostationary orbit
+ - ELLIPTICAL_HIGH: Highly elliptical orbit (Molniya-like)
+ - SUBORBITAL: Sub-orbital trajectory (ballistic missile)
+ - DEBRIS_CLOUD: Fragmentation debris at collision point
+ """
+ name: str
+ q: np.ndarray # Position [3] in km
+ p: np.ndarray # Momentum [3] in km/s (for unit mass)
+ regime: str # "orbital", "hgv", "ballistic", "debris"
+ 
+ def to_tensor(self, device='cpu') -> torch.Tensor:
+ """Convert to torch tensor [6]."""
+ state = np.concatenate([self.q, self.p])
+ return torch.tensor(state, dtype=torch.float32, device=device)
 
 
 # =============================================================================
-# Hard-Coded Axiom Points (ADITI 4.0 Canonical Reference States)
+# Hard-Coded Axiom Points (Canonical Reference States)
 # =============================================================================
 
 AXIOM_POINTS = [
-    # LEO_CIRCULAR: 400km altitude, v = sqrt(μ/r) ≈ 7.67 km/s
-    AxiomPoint(
-        name="LEO_CIRCULAR",
-        q=np.array([6778.137, 0.0, 0.0]),  # r = RE + 400km
-        p=np.array([0.0, 7.6686, 0.0]),     # Circular velocity
-        regime="orbital"
-    ),
-    
-    # HGV_ENTRY: Siliguri corridor entry, 80km altitude, Mach 15
-    AxiomPoint(
-        name="HGV_ENTRY",
-        q=np.array([6451.137, 1000.0, 200.0]),  # 80km alt, offset for corridor
-        p=np.array([4.5, 4.5, 0.5]),  # ~5 km/s (Mach 15 at altitude)
-        regime="hgv"
-    ),
-    
-    # GEO_STATIONARY: 35,786 km altitude
-    AxiomPoint(
-        name="GEO_STATIONARY",
-        q=np.array([42164.0, 0.0, 0.0]),
-        p=np.array([0.0, 3.0747, 0.0]),  # GEO velocity
-        regime="orbital"
-    ),
-    
-    # ELLIPTICAL_HIGH: Molniya-like, apogee 39,000 km
-    AxiomPoint(
-        name="ELLIPTICAL_HIGH",
-        q=np.array([7000.0, 0.0, 0.0]),  # Near perigee
-        p=np.array([0.0, 10.0, 0.0]),   # Higher velocity (elliptical)
-        regime="orbital"
-    ),
-    
-    # SUBORBITAL: ICBM mid-course, parabolic trajectory
-    AxiomPoint(
-        name="SUBORBITAL",
-        q=np.array([7000.0, 1000.0, 500.0]),
-        p=np.array([5.0, 5.0, 2.0]),  # Escape trajectory energy
-        regime="ballistic"
-    ),
-    
-    # DEBRIS_CLOUD: Post-collision fragments
-    AxiomPoint(
-        name="DEBRIS_CLOUD",
-        q=np.array([7500.0, 500.0, 100.0]),
-        p=np.array([2.0, 7.5, 1.0]),  # Chaotic velocities
-        regime="debris"
-    ),
+ # LEO_CIRCULAR: 400km altitude, v = sqrt(μ/r) ≈ 7.67 km/s
+ AxiomPoint(
+ name="LEO_CIRCULAR",
+ q=np.array([6778.137, 0.0, 0.0]), # r = RE + 400km
+ p=np.array([0.0, 7.6686, 0.0]), # Circular velocity
+ regime="orbital"
+),
+ 
+ # HGV_ENTRY: Siliguri corridor entry, 80km altitude, Mach 15
+ AxiomPoint(
+ name="HGV_ENTRY",
+ q=np.array([6451.137, 1000.0, 200.0]), # 80km alt, offset for corridor
+ p=np.array([4.5, 4.5, 0.5]), # ~5 km/s (Mach 15 at altitude)
+ regime="hgv"
+),
+ 
+ # GEO_STATIONARY: 35,786 km altitude
+ AxiomPoint(
+ name="GEO_STATIONARY",
+ q=np.array([42164.0, 0.0, 0.0]),
+ p=np.array([0.0, 3.0747, 0.0]), # GEO velocity
+ regime="orbital"
+),
+ 
+ # ELLIPTICAL_HIGH: Molniya-like, apogee 39,000 km
+ AxiomPoint(
+ name="ELLIPTICAL_HIGH",
+ q=np.array([7000.0, 0.0, 0.0]), # Near perigee
+ p=np.array([0.0, 10.0, 0.0]), # Higher velocity (elliptical)
+ regime="orbital"
+),
+ 
+ # SUBORBITAL: ICBM mid-course, parabolic trajectory
+ AxiomPoint(
+ name="SUBORBITAL",
+ q=np.array([7000.0, 1000.0, 500.0]),
+ p=np.array([5.0, 5.0, 2.0]), # Escape trajectory energy
+ regime="ballistic"
+),
+ 
+ # DEBRIS_CLOUD: Post-collision fragments
+ AxiomPoint(
+ name="DEBRIS_CLOUD",
+ q=np.array([7500.0, 500.0, 100.0]),
+ p=np.array([2.0, 7.5, 1.0]), # Chaotic velocities
+ regime="debris"
+),
 ]
 
 
 @dataclass
 class HessianHashResult:
-    """Result of Hessian hash computation."""
-    hash_value: str           # SHA-256 hex string
-    traces: List[float]       # Hessian trace at each Axiom Point
-    axiom_names: List[str]    # Names of points evaluated
-    timestamp: float          # Unix timestamp
-    model_version: str        # Model identifier
-    
-    def to_json(self) -> str:
-        """Serialize to JSON for certificate inclusion."""
-        return json.dumps({
-            "hash": self.hash_value,
-            "traces": self.traces,
-            "axiom_points": self.axiom_names,
-            "timestamp": self.timestamp,
-            "model_version": self.model_version,
-            "verification_status": "VALID" if self.hash_value else "INVALID"
-        }, indent=2)
+ """Result of Hessian hash computation."""
+ hash_value: str # SHA-256 hex string
+ traces: List[float] # Hessian trace at each Axiom Point
+ axiom_names: List[str] # Names of points evaluated
+ timestamp: float # Unix timestamp
+ model_version: str # Model identifier
+ 
+ def to_json(self) -> str:
+ """Serialize to JSON for certificate inclusion."""
+ return json.dumps({
+ "hash": self.hash_value,
+ "traces": self.traces,
+ "axiom_points": self.axiom_names,
+ "timestamp": self.timestamp,
+ "model_version": self.model_version,
+ "verification_status": "VALID" if self.hash_value else "INVALID"
+ }, indent=2)
 
 
 class IntegrityGate:
-    """
-    Sovereign Integrity Gate for ADITI 4.0.
-    
-    Computes Hessian Hash and validates model integrity against
+ """
+ Sovereign Integrity Gate for .
+ 
+ Computes Hessian Hash and validates model integrity against
 tampering or adversarial perturbation.
-    """
-    
-    def __init__(
-        self,
-        axiom_points: Optional[List[AxiomPoint]] = None,
-        device: str = 'cpu'
-    ):
-        self.axiom_points = axiom_points or AXIOM_POINTS
-        self.device = device
-        self.reference_hash: Optional[str] = None
-        
-    def compute_hessian_trace(
-        self,
-        h_net: nn.Module,
-        state: torch.Tensor
-    ) -> float:
-        """
-        Compute Tr(∇²H) at a single state point.
-        
-        Uses autograd to compute second derivatives:
-            ∂²H/∂zᵢ² for each dimension i
-        
-        Args:
-            h_net: Hamiltonian neural network H(z) → scalar
-            state: [6] tensor [q, p]
-            
-        Returns:
-            trace: Σᵢ ∂²H/∂zᵢ²
-            
-        Raises:
-            RuntimeError: If gradients cannot be computed
-        """
-        h_net.eval()
-        state = state.detach().requires_grad_(True)
-        
-        # Compute H
-        H = h_net(state)
-        
-        # First gradient (Jacobian): ∇H = [∂H/∂z₁, ..., ∂H/∂z₆]
-        grad_H = torch.autograd.grad(
-            H,
-            state,
-            create_graph=True,  # Need second derivatives
-            retain_graph=True
-        )[0]
-        
-        # Second derivatives (Hessian diagonal)
-        trace = 0.0
-        for i in range(state.shape[0]):
-            # ∂²H/∂zᵢ²
-            second_deriv = torch.autograd.grad(
-                grad_H[i],
-                state,
-                retain_graph=True,
-                allow_unused=True
-            )[0]
-            
-            if second_deriv is not None:
-                trace += second_deriv[i].item()
-        
-        return trace
-    
-    def generate_hessian_hash(
-        self,
-        h_net: nn.Module,
-        model_version: str = "ADITI-4.0"
-    ) -> HessianHashResult:
-        """
-        Generate Hessian Hash across all Axiom Points.
-        
-        Algorithm:
-            1. For each Axiom Point zᵢ:
-               - Compute H(zᵢ)
-               - Compute Tr(∇²H)|_{z=zᵢ}
-            2. Concatenate traces with 10-digit precision
-            3. SHA-256 hash of concatenated string
-            
-        Security Property:
-            Any perturbation to H_net that changes the curvature
-            at these canonical points will change the hash.
-            
-        Args:
-            h_net: Hamiltonian network (e.g., PortHamiltonianSystem.H_net)
-            model_version: Identifier for this model
-            
-        Returns:
-            HessianHashResult with hash and metadata
-        """
-        traces = []
-        names = []
-        
-        print(f"[IntegrityGate] Computing Hessian Hash for {len(self.axiom_points)} Axiom Points...")
-        
-        for point in self.axiom_points:
-            state = point.to_tensor(self.device)
-            
-            try:
-                trace = self.compute_hessian_trace(h_net, state)
-                traces.append(trace)
-                names.append(point.name)
-                print(f"  {point.name}: Tr(∇²H) = {trace:.6e}")
-            except Exception as e:
-                print(f"  {point.name}: FAILED - {e}")
-                traces.append(0.0)  # Mark as failed
-                names.append(f"{point.name}_FAILED")
-        
-        # Generate hash input: "name1=trace1,name2=trace2,..."
-        hash_parts = [f"{n}={t:.10f}" for n, t in zip(names, traces)]
-        hash_input = ",".join(hash_parts)
-        
-        # Add salt: model version and timestamp
-        salt = f"|v={model_version}|t={torch.randn(1).item():.10f}"
-        hash_input += salt
-        
-        # SHA-256 hash
-        hash_value = hashlib.sha256(hash_input.encode()).hexdigest()
-        
-        print(f"[IntegrityGate] Hessian Hash: {hash_value[:16]}...{hash_value[-16:]}")
-        print(f"[IntegrityGate] Status: {'VALID' if all(t != 0 for t in traces) else 'PARTIAL_FAILURE'}")
-        
-        return HessianHashResult(
-            hash_value=hash_value,
-            traces=traces,
-            axiom_names=names,
-            timestamp=torch.randn(1).item(),  # Placeholder for actual timestamp
-            model_version=model_version
-        )
-    
-    def verify_integrity(
-        self,
-        h_net: nn.Module,
-        expected_hash: str,
-        tolerance: float = 1e-10
-    ) -> Tuple[bool, str]:
-        """
-        Verify model integrity against expected hash.
-        
-        Args:
-            h_net: Model to verify
-            expected_hash: Previously computed reference hash
-            tolerance: Not used for hash (must match exactly), 
-                      but used for trace comparison
-            
-        Returns:
-            (is_valid, message)
-        """
-        current = self.generate_hessian_hash(h_net)
-        
-        if current.hash_value == expected_hash:
-            return True, "INTEGRITY_VERIFIED: Hessian hash matches reference"
-        
-        # If hash mismatch, check which Axiom Points differ
-        diffs = []
-        # In production, we'd store reference traces and compare
-        
-        return False, f"INTEGRITY_VIOLATION: Hash mismatch. Expected {expected_hash[:16]}..., got {current.hash_value[:16]}..."
-    
-    def set_reference_hash(self, hash_value: str):
-        """Set the reference hash for future verification."""
-        self.reference_hash = hash_value
-        print(f"[IntegrityGate] Reference hash set: {hash_value[:16]}...")
+ """
+ 
+ def __init__(
+ self,
+ axiom_points: Optional[List[AxiomPoint]] = None,
+ device: str = 'cpu'
+):
+ self.axiom_points = axiom_points or AXIOM_POINTS
+ self.device = device
+ self.reference_hash: Optional[str] = None
+ 
+ def compute_hessian_trace(
+ self,
+ h_net: nn.Module,
+ state: torch.Tensor
+) -> float:
+ """
+ Compute Tr(∇²H) at a single state point.
+ 
+ Uses autograd to compute second derivatives:
+ ∂²H/∂zᵢ² for each dimension i
+ 
+ Args:
+ h_net: Hamiltonian neural network H(z) → scalar
+ state: [6] tensor [q, p]
+ 
+ Returns:
+ trace: Σᵢ ∂²H/∂zᵢ²
+ 
+ Raises:
+ RuntimeError: If gradients cannot be computed
+ """
+ h_net.eval()
+ state = state.detach().requires_grad_(True)
+ 
+ # Compute H
+ H = h_net(state)
+ 
+ # First gradient (Jacobian): ∇H = [∂H/∂z₁, ..., ∂H/∂z₆]
+ grad_H = torch.autograd.grad(
+ H,
+ state,
+ create_graph=True, # Need second derivatives
+ retain_graph=True
+)[0]
+ 
+ # Second derivatives (Hessian diagonal)
+ trace = 0.0
+ for i in range(state.shape[0]):
+ # ∂²H/∂zᵢ²
+ second_deriv = torch.autograd.grad(
+ grad_H[i],
+ state,
+ retain_graph=True,
+ allow_unused=True
+)[0]
+ 
+ if second_deriv is not None:
+ trace += second_deriv[i].item()
+ 
+ return trace
+ 
+ def generate_hessian_hash(
+ self,
+ h_net: nn.Module,
+ model_version: str = "ADITI-4.0"
+) -> HessianHashResult:
+ """
+ Generate Hessian Hash across all Axiom Points.
+ 
+ Algorithm:
+ 1. For each Axiom Point zᵢ:
+ - Compute H(zᵢ)
+ - Compute Tr(∇²H)|_{z=zᵢ}
+ 2. Concatenate traces with 10-digit precision
+ 3. SHA-256 hash of concatenated string
+ 
+ Security Property:
+ Any perturbation to H_net that changes the curvature
+ at these canonical points will change the hash.
+ 
+ Args:
+ h_net: Hamiltonian network (e.g., PortHamiltonianSystem.H_net)
+ model_version: Identifier for this model
+ 
+ Returns:
+ HessianHashResult with hash and metadata
+ """
+ traces = []
+ names = []
+ 
+ print(f"[IntegrityGate] Computing Hessian Hash for {len(self.axiom_points)} Axiom Points...")
+ 
+ for point in self.axiom_points:
+ state = point.to_tensor(self.device)
+ 
+ try:
+ trace = self.compute_hessian_trace(h_net, state)
+ traces.append(trace)
+ names.append(point.name)
+ print(f" {point.name}: Tr(∇²H) = {trace:.6e}")
+ except Exception as e:
+ print(f" {point.name}: FAILED - {e}")
+ traces.append(0.0) # Mark as failed
+ names.append(f"{point.name}_FAILED")
+ 
+ # Generate hash input: "name1=trace1,name2=trace2,..."
+ hash_parts = [f"{n}={t:.10f}" for n, t in zip(names, traces)]
+ hash_input = ",".join(hash_parts)
+ 
+ # Add salt: model version and timestamp
+ salt = f"|v={model_version}|t={torch.randn(1).item():.10f}"
+ hash_input += salt
+ 
+ # SHA-256 hash
+ hash_value = hashlib.sha256(hash_input.encode()).hexdigest()
+ 
+ print(f"[IntegrityGate] Hessian Hash: {hash_value[:16]}...{hash_value[-16:]}")
+ print(f"[IntegrityGate] Status: {'VALID' if all(t != 0 for t in traces) else 'PARTIAL_FAILURE'}")
+ 
+ return HessianHashResult(
+ hash_value=hash_value,
+ traces=traces,
+ axiom_names=names,
+ timestamp=torch.randn(1).item(), # Placeholder for actual timestamp
+ model_version=model_version
+)
+ 
+ def verify_integrity(
+ self,
+ h_net: nn.Module,
+ expected_hash: str,
+ tolerance: float = 1e-10
+) -> Tuple[bool, str]:
+ """
+ Verify model integrity against expected hash.
+ 
+ Args:
+ h_net: Model to verify
+ expected_hash: Previously computed reference hash
+ tolerance: Not used for hash (must match exactly), 
+ but used for trace comparison
+ 
+ Returns:
+ (is_valid, message)
+ """
+ current = self.generate_hessian_hash(h_net)
+ 
+ if current.hash_value == expected_hash:
+ return True, "INTEGRITY_VERIFIED: Hessian hash matches reference"
+ 
+ # If hash mismatch, check which Axiom Points differ
+ diffs = []
+ # In production, we'd store reference traces and compare
+ 
+ return False, f"INTEGRITY_VIOLATION: Hash mismatch. Expected {expected_hash[:16]}..., got {current.hash_value[:16]}..."
+ 
+ def set_reference_hash(self, hash_value: str):
+ """Set the reference hash for future verification."""
+ self.reference_hash = hash_value
+ print(f"[IntegrityGate] Reference hash set: {hash_value[:16]}...")
 
 
 class StochasticNoiseInjector:
-    """
-    Stochastic noise injection for scintillation resilience testing.
-    
-    Simulates Hanle-level atmospheric turbulence (S₄ > 0.6) by injecting
-    heavy-tailed Gaussian noise into sensor measurements.
-    """
-    
-    def __init__(
-        self,
-        sigma_atm: float = 1e-4,  # ~1 arcsec in canonical units
-        heavy_tail_alpha: float = 1.5  # Lévy α-stable parameter
-    ):
-        self.sigma_atm = sigma_atm
-        self.alpha = heavy_tail_alpha
-        
-    def inject_noise(
-        self,
-        q_true: torch.Tensor,
-        p_true: torch.Tensor,
-        noise_type: str = "gaussian"
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Inject measurement noise to simulate scintillation.
-        
-        Args:
-            q_true: True position [3]
-            p_true: True momentum [3]
-            noise_type: "gaussian" or "levy" (heavy-tailed)
-            
-        Returns:
-            (q_noisy, p_noisy)
-        """
-        if noise_type == "gaussian":
-            q_noise = torch.randn_like(q_true) * self.sigma_atm
-            p_noise = torch.randn_like(p_true) * self.sigma_atm * 0.1  # Velocity less affected
-        elif noise_type == "levy":
-            # Simulate heavy-tailed noise (more realistic for scintillation)
-            q_noise = self._levy_sample(q_true.shape) * self.sigma_atm
-            p_noise = self._levy_sample(p_true.shape) * self.sigma_atm * 0.1
-        else:
-            raise ValueError(f"Unknown noise type: {noise_type}")
-        
-        return q_true + q_noise, p_true + p_noise
-    
-    def _levy_sample(self, shape) -> torch.Tensor:
-        """
-        Sample from Lévy α-stable distribution (simplified approximation).
-        
-        For α=1.5, this gives heavier tails than Gaussian.
-        """
-        # Approximation: Gaussian * |Gaussian|^(2/α - 1)
-        u = torch.randn(shape)
-        levy = u * torch.abs(u).pow(2.0 / self.alpha - 1.0)
-        return levy
+ """
+ Stochastic noise injection for scintillation resilience testing.
+ 
+ Simulates Hanle-level atmospheric turbulence (S₄ > 0.6) by injecting
+ heavy-tailed Gaussian noise into sensor measurements.
+ """
+ 
+ def __init__(
+ self,
+ sigma_atm: float = 1e-4, # ~1 arcsec in canonical units
+ heavy_tail_alpha: float = 1.5 # Lévy α-stable parameter
+):
+ self.sigma_atm = sigma_atm
+ self.alpha = heavy_tail_alpha
+ 
+ def inject_noise(
+ self,
+ q_true: torch.Tensor,
+ p_true: torch.Tensor,
+ noise_type: str = "gaussian"
+) -> Tuple[torch.Tensor, torch.Tensor]:
+ """
+ Inject measurement noise to simulate scintillation.
+ 
+ Args:
+ q_true: True position [3]
+ p_true: True momentum [3]
+ noise_type: "gaussian" or "levy" (heavy-tailed)
+ 
+ Returns:
+ (q_noisy, p_noisy)
+ """
+ if noise_type == "gaussian":
+ q_noise = torch.randn_like(q_true) * self.sigma_atm
+ p_noise = torch.randn_like(p_true) * self.sigma_atm * 0.1 # Velocity less affected
+ elif noise_type == "levy":
+ # Simulate heavy-tailed noise (more realistic for scintillation)
+ q_noise = self._levy_sample(q_true.shape) * self.sigma_atm
+ p_noise = self._levy_sample(p_true.shape) * self.sigma_atm * 0.1
+ else:
+ raise ValueError(f"Unknown noise type: {noise_type}")
+ 
+ return q_true + q_noise, p_true + p_noise
+ 
+ def _levy_sample(self, shape) -> torch.Tensor:
+ """
+ Sample from Lévy α-stable distribution (simplified approximation).
+ 
+ For α=1.5, this gives heavier tails than Gaussian.
+ """
+ # Approximation: Gaussian * |Gaussian|^(2/α - 1)
+ u = torch.randn(shape)
+ levy = u * torch.abs(u).pow(2.0 / self.alpha - 1.0)
+ return levy
 
 
 def test_hessian_hash_generation():
-    """
-    Unit test: Generate Hessian hash for a simple Hamiltonian network.
-    """
-    print("=" * 70)
-    print("ADITI 4.0: Hessian Hash Generation Test")
-    print("=" * 70)
-    
-    # Create simple H_net (e.g., from PortHamiltonianSystem)
-    h_net = nn.Sequential(
-        nn.Linear(6, 128),
-        nn.Tanh(),
-        nn.Linear(128, 128),
-        nn.Tanh(),
-        nn.Linear(128, 1)
-    )
-    
-    # Generate hash
-    gate = IntegrityGate(device='cpu')
-    result = gate.generate_hessian_hash(h_net, model_version="TEST-v1.0")
-    
-    print("\nResult:")
-    print(result.to_json())
-    
-    # Verify against itself
-    is_valid, msg = gate.verify_integrity(h_net, result.hash_value)
-    print(f"\nSelf-Verification: {msg}")
-    
-    return result
+ """
+ Unit test: Generate Hessian hash for a simple Hamiltonian network.
+ """
+ print("=" * 70)
+ print(": Hessian Hash Generation Test")
+ print("=" * 70)
+ 
+ # Create simple H_net (e.g., from PortHamiltonianSystem)
+ h_net = nn.Sequential(
+ nn.Linear(6, 128),
+ nn.Tanh(),
+ nn.Linear(128, 128),
+ nn.Tanh(),
+ nn.Linear(128, 1)
+)
+ 
+ # Generate hash
+ gate = IntegrityGate(device='cpu')
+ result = gate.generate_hessian_hash(h_net, model_version="TEST-v1.0")
+ 
+ print("\nResult:")
+ print(result.to_json())
+ 
+ # Verify against itself
+ is_valid, msg = gate.verify_integrity(h_net, result.hash_value)
+ print(f"\nSelf-Verification: {msg}")
+ 
+ return result
 
 
 def test_tamper_detection():
-    """
-    Unit test: Verify that weight perturbation changes the hash.
-    """
-    print("\n" + "=" * 70)
-    print("ADITI 4.0: Tamper Detection Test")
-    print("=" * 70)
-    
-    # Create original model
-    h_net_original = nn.Sequential(
-        nn.Linear(6, 128),
-        nn.Tanh(),
-        nn.Linear(128, 1)
-    )
-    
-    # Generate reference hash
-    gate = IntegrityGate()
-    ref_hash = gate.generate_hessian_hash(h_net_original).hash_value
-    print(f"Reference Hash: {ref_hash[:16]}...")
-    
-    # Perturb weights slightly (adversarial attack simulation)
-    h_net_tampered = nn.Sequential(
-        nn.Linear(6, 128),
-        nn.Tanh(),
-        nn.Linear(128, 1)
-    )
-    
-    # Copy weights with tiny perturbation
-    with torch.no_grad():
-        for p_orig, p_tamp in zip(h_net_original.parameters(), h_net_tampered.parameters()):
-            p_tamp.copy_(p_orig + 1e-4 * torch.randn_like(p_orig))
-    
-    # Generate new hash
-    tampered_hash = gate.generate_hessian_hash(h_net_tampered).hash_value
-    print(f"Tampered Hash:  {tampered_hash[:16]}...")
-    
-    # Verify detection
-    if ref_hash != tampered_hash:
-        print("✓ TAMPER DETECTED: Hash changed with weight perturbation")
-        return True
-    else:
-        print("✗ TAMPER NOT DETECTED: Security vulnerability!")
-        return False
+ """
+ Unit test: Verify that weight perturbation changes the hash.
+ """
+ print("\n" + "=" * 70)
+ print(": Tamper Detection Test")
+ print("=" * 70)
+ 
+ # Create original model
+ h_net_original = nn.Sequential(
+ nn.Linear(6, 128),
+ nn.Tanh(),
+ nn.Linear(128, 1)
+)
+ 
+ # Generate reference hash
+ gate = IntegrityGate()
+ ref_hash = gate.generate_hessian_hash(h_net_original).hash_value
+ print(f"Reference Hash: {ref_hash[:16]}...")
+ 
+ # Perturb weights slightly (adversarial attack simulation)
+ h_net_tampered = nn.Sequential(
+ nn.Linear(6, 128),
+ nn.Tanh(),
+ nn.Linear(128, 1)
+)
+ 
+ # Copy weights with tiny perturbation
+ with torch.no_grad():
+ for p_orig, p_tamp in zip(h_net_original.parameters(), h_net_tampered.parameters()):
+ p_tamp.copy_(p_orig + 1e-4 * torch.randn_like(p_orig))
+ 
+ # Generate new hash
+ tampered_hash = gate.generate_hessian_hash(h_net_tampered).hash_value
+ print(f"Tampered Hash: {tampered_hash[:16]}...")
+ 
+ # Verify detection
+ if ref_hash != tampered_hash:
+ print("✓ TAMPER DETECTED: Hash changed with weight perturbation")
+ return True
+ else:
+ print("✗ TAMPER NOT DETECTED: Security vulnerability!")
+ return False
 
 
 def test_noise_resilience():
-    """
-    Unit test: Verify Forest-Ruth integrator recovers manifold from noise.
-    """
-    print("\n" + "=" * 70)
-    print("ADITI 4.0: Noise Resilience (Scintillation) Test")
-    print("=" * 70)
-    
-    # Simple Keplerian Hamiltonian for testing
-    class KeplerianHamiltonian(nn.Module):
-        def __init__(self, mu=398600.4418):
-            super().__init__()
-            self.mu = mu
-            
-        def forward(self, state):
-            q = state[..., :3]
-            p = state[..., 3:]
-            r = torch.norm(q, dim=-1, keepdim=True)
-            v_sq = torch.norm(p, dim=-1, keepdim=True) ** 2
-            KE = 0.5 * v_sq
-            PE = -self.mu / r
-            return KE + PE
-    
-    h_net = KeplerianHamiltonian()
-    injector = StochasticNoiseInjector(sigma_atm=1e-4)
-    
-    # True state: LEO circular
-    q_true = torch.tensor([6778.137, 0.0, 0.0])
-    p_true = torch.tensor([0.0, 7.6686, 0.0])
-    
-    # Target Hamiltonian
-    state_true = torch.cat([q_true, p_true])
-    H_target = h_net(state_true).item()
-    
-    print(f"Target H: {H_target:.6e}")
-    print(f"Noise σ:  {injector.sigma_atm:.2e} (simulating S₄ > 0.6)")
-    
-    # Multiple trials
-    n_trials = 100
-    errors = []
-    
-    for i in range(n_trials):
-        # Inject noise
-        q_noisy, p_noisy = injector.inject_noise(q_true, p_true)
-        
-        # Measure Hamiltonian at noisy state
-        state_noisy = torch.cat([q_noisy, p_noisy])
-        H_noisy = h_net(state_noisy).item()
-        
-        # Error from target
-        error = abs(H_noisy - H_target)
-        errors.append(error)
-    
-    mean_error = np.mean(errors)
-    max_error = np.max(errors)
-    
-    print(f"\nResults over {n_trials} trials:")
-    print(f"  Mean Error: {mean_error:.2e}")
-    print(f"  Max Error:  {max_error:.2e}")
-    print(f"  Threshold:  1e-6 (Grade A)")
-    
-    if mean_error < 1e-6:
-        print("✓ MANIFOLD CUSTODY: Noise resilience verified (Grade A)")
-        return True
-    elif mean_error < 1e-4:
-        print("~ MANIFOLD CUSTODY: Acceptable (Grade B)")
-        return True
-    else:
-        print("✗ MANIFOLD LOST: Excessive drift under noise")
-        return False
+ """
+ Unit test: Verify Forest-Ruth integrator recovers manifold from noise.
+ """
+ print("\n" + "=" * 70)
+ print(": Noise Resilience (Scintillation) Test")
+ print("=" * 70)
+ 
+ # Simple Keplerian Hamiltonian for testing
+ class KeplerianHamiltonian(nn.Module):
+ def __init__(self, mu=398600.4418):
+ super().__init__()
+ self.mu = mu
+ 
+ def forward(self, state):
+ q = state[..., :3]
+ p = state[..., 3:]
+ r = torch.norm(q, dim=-1, keepdim=True)
+ v_sq = torch.norm(p, dim=-1, keepdim=True) ** 2
+ KE = 0.5 * v_sq
+ PE = -self.mu / r
+ return KE + PE
+ 
+ h_net = KeplerianHamiltonian()
+ injector = StochasticNoiseInjector(sigma_atm=1e-4)
+ 
+ # True state: LEO circular
+ q_true = torch.tensor([6778.137, 0.0, 0.0])
+ p_true = torch.tensor([0.0, 7.6686, 0.0])
+ 
+ # Target Hamiltonian
+ state_true = torch.cat([q_true, p_true])
+ H_target = h_net(state_true).item()
+ 
+ print(f"Target H: {H_target:.6e}")
+ print(f"Noise σ: {injector.sigma_atm:.2e} (simulating S₄ > 0.6)")
+ 
+ # Multiple trials
+ n_trials = 100
+ errors = []
+ 
+ for i in range(n_trials):
+ # Inject noise
+ q_noisy, p_noisy = injector.inject_noise(q_true, p_true)
+ 
+ # Measure Hamiltonian at noisy state
+ state_noisy = torch.cat([q_noisy, p_noisy])
+ H_noisy = h_net(state_noisy).item()
+ 
+ # Error from target
+ error = abs(H_noisy - H_target)
+ errors.append(error)
+ 
+ mean_error = np.mean(errors)
+ max_error = np.max(errors)
+ 
+ print(f"\nResults over {n_trials} trials:")
+ print(f" Mean Error: {mean_error:.2e}")
+ print(f" Max Error: {max_error:.2e}")
+ print(f" Threshold: 1e-6 (Grade A)")
+ 
+ if mean_error < 1e-6:
+ print("✓ MANIFOLD CUSTODY: Noise resilience verified (Grade A)")
+ return True
+ elif mean_error < 1e-4:
+ print("~ MANIFOLD CUSTODY: Acceptable (Grade B)")
+ return True
+ else:
+ print("✗ MANIFOLD LOST: Excessive drift under noise")
+ return False
 
 
 if __name__ == "__main__":
-    # Run all tests
-    print("\n" + "█" * 70)
-    print("█  ADITI 4.0 SOVEREIGN INTEGRITY GATE - FULL TEST SUITE")
-    print("█" * 70 + "\n")
-    
-    test_hessian_hash_generation()
-    test_tamper_detection()
-    test_noise_resilience()
-    
-    print("\n" + "█" * 70)
-    print("█  INTEGRITY GATE TESTS COMPLETE")
-    print("█" * 70)
+ # Run all tests
+ print("\n" + "█" * 70)
+ print("█ SOVEREIGN INTEGRITY GATE - FULL TEST SUITE")
+ print("█" * 70 + "\n")
+ 
+ test_hessian_hash_generation()
+ test_tamper_detection()
+ test_noise_resilience()
+ 
+ print("\n" + "█" * 70)
+ print("█ INTEGRITY GATE TESTS COMPLETE")
+ print("█" * 70)

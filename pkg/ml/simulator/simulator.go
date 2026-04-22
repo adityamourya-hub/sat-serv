@@ -56,20 +56,20 @@ type SyntheticScenario struct {
 	CollisionAvoided    bool         `json:"collision_avoided"`
 	OperatorDifficulty  float64      `json:"operator_difficulty"`
 
-	// ADITI 4.0: HGV-specific fields for glide dynamics and wake memory
+	// HGV-specific fields for glide dynamics and wake memory
 	LiftDragRatio      float64 `json:"lift_drag_ratio"`       // L/D ratio (2-4 for HGV)
 	BankAngleRad       float64 `json:"bank_angle_rad"`        // Bank angle for maneuver capability
 	FlightPathAngleRad float64 `json:"flight_path_angle_rad"` // Gamma (negative for re-entry)
 	WakeMemoryFactor   float64 `json:"wake_memory_factor"`    // Fractional Laplacian correction (0-1)
 	AtmosphericDensity float64 `json:"atmospheric_density"`   // kg/m^3 at current altitude
 
-	// ADITI 4.0: HGV wake spectroscopy parameters for plume/wake detection
+	// HGV wake spectroscopy parameters for plume/wake detection
 	WakeTemperatureK    float64  `json:"wake_temperature_k"`            // Wake temperature (K)
 	WakeIonizationLevel float64  `json:"wake_ionization_level"`         // Ionization fraction (0-1)
 	WakeSpectralLines   []string `json:"wake_spectral_lines,omitempty"` // Dominant spectral lines
 	PlumeLuminosity     float64  `json:"plume_luminosity"`              // Plume luminosity (W/sr)
 
-	// ADITI 4.0: Sovereign Handshake protocol - Hamiltonian invariants for spoof detection
+	// Sovereign Handshake protocol - Hamiltonian invariants for spoof detection
 	HamiltonianInvariant float64 `json:"hamiltonian_invariant"` // Computed Hamiltonian value at observation epoch
 	HamiltonianHash      string  `json:"hamiltonian_hash"`      // Hash of invariant for spoof detection
 	HamiltonianSigma     float64 `json:"hamiltonian_sigma"`     // σ_H for spoof detection (σ_H / H_avg ≥ 10^-7)
@@ -125,7 +125,7 @@ func GenerateSyntheticScenarios(cfg GeneratorConfig) []SyntheticScenario {
 		)
 		class = classifyThreat(mach, altitude, burnout)
 
-		// ADITI 4.0: Generate HGV-specific dynamics for hypersonic threats
+		// Generate HGV-specific dynamics for hypersonic threats
 		var liftDragRatio, bankAngleRad, flightPathAngleRad, wakeMemoryFactor, atmosphericDensity, wakeTemperatureK, wakeIonizationLevel, plumeLuminosity float64
 		if class == ThreatHypersonic && altitude >= 30 && altitude <= 80 {
 			liftDragRatio, bankAngleRad, flightPathAngleRad, wakeMemoryFactor, atmosphericDensity, wakeTemperatureK, wakeIonizationLevel, plumeLuminosity = generateHGVDynamics(altitude, mach)
@@ -148,7 +148,7 @@ func GenerateSyntheticScenarios(cfg GeneratorConfig) []SyntheticScenario {
 
 		risk := syntheticRisk(missDistance, hbr, sigmaR, sigmaI, sigmaC, relVel, tca, sType)
 
-		// ADITI 4.0: Compute Hamiltonian invariants for Sovereign Handshake protocol
+		// Compute Hamiltonian invariants for Sovereign Handshake protocol
 		// Estimate position and velocity from altitude, mach, and miss distance
 		// This is a simplified model for synthetic scenario generation
 		positionKm := [3]float64{
@@ -246,7 +246,7 @@ func sampleScenarioType(rng *rand.Rand) ScenarioType {
 /**
  * generateHGVDynamics generates HGV-specific parameters for skip-glide trajectories.
  *
- * ADITI 4.0: Models the "Fractional Advantage" - HGV corridor (30-80km) is
+ * Models the "Fractional Advantage" - HGV corridor (30-80km) is
  * Transitional Flow regime where standard Navier-Stokes fails. Uses wake memory
  * and fractional Laplacian concepts for realistic HGV behavior.
  *
@@ -334,7 +334,7 @@ func rngFloat() float64 {
  * For Keplerian motion, the Hamiltonian H = 0.5*v² - μ/r is conserved.
  * This invariant is used for the Sovereign Handshake protocol to detect spoofing.
  *
- * ADITI 4.0: Hamiltonian invariants enable detection of state manipulation.
+ * Hamiltonian invariants enable detection of state manipulation.
  * If σ_H / H_avg ≥ 10^-7, the observation is flagged as potentially spoofed.
  *
  * @param positionKm Position vector [x, y, z] in km
@@ -404,7 +404,7 @@ func detectSpoof(H, H_avg float64) bool {
 /**
  * FractionalLaplacianKernel computes the fractional Laplacian for non-local threat propagation.
  *
- * ADITI 4.0: The "Fractional Advantage" - HGV corridor (30-80km) is Transitional Flow regime
+ * The "Fractional Advantage" - HGV corridor (30-80km) is Transitional Flow regime
  * where standard Navier-Stokes fails. The fractional Laplacian models non-local wake memory:
  * past trajectory influences current dynamics beyond local neighborhood.
  *
@@ -468,7 +468,7 @@ func FractionalLaplacianKernel(currentRisk float64, historicalRisk []float64, al
 /**
  * computeNonLocalThreatPropagation applies fractional Laplacian for threat propagation.
  *
- * ADITI 4.0: Uses wake memory to anticipate HGV position based on past trajectory,
+ * Uses wake memory to anticipate HGV position based on past trajectory,
  * not just current position. This is the core "Fractional Advantage" over legacy radar.
  *
  * @param currentRisk Current risk level
@@ -679,7 +679,7 @@ func adaptiveSigmaFromCovariance(missDistance, sigmaR, sigmaI, sigmaC float64) f
 /**
  * classifyThreatEnhanced classifies threat type with HGV-specific indicators.
  *
- * ADITI 4.0: Enhanced classification includes glide dynamics (L/D ratio),
+ * Enhanced classification includes glide dynamics (L/D ratio),
  * flight path angle, and atmospheric density for HGV detection in the
  * transitional flow regime (30-80km).
  *

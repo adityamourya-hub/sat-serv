@@ -1,5 +1,5 @@
 // pkg/orbital/cr3bp_symplectic_test.go
-// ADITI 4.0: CR3BPLite Forest-Ruth Symplectic Integration Tests
+// CR3BPLite Forest-Ruth Symplectic Integration Tests
 //
 // Regression tests for the P0 Symplectic Ghost fix.
 // Verifies that Forest-Ruth integration preserves JᵀJM = J structure

@@ -1,4 +1,4 @@
-# Model Registry for ADITI 4.0 Neural Network Stack
+# Model Registry for  Neural Network Stack
 # Central manifest of all ML models, their ONNX exports, and Go inference wrappers
 #
 # Schema:

@@ -19,7 +19,7 @@ import (
  * - Ap Index: Planetary geomagnetic activity index
  * - Kp Index: Planetary geomagnetic storm scale (0-9)
  *
- * ADITI 4.0 Requirement: 2-hour propagation accuracy demands
+ * Requirement: 2-hour propagation accuracy demands
  * real-time space weather integration for dynamic drag calculation.
  */
 type SpaceWeatherData struct {
@@ -70,7 +70,7 @@ type SpaceWeatherCache struct {
 }
 
 /**
- * NewSpaceWeatherCache creates a cache with ADITI 4.0 standard defaults.
+ * NewSpaceWeatherCache creates a cache with standard defaults.
  *
  * Default F10.7 = 140 sfu (moderate solar activity)
  * Default Ap = 15 (quiet to unsettled conditions)

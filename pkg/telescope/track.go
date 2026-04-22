@@ -1,5 +1,5 @@
 // pkg/telescope/track.go
-// ADITI 4.0: Closed-Loop Riemannian Tracking with PHS-Centroid Feedback
+// Closed-Loop Riemannian Tracking with PHS-Centroid Feedback
 //
 // Implements SO(3)-Equivariant tracking with Hamiltonian-modulated PI control.
 // The error between PHS-predicted manifold and pixel-space observation drives
@@ -17,7 +17,7 @@ import (
 
 // RiemannianController implements PI control on SO(3) manifold
 //
-// ADITI 4.0: Gains are modulated by Hamiltonian confidence.
+// Gains are modulated by Hamiltonian confidence.
 // - High H-drift: Trust camera more (physics uncertain)
 // - Low camera SNR: Trust PHS more (turbulence)
 type RiemannianController struct {
@@ -194,7 +194,7 @@ type TrackState struct {
 
 // ClosedLoopTrack implements active Riemannian feedback loop
 //
-// ADITI 4.0: Transitions from "set and forget" slewing to active
+// Transitions from "set and forget" slewing to active
 // PHS-Centroid handshake. Runs at GEODSS 2.7 fps cadence (370ms).
 //
 // The loop:

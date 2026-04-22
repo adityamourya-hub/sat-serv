@@ -8,7 +8,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Batch Least Squares (BLS) ECOM2 Parameter Estimation
+ * Batch Least Squares (BLS) ECOM2 Parameter Estimation
  *
  * Solves for 9 ECOM parameters using 7-14 days of TLE history.
  * Differential orbit determination with variational equations.
@@ -29,27 +29,27 @@ type BLSEstimator struct {
 	ObservationSpan float64 // days (typically 7-14)
 
 	// Physics
-	GravityModel    string // "J2J4" or "full"
-	ThirdBody     bool
-	UseShadow     bool
+	GravityModel string // "J2J4" or "full"
+	ThirdBody    bool
+	UseShadow    bool
 
 	// Weights
-	TimeDecayTau  float64 // days (weight = exp(-(t_now - t_i)/tau))
+	TimeDecayTau float64 // days (weight = exp(-(t_now - t_i)/tau))
 }
 
 /**
  * BLSResult contains the fitted parameters and statistics.
  */
 type BLSResult struct {
-	ECOM2Params         // Fitted 9 parameters
+	ECOM2Params               // Fitted 9 parameters
 	State       physics.State // Fitted initial state
 
 	// Statistics
-	RMSE        float64 // Root mean square error (km)
-	WRMS        float64 // Weighted RMS
-	NumObs      int     // Number of observations used
-	Iterations  int     // Iterations to convergence
-	Converged   bool
+	RMSE       float64 // Root mean square error (km)
+	WRMS       float64 // Weighted RMS
+	NumObs     int     // Number of observations used
+	Iterations int     // Iterations to convergence
+	Converged  bool
 
 	// Covariance (simplified - full 15x15 in production)
 	ParamStdDev [9]float64 // Standard deviations of ECOM params
@@ -73,11 +73,11 @@ func NewBLSEstimator() *BLSEstimator {
 	return &BLSEstimator{
 		MaxIterations:   10,
 		ConvergenceTol:  1e-8,
-		ObservationSpan: 7.0,  // 7-day sliding window
+		ObservationSpan: 7.0, // 7-day sliding window
 		GravityModel:    "J2J4",
 		ThirdBody:       true,
 		UseShadow:       true,
-		TimeDecayTau:    3.0,  // 3-day decay constant
+		TimeDecayTau:    3.0, // 3-day decay constant
 	}
 }
 

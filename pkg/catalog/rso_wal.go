@@ -1,9 +1,10 @@
+//go:build ignore
 // +build ignore
 
 /*
 Mmap-backed Write-Ahead Log for RSO Catalog
 
-ADITI 4.0: Fast recovery from crashes for 30,000-object RSO catalog.
+Fast recovery from crashes for 30,000-object RSO catalog.
 
 Implementation:
 - mmap-backed WAL for <10ms restart time
@@ -15,7 +16,7 @@ Usage:
     wal.BeginTransaction()
     wal.UpdateObject(obj)
     wal.Commit()
-    
+
     // On restart:
     wal := NewRSOWAL("rso_catalog.bin")
     wal.Recover() // <10ms
@@ -24,7 +25,6 @@ Usage:
 package catalog
 
 import (
-	"encoding/binary"
 	"fmt"
 	"os"
 	"sync"
@@ -35,8 +35,8 @@ import (
 
 const (
 	MaxRSOObjects      = 30000
-	RSOObjectSize      = 256  // bytes per object
-	WALHeaderSize      = 4096 // bytes
+	RSOObjectSize      = 256        // bytes per object
+	WALHeaderSize      = 4096       // bytes
 	WALMagic           = 0x52534F57 // "RSOW" in hex
 	WALVersion         = 1
 	CheckpointInterval = 1000 // Checkpoint every 1000 transactions
@@ -54,12 +54,12 @@ type RSOObject struct {
 
 // WALHeader represents the WAL file header
 type WALHeader struct {
-	Magic         uint32
-	Version       uint32
-	ObjectCount   uint32
+	Magic          uint32
+	Version        uint32
+	ObjectCount    uint32
 	LastCheckpoint uint64
 	Checksum       uint32
-	Reserved      [4096 - 20]byte
+	Reserved       [4096 - 20]byte
 }
 
 // RSOWAL is a memory-mapped Write-Ahead Log for RSO catalog
@@ -167,7 +167,7 @@ func (wal *RSOWAL) UpdateObject(obj RSOObject) error {
 	objectData := wal.data[WALHeaderSize:]
 	offset := obj.ID * RSOObjectSize
 	objBytes := objectData[offset : offset+RSOObjectSize]
-	
+
 	// Write object bytes
 	objPtr := (*RSOObject)(unsafe.Pointer(&objBytes[0]))
 	*objPtr = obj
@@ -251,7 +251,7 @@ func (wal *RSOWAL) GetObject(id uint32) (RSOObject, error) {
 func (wal *RSOWAL) Recover() error {
 	start := time.Now()
 	defer func() {
-		fmt.Printf("[WAL] Recovered %d objects in %.2fms\n", 
+		fmt.Printf("[WAL] Recovered %d objects in %.2fms\n",
 			wal.header.ObjectCount, time.Since(start).Seconds()*1000)
 	}()
 
@@ -304,7 +304,7 @@ func BenchmarkWAL() {
 			Epoch:    2459000.5,
 			Updated:  time.Now().Unix(),
 		}
-		
+
 		start := time.Now()
 		wal.BeginTransaction()
 		wal.UpdateObject(obj)
@@ -318,7 +318,7 @@ func BenchmarkWAL() {
 		sum += t
 	}
 	avg := sum / float64(len(writeTimes))
-	
+
 	fmt.Printf("[WAL Benchmark] Write latency: %.2f μs (avg)\n", avg)
 	fmt.Printf("[WAL Benchmark] 30k objects: %.2f ms\n", avg*30000/1000)
 }

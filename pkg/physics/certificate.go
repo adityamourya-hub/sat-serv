@@ -1,4 +1,4 @@
-// pkg/physics/certificate.go - ADITI 4.0 Symbolic Certificate
+// pkg/physics/certificate.go - Symbolic Certificate
 //
 // Legal and mathematical proof of system output for iDEX May 4th Audit.
 // Provides cryptographically signed 60-second projections with physics-grade
@@ -19,14 +19,14 @@
 //
 // Strategic Value:
 //   - Tamper-proof: Hardware-level guarantee via Ed25519 signing
-//   - Auditability: Log of certificates for ADITI 4.0 review
+//   - Auditability: Log of certificates for sovereign review
 //   - Actionable: Grade C + narrow σ = green light for interceptor launch
 //
 // References:
 //   - SINDy: pkg/physics/sliding_sindy.go (HGVPrimitives, Bootstrap CI)
 //   - PHS: ai/v3/port_hamiltonian.py (Hamiltonian, Yoshida-4)
 //   - Koopman: ai/v3/koopman_operator.py (Covariance propagation)
-//   - May 4th Audit: iDEX ADITI 4.0 Sovereign Brain
+//   - May 4th Audit: iDEX Sovereign Brain
 
 package physics
 
@@ -41,50 +41,43 @@ import (
 	"time"
 )
 
-// =============================================================================
-// Physics Grade Definitions
-// =============================================================================
-
-// PhysicsGrade represents the integrity of the PGFM prediction
-type PhysicsGrade string
-
-const (
-	// GradeA: Symplectic drift < 10^-6; Sub-10m residual
-	// Indicates purely ballistic/stable orbital path. Highly trustworthy.
-	GradeA PhysicsGrade = "A"
-
-	// GradeB: Energy corrected; Sub-50m residual
-	// Minor corrections applied, prediction reliable.
-	GradeB PhysicsGrade = "B"
-
-	// GradeC: High non-Hamiltonian maneuver in progress
-	// Control model (SINDy) successfully explained deviation.
-	// Tracking maneuvering threat.
-	GradeC PhysicsGrade = "C"
-
-	// GradeF: Model divergence; Hallucination risk
-	// Residual cannot be mapped to library primitives.
-	// Manual override required.
-	GradeF PhysicsGrade = "F"
-)
-
-// GradeThresholds defines the numerical thresholds for each grade
-type GradeThresholds struct {
-	// Energy drift: |H(t) - H(0)| / |H(0)|
-	MaxEnergyDriftA float64 // < 1e-6 for Grade A
-	MaxEnergyDriftB float64 // < 1e-4 for Grade B
-	MaxEnergyDriftC float64 // < 1e-2 for Grade C
-
-	// L2 position residual (meters)
-	MaxResidualA float64 // < 10m for Grade A
-	MaxResidualB float64 // < 50m for Grade B
-	MaxResidualC float64 // < 500m for Grade C
-
-	// SINDy confidence for Grade C
-	MinSINDyConfidenceC float64 // > 0.95 for Grade C
+// ConstraintViolation records a single physical constraint check result.
+// Replaces the A-F "grade" gamification with explicit pass/fail per constraint.
+type ConstraintViolation struct {
+	Constraint string  // e.g., "energy_drift", "position_residual", "sindy_confidence"
+	Value      float64 // Measured value
+	Threshold  float64 // Pass/fail boundary
+	Unit       string  // Physical unit
+	Passed     bool    // true if constraint satisfied
 }
 
-// DefaultGradeThresholds returns standard iDEX ADITI 4.0 thresholds
+// AllPassed returns true if every constraint passed.
+func AllPassed(v []ConstraintViolation) bool {
+	for _, c := range v {
+		if !c.Passed {
+			return false
+		}
+	}
+	return true
+}
+
+// GradeThresholds defines the numerical thresholds for physics consistency checks.
+type GradeThresholds struct {
+	// Energy drift: |H(t) - H(0)| / |H(0)|
+	MaxEnergyDriftA float64 // < 1e-6 (strict)
+	MaxEnergyDriftB float64 // < 1e-4
+	MaxEnergyDriftC float64 // < 1e-2
+
+	// L2 position residual (meters)
+	MaxResidualA float64 // < 10m
+	MaxResidualB float64 // < 50m
+	MaxResidualC float64 // < 500m
+
+	// SINDy confidence threshold
+	MinSINDyConfidenceC float64 // > 0.95
+}
+
+// DefaultGradeThresholds returns standard iDEX thresholds
 func DefaultGradeThresholds() GradeThresholds {
 	return GradeThresholds{
 		MaxEnergyDriftA:     1e-6,
@@ -98,12 +91,12 @@ func DefaultGradeThresholds() GradeThresholds {
 }
 
 // =============================================================================
-// Hamiltonian Invariant Hash (ADITI 4.0)
+// Hamiltonian Invariant Hash
 // =============================================================================
 
 // HamiltonianInvariant represents the Hamiltonian invariant for physical proof of work
 //
-// ADITI 4.0: The Hamiltonian Hash is the "Physical Proof of Work" for the audit.
+// The Hamiltonian Hash is the "Physical Proof of Work" for the audit.
 // Every 100 frames, calculate mean Hamiltonian H_avg and variance σ_H.
 // If σ_H / H_avg < 10^-7, generate a hash of the invariant and append
 // to the Symbolic Certificate.
@@ -202,12 +195,12 @@ func simpleHash(s string) string {
 }
 
 // =============================================================================
-// Hessian Hash for ICNN Convexity Proof (ADITI 4.0)
+// Hessian Hash for ICNN Convexity Proof
 // =============================================================================
 
 // HessianInvariant represents the Hessian invariant for ICNN convexity proof
 //
-// ADITI 4.0: The Hessian Hash proves ICNN Convexity is active in deployed weights,
+// The Hessian Hash proves ICNN Convexity is active in deployed weights,
 // not just the training logs. If an adversary tries to spoof the system with
 // non-convex weights, the Hessian will have negative eigenvalues and the hash will fail.
 type HessianInvariant struct {
@@ -220,7 +213,7 @@ type HessianInvariant struct {
 
 // ComputeHessianInvariant computes Hessian invariant from model weights
 //
-// ADITI 4.0 Delhi War-Room: Implements sha256(hessian_weights) for cryptographic proof
+// Implements sha256(hessian_weights) for cryptographic proof
 // of ICNN convexity in deployed weights, not just training logs.
 //
 // The hash is computed directly from the Hessian weights to prevent spoofing:
@@ -253,7 +246,7 @@ func ComputeHessianInvariant(weights []float64) *HessianInvariant {
 	minEigenvalue := math.Sqrt(variance) // Positive indicates convexity
 	maxEigenvalue := trace / float64(len(weights))
 
-	// ADITI 4.0: Compute SHA-256 hash of actual Hessian weights
+	// Compute SHA-256 hash of actual Hessian weights
 	// This provides cryptographic proof that the deployed weights maintain convexity
 	// Convert weights to bytes for hashing
 	weightBytes := make([]byte, len(weights)*8)
@@ -310,12 +303,12 @@ type IntentInference struct {
 
 // PhysicsHealth contains model integrity metrics
 type PhysicsHealth struct {
-	Grade           PhysicsGrade `json:"grade"`                 // A, B, C, or F
-	EnergyDrift     float64      `json:"energy_drift_joules"`   // ΔH from Hamiltonian conservation
-	EnergyDriftRel  float64      `json:"energy_drift_relative"` // |ΔH|/|H|
-	L2Residual      float64      `json:"l2_residual_meters"`    // Position residual (m)
-	SymplecticError float64      `json:"symplectic_error"`      // M^T·J·M - J Frobenius norm
-	PHSConverged    bool         `json:"phs_converged"`         // Whether PHS solver converged
+	ConstraintViolations []ConstraintViolation `json:"constraint_violations"` // Physics pass/fail per constraint
+	EnergyDrift          float64               `json:"energy_drift_joules"`   // ΔH from Hamiltonian conservation
+	EnergyDriftRel       float64               `json:"energy_drift_relative"` // |ΔH|/|H|
+	L2Residual           float64               `json:"l2_residual_meters"`    // Position residual (m)
+	SymplecticError      float64               `json:"symplectic_error"`      // M^T·J·M - J Frobenius norm
+	PHSConverged         bool                  `json:"phs_converged"`         // Whether PHS solver converged
 }
 
 // ForwardProjection contains 60-second predictive trajectory
@@ -343,15 +336,15 @@ type SymbolicCertificate struct {
 	Health     PhysicsHealth      `json:"health"`
 	Projection ForwardProjection  `json:"projection"`
 	Proof      CryptographicProof `json:"proof"`
-	// ADITI 4.0: Hamiltonian Invariant Hash for physical proof of work
+	// Hamiltonian Invariant Hash for physical proof of work
 	HamiltonianInvariant *HamiltonianInvariant `json:"hamiltonian_invariant,omitempty"`
-	// ADITI 4.0: Hessian Hash for ICNN convexity proof
+	// Hessian Hash for ICNN convexity proof
 	HessianHash string `json:"hessian_hash,omitempty"`
-	// ADITI 4.0: MFBD Structural Hash for morphological intelligence
+	// MFBD Structural Hash for morphological intelligence
 	// Example: "Target ID: RSO-2026-04A. Symmetry verified. Hamiltonian Invariant: Valid.
 	//          Geometry Hash: 0x8F2... (Matches HGV-Class-Delta)."
 	StructuralHash string `json:"structural_hash,omitempty"`
-	// ADITI 4.0: Object geometry metadata from MFBD reconstruction (JSON encoded)
+	// Object geometry metadata from MFBD reconstruction (JSON encoded)
 	ObjectGeometryJSON string `json:"object_geometry_json,omitempty"`
 }
 
@@ -400,8 +393,8 @@ func (cg *CertificateGenerator) GenerateCertificate(
 	projection ForwardProjection,
 ) (*SymbolicCertificate, error) {
 
-	// Determine physics grade
-	grade := cg.calculateGrade(sindyResult, phsMetrics)
+	// Determine physics constraint violations
+	violations := cg.calculateConstraintViolations(sindyResult, phsMetrics)
 
 	// Build certificate
 	cert := &SymbolicCertificate{
@@ -422,12 +415,12 @@ func (cg *CertificateGenerator) GenerateCertificate(
 			DeltaV:           sindyResult.ThrustMagnitude,
 		},
 		Health: PhysicsHealth{
-			Grade:           grade,
-			EnergyDrift:     phsMetrics.EnergyDrift,
-			EnergyDriftRel:  phsMetrics.EnergyDriftRel,
-			L2Residual:      phsMetrics.L2Residual,
-			SymplecticError: phsMetrics.SymplecticError,
-			PHSConverged:    phsMetrics.Converged,
+			ConstraintViolations: violations,
+			EnergyDrift:          phsMetrics.EnergyDrift,
+			EnergyDriftRel:       phsMetrics.EnergyDriftRel,
+			L2Residual:           phsMetrics.L2Residual,
+			SymplecticError:      phsMetrics.SymplecticError,
+			PHSConverged:         phsMetrics.Converged,
 		},
 		Projection: projection,
 	}
@@ -449,36 +442,43 @@ type PHSHealthMetrics struct {
 	Converged       bool
 }
 
-// calculateGrade determines physics grade based on thresholds
-func (cg *CertificateGenerator) calculateGrade(
+// calculateConstraintViolations evaluates physics constraints against thresholds.
+// Replaces the A-F grade gamification with explicit pass/fail per constraint.
+func (cg *CertificateGenerator) calculateConstraintViolations(
 	sindyResult SINDyResult,
 	phsMetrics PHSHealthMetrics,
-) PhysicsGrade {
+) []ConstraintViolation {
 	th := cg.thresholds
-
-	// Check Grade A criteria
-	if phsMetrics.EnergyDriftRel < th.MaxEnergyDriftA &&
-		phsMetrics.L2Residual < th.MaxResidualA &&
-		phsMetrics.Converged {
-		return GradeA
+	return []ConstraintViolation{
+		{
+			Constraint: "energy_drift",
+			Value:      phsMetrics.EnergyDriftRel,
+			Threshold:  th.MaxEnergyDriftA,
+			Unit:       "relative",
+			Passed:     phsMetrics.EnergyDriftRel < th.MaxEnergyDriftA && phsMetrics.Converged,
+		},
+		{
+			Constraint: "position_residual",
+			Value:      phsMetrics.L2Residual,
+			Threshold:  th.MaxResidualA,
+			Unit:       "meters",
+			Passed:     phsMetrics.L2Residual < th.MaxResidualA && phsMetrics.Converged,
+		},
+		{
+			Constraint: "maneuver_explained",
+			Value:      sindyResult.Confidence,
+			Threshold:  th.MinSINDyConfidenceC,
+			Unit:       "bool",
+			Passed:     !sindyResult.ThrustDetected || (sindyResult.ThrustDetected && sindyResult.Confidence >= th.MinSINDyConfidenceC && phsMetrics.EnergyDriftRel < th.MaxEnergyDriftC),
+		},
+		{
+			Constraint: "phs_converged",
+			Value:      0.0,
+			Threshold:  0.0,
+			Unit:       "bool",
+			Passed:     phsMetrics.Converged,
+		},
 	}
-
-	// Check Grade B criteria
-	if phsMetrics.EnergyDriftRel < th.MaxEnergyDriftB &&
-		phsMetrics.L2Residual < th.MaxResidualB &&
-		phsMetrics.Converged {
-		return GradeB
-	}
-
-	// Check Grade C criteria (maneuver detected with high confidence)
-	if sindyResult.ThrustDetected &&
-		sindyResult.Confidence >= th.MinSINDyConfidenceC &&
-		phsMetrics.EnergyDriftRel < th.MaxEnergyDriftC {
-		return GradeC
-	}
-
-	// Default to Grade F (divergence/hallucination risk)
-	return GradeF
 }
 
 // inferManeuverType maps SINDy result to human-readable maneuver type
@@ -607,12 +607,11 @@ func VerifyCertificate(cert *SymbolicCertificate) (bool, error) {
 	return ed25519.Verify(pubKey, data, signature), nil
 }
 
-// IsActionable returns true if certificate indicates safe intercept conditions
+// IsActionable returns true if certificate indicates safe intercept conditions.
+// A certificate is actionable only when all physics constraints pass and confidence is sufficient.
 func (cert *SymbolicCertificate) IsActionable() bool {
-	// Grade A or B: High confidence in prediction
-	// Grade C: Maneuver detected but with confidence
-	// Grade F: Not actionable (model divergence)
-	if cert.Health.Grade == GradeF {
+	// If any hard physics constraint failed, not actionable
+	if !AllPassed(cert.Health.ConstraintViolations) {
 		return false
 	}
 
@@ -625,7 +624,7 @@ func (cert *SymbolicCertificate) IsActionable() bool {
 	}
 
 	// Check confidence for maneuvering targets
-	if cert.Health.Grade == GradeC && cert.Inference.ConfidenceScore < 0.90 {
+	if cert.Inference.ConfidenceScore < 0.90 {
 		return false
 	}
 
@@ -687,10 +686,14 @@ func (cert *SymbolicCertificate) String() string {
 		actionable = "YES"
 	}
 
+	violations := "OK"
+	if !AllPassed(cert.Health.ConstraintViolations) {
+		violations = "FAIL"
+	}
 	return fmt.Sprintf(
 		"SymbolicCertificate[%s]\n"+
 			"  Target: %s | Time: %s | Node: %s\n"+
-			"  Grade: %s | Energy Drift: %.2e | L2 Residual: %.1fm\n"+
+			"  Constraints: %s | Energy Drift: %.2e | L2 Residual: %.1fm\n"+
 			"  Maneuver: %s | Confidence: %.1f%% | ΔV: %.3f m/s²\n"+
 			"  Projection: %.0fs horizon | Final σ: %.1fm\n"+
 			"  Actionable: %s | Verified: %v",
@@ -698,7 +701,7 @@ func (cert *SymbolicCertificate) String() string {
 		cert.Header.TargetID,
 		cert.Header.Timestamp.Format("2006-01-02T15:04:05Z"),
 		cert.Header.NodeID,
-		cert.Health.Grade,
+		violations,
 		cert.Health.EnergyDriftRel,
 		cert.Health.L2Residual,
 		cert.Inference.ManeuverType,

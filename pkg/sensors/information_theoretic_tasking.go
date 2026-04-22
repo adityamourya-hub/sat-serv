@@ -3,7 +3,7 @@ package sensors
 /**
  * Information-Theoretic Sensor Tasking Engine (ITTE)
  *
- * ADITI 4.0: Active ISR Platform for 100k Object Catalog
+ * Active ISR Platform for 100k Object Catalog
  *
  * Transitions from passive catalog to active intelligence gathering:
  * - Fisher Information Matrix (FIM) based prioritization

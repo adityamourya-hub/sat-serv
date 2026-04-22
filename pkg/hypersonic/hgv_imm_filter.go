@@ -16,7 +16,7 @@ const DefaultKalmanMinGain = 0.01
 const DefaultKalmanMaxGain = 0.95
 
 /**
- * ADITI 4.0 Interacting Multiple Model (IMM) Filter for HGV Tracking
+ * Interacting Multiple Model (IMM) Filter for HGV Tracking
  *
  * HGVs switch between flight modes (ballistic, glide, maneuver).
  * IMM runs multiple models in parallel with Markov transitions.
@@ -63,7 +63,7 @@ type IMMFilter struct {
 	// Mode likelihoods (dynamic slice for expansion)
 	Likelihoods []float64
 
-	// ADITI 4.0: Active Inference - Expected Free Energy for each mode
+	// Active Inference - Expected Free Energy for each mode
 	// If a target is "minimizing surprise" relative to an interceptor's path,
 	// it's adversarial counter-intelligence, not just a maneuver.
 	ExpectedFreeEnergy []float64
@@ -71,7 +71,7 @@ type IMMFilter struct {
 	// Constants
 	HGV HGVConstants
 
-	// ADITI 4.0: Stochastic Port-Hamiltonian System (SPHS) Integration
+	// Stochastic Port-Hamiltonian System (SPHS) Integration
 	// Dynamic covariance from learned diffusion model instead of hardcoded R matrix
 	DiffusionModel          physics.DiffusionModelInterface // σ(x) network for state-dependent noise
 	EnableDynamicCovariance bool                            // Enable dynamic covariance propagation
@@ -87,24 +87,24 @@ type IMMFilter struct {
 	ZeroDayActive   bool    // Whether zero-day mode is active
 	NumModes        int     // Current number of modes (for compatibility)
 
-	// ADITI 4.0: Spectral Gap enforcement
+	// Spectral Gap enforcement
 	// Forces PHS to handle only "Dissipative Background" (gravity, neutral atmosphere)
 	// Forces high-frequency (>0.5Hz) or control-dependent forces into SINDy residual
 	SpectralGapThreshold float64 // Hz threshold (default 0.5)
 
-	// ADITI 4.0: Density uncertainty covariance inflation
+	// Density uncertainty covariance inflation
 	// 1σ drag error ±30% must be sigma-point-propagated into filter for PAC coverage
 	DensityUncertainty float64 // 1σ density uncertainty (default 0.3 for ±30%)
 	AltitudeKm         float64 // Current altitude for density uncertainty scaling
 
-	// ADITI 4.0: Active Inference (AI-IMM) - Expected Free Energy solver
+	// Active Inference (AI-IMM) - Expected Free Energy solver
 	// Pivot from reactive Bayesian filtering to predictive intent inference
 	// System asks "What is the adversary trying to learn or achieve?"
 	AIIMMEnabled         bool    // Whether AI-IMM is enabled
 	ManeuverThreshold    float64 // Threshold for P(maneuver) to trigger AI-IMM
 	BayesFactorThreshold float64 // Threshold for Bayes Factor (>10 spawns new mode)
 
-	// ADITI 4.0: Anticipatory Term for Predictive Capability
+	// Anticipatory Term for Predictive Capability
 	// Uses EFE to bias predictions toward likely future states
 	AnticipatoryHorizon float64 // Look-ahead horizon for anticipatory term (seconds)
 	AnticipatoryWeight  float64 // Weight for anticipatory term vs reactive term (0.0-1.0)
@@ -163,12 +163,12 @@ func NewIMMFilterWithConfig(hgv HGVConstants, minGain, maxGain float64) *IMMFilt
 	imm.ExpectedFreeEnergy = make([]float64, int(NumModes))
 	imm.SpectralGapThreshold = 0.5 // 0.5 Hz threshold
 
-	// ADITI 4.0: Density uncertainty covariance inflation
+	// Density uncertainty covariance inflation
 	// 1σ drag error ±30% for PAC coverage (conformal α=0.05)
 	imm.DensityUncertainty = 0.3 // ±30% density uncertainty
 	imm.AltitudeKm = 100.0       // Default altitude for scaling
 
-	// ADITI 4.0: Active Inference (AI-IMM)
+	// Active Inference (AI-IMM)
 	imm.AIIMMEnabled = false
 	imm.ManeuverThreshold = 0.3
 	imm.BayesFactorThreshold = 10.0
@@ -205,7 +205,7 @@ func NewIMMFilterWithConfig(hgv HGVConstants, minGain, maxGain float64) *IMMFilt
 	// DEPRECATED: Use dynamic covariance from SPHS diffusion model
 	imm.MeasurementNoise = 1000.0 // 1km default (fallback only)
 
-	// ADITI 4.0: SPHS Integration
+	// SPHS Integration
 	imm.EnableDynamicCovariance = false // Disabled by default for backward compatibility
 
 	// Initialize mode filters
@@ -319,7 +319,7 @@ func (imm *IMMFilter) modeMatchedFilter(
 	// Compute Kalman gain from covariance: K = P / (P + R)
 	// where P is state covariance, R is measurement noise
 
-	// ADITI 4.0: Dynamic Covariance from SPHS (Stochastic Port-Hamiltonian System)
+	// Dynamic Covariance from SPHS (Stochastic Port-Hamiltonian System)
 	// Instead of hardcoded R matrix, use learned diffusion σ(x) for dynamic covariance
 	// Σ_prop ≈ Φ Σ Φ^T + σ(x)σ(x)^T Δt
 	//
@@ -355,7 +355,7 @@ func (imm *IMMFilter) modeMatchedFilter(
 		measurementNoise = dynamicCovariance + densityNoise
 	} else {
 		// Legacy: Use hardcoded measurement noise
-		// ADITI 4.0: Inflate measurement noise based on density uncertainty
+		// Inflate measurement noise based on density uncertainty
 		// Density uncertainty ±30% propagates to drag uncertainty → position uncertainty
 		// Scale uncertainty by altitude (higher altitude = more density uncertainty)
 		altitudeFactor := math.Max(1.0, 200.0/imm.AltitudeKm)            // More uncertainty at high altitude
@@ -431,7 +431,7 @@ func (imm *IMMFilter) modeMatchedFilter(
 /**
  * predictMode performs model-specific prediction with anticipatory term.
  *
- * ADITI 4.0: Combines reactive prediction with anticipatory EFE-based lookahead.
+ * Combines reactive prediction with anticipatory EFE-based lookahead.
  * x_pred = (1 - w_anti) * x_reactive + w_anti * x_anticipatory
  *
  * where:
@@ -445,7 +445,7 @@ func (imm *IMMFilter) predictMode(
 	dt float64,
 	jd float64,
 ) HGVState {
-	// ADITI 4.0: Update altitude for density uncertainty scaling
+	// Update altitude for density uncertainty scaling
 	imm.AltitudeKm = state.R - physics.EARTH_R_EQUATORIAL
 
 	// Reactive prediction (standard physics-based)
@@ -542,7 +542,7 @@ func (imm *IMMFilter) predictAnticipatory(
 /**
  * ComputeExpectedFreeEnergy calculates the Expected Free Energy for each mode.
  *
- * ADITI 4.0: Active Inference for adversarial intent detection.
+ * Active Inference for adversarial intent detection.
  *
  * The Expected Free Energy (EFE) measures how "surprising" a trajectory is
  * given a generative model. If a target is minimizing surprise relative to an
@@ -641,7 +641,7 @@ func (imm *IMMFilter) DetectAdversarialIntent(efe []float64) (bool, float64, int
 /**
  * predictBallistic: No lift, only drag and gravity.
  *
- * ADITI 4.0: Symplectic Störmer-Verlet integration with Hamiltonian Energy Guard.
+ * Symplectic Störmer-Verlet integration with Hamiltonian Energy Guard.
  *
  * Replaces legacy C_D=1.0 hardcoded drag with catalog-based BallisticCoeff.
  * Uses FNO-based AtmosphereEngine for live density.
@@ -912,7 +912,7 @@ func (imm *IMMFilter) updateModeProbabilities(measurement HGVState) {
  * computeNIS calculates Normalized Innovation Squared for zero-day detection.
  * NIS = ν^T * S^{-1} * ν, where ν is innovation and S is innovation covariance.
  *
- * ADITI 4.0: Uses dynamic covariance from SPHS diffusion when enabled.
+ * Uses dynamic covariance from SPHS diffusion when enabled.
  */
 func (imm *IMMFilter) computeNIS(mode int, measurement HGVState) float64 {
 	filter := imm.Filters[mode]
@@ -952,7 +952,7 @@ func (imm *IMMFilter) computeNIS(mode int, measurement HGVState) float64 {
 /**
  * UpdateActiveInference replaces reactive update with Bayesian Model Evidence threshold.
  *
- * ADITI 4.0: Active Inference for adversarial intent detection.
+ * Active Inference for adversarial intent detection.
  *
  * If P(maneuver) < threshold, stay in TIER 1 (Reactive).
  * If P(maneuver) > threshold, execute AI-IMM (TIER 2).

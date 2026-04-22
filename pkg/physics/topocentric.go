@@ -67,7 +67,7 @@ func (ude *UDEBiasCorrection) updateNeuralBias(speckleContrast, airglowIntensity
 /**
  * FractionalAtmosphereAdjust applies spectral multiplier from FNO kernel.
  *
- * ADITI 4.0: One-line spectral multiplier for atmospheric refraction correction.
+ * One-line spectral multiplier for atmospheric refraction correction.
  * Combines:
  *   - Neural FNO kernel predictions (from ai/v3/sphs_diffusion.py)
  *   - GEODSS Deep STARE seeing models
@@ -141,7 +141,7 @@ func FractionalAtmosphereAdjust(elevation, obsAlt, jd float64) float64 {
  * Azimuth: 0° = North, 90° = East, 180° = South, 270° = West
  * Elevation: 0° = Horizon, 90° = Zenith
  *
- * ADITI 4.0: FractionalAtmosphereAdjust applies spectral multiplier from FNO kernel
+ * FractionalAtmosphereAdjust applies spectral multiplier from FNO kernel
  * for atmospheric refraction correction. Derived from AMOS 2025 "Non-Local Turbulence"
  * and GEODSS Deep STARE specifications.
  */
@@ -172,7 +172,7 @@ func ECIToAzEl(satX, satY, satZ float64, obsLat, obsLon, obsAlt float64, jd floa
 	rangeVec := math.Sqrt(south*south + east*east + zenith*zenith)
 	elevation = math.Asin(zenith/rangeVec) * DEG_PER_RAD
 
-	// ADITI 4.0: FractionalAtmosphereAdjust - Spectral multiplier from FNO kernel
+	// FractionalAtmosphereAdjust - Spectral multiplier from FNO kernel
 	// Applies atmospheric refraction correction based on learned neural operator
 	// Reference: AMOS 2025 "Non-Local Turbulence Mitigation" + GEODSS Deep STARE specs
 	elevation = elevation * FractionalAtmosphereAdjust(elevation, obsAlt, jd)

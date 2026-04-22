@@ -11,7 +11,7 @@ import (
 )
 
 /**
- * ADITI 4.0: Memory-Mapped RSO Catalog (The "Reflex" Path)
+ * Memory-Mapped RSO Catalog (The "Reflex" Path)
  *
  * Zero-copy persistence for 30k-object neighborhood watch.
  * Cache-friendly struct layout for M2 Air deployment.

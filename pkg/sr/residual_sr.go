@@ -15,7 +15,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Symbolic Regression (SR) Physics Engine Self-Improvement
+ * Symbolic Regression (SR) Physics Engine Self-Improvement
  *
  * Discovers explicit, human-readable equations from residuals:
  * Δa = a_observed - a_classical

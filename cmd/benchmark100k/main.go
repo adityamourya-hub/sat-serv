@@ -1,7 +1,7 @@
 package main
 
 /**
- * ADITI 4.0 - 100k Object Stress Benchmark
+ * 100k Object Stress Benchmark
  *
  * Linear Scalability Study for IAF Proposal
  * Measures: Propagation + BVH + Pc for 10k, 50k, 100k objects
@@ -43,7 +43,7 @@ type PerformanceCurve struct {
 
 func main() {
 	fmt.Println("╔══════════════════════════════════════════════════════════╗")
-	fmt.Println("║     ADITI 4.0 - 100k Object Stress Benchmark            ║")
+	fmt.Println("║     100k Object Stress Benchmark            ║")
 	fmt.Println("║     Linear Scalability Study for IAF Proposal           ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════╝")
 	fmt.Println()
@@ -265,7 +265,7 @@ func generateReport(curve PerformanceCurve) {
 	file, _ := os.Create("PERFORMANCE_REPORT.md")
 	defer file.Close()
 
-	fmt.Fprintf(file, "# ADITI 4.0 - Performance Report\n\n")
+	fmt.Fprintf(file, "# Performance Report\n\n")
 	fmt.Fprintf(file, "**Date:** %s\n\n", curve.Date.Format("2006-01-02"))
 	fmt.Fprintf(file, "**Status:** %s\n\n", curve.Status)
 	fmt.Fprintf(file, "---\n\n")

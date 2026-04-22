@@ -29,7 +29,7 @@ const (
 
 /**
  * SDAObject defines the mission-ready persistent state and analytical metadata
- * of a tracked space object, compliant with the iDEX ADITI 4.0 industry hardening.
+ * of a tracked space object, compliant with the iDEX industry hardening.
  */
 type SDAObject struct {
 	ID          int          `json:"object_id"`

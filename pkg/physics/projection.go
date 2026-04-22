@@ -1,9 +1,9 @@
-// pkg/physics/projection.go - ADITI 4.0 Manifold Projection & Conflict Resolution
-//
+// pkg/physics/projection.go - Manifold Projection & Conflict Resolution
+
 // Implements the "Zero-Tolerance Gate" for Hamiltonian conservation.
 // Even with Forest-Ruth integration, floating-point errors accumulate.
 // This layer projects states back onto the constant-H surface.
-//
+
 // Conflict Resolution Protocol:
 //   - Grade A (drift < 1e-10): Normal operation, apply projection
 //   - Grade B (drift 1e-10 to 1e-7): Apply projection, log warning
@@ -35,22 +35,26 @@ const (
 
 // ProjectionResult contains the outcome of manifold projection
 type ProjectionResult struct {
-	QC           Vector3     // Corrected position
-	PC           Vector3     // Corrected momentum
-	Grade        PhysicsGrade // Conservation grade
-	InitialDrift float64     // |ΔE/E|_initial
-	FinalDrift   float64     // |ΔE/E|_final
-	Iterations   int         // Newton-Raphson iterations used
-	Correction   float64     // Magnitude of correction applied
-	Timestamp    time.Time   // When projection occurred
-	Success      bool        // Whether projection succeeded
+	QC                   Vector3               // Corrected position
+	PC                   Vector3               // Corrected momentum
+	ConstraintViolations []ConstraintViolation // Physics pass/fail per constraint
+	InitialDrift         float64               // |ΔE/E|_initial
+	FinalDrift           float64               // |ΔE/E|_final
+	Iterations           int                   // Newton-Raphson iterations used
+	Correction           float64               // Magnitude of correction applied
+	Timestamp            time.Time             // When projection occurred
+	Success              bool                  // Whether projection succeeded
 }
 
 // String returns human-readable summary
 func (r *ProjectionResult) String() string {
+	violations := "OK"
+	if !AllPassed(r.ConstraintViolations) {
+		violations = "FAIL"
+	}
 	return fmt.Sprintf(
-		"Projection[Grade=%s, InitialDrift=%.2e, FinalDrift=%.2e, Iterations=%d, Success=%v]",
-		r.Grade, r.InitialDrift, r.FinalDrift, r.Iterations, r.Success,
+		"Projection[Violations=%s, InitialDrift=%.2e, FinalDrift=%.2e, Iterations=%d, Success=%v]",
+		violations, r.InitialDrift, r.FinalDrift, r.Iterations, r.Success,
 	)
 }
 
@@ -128,11 +132,11 @@ func NewManifoldProjector(hNet HamiltonianNet) *ManifoldProjector {
 // ProjectToManifold projects (q, p) onto H(q, p) = targetE surface
 //
 // Algorithm (Newton-Raphson):
-//   1. Compute current E and ∇_p E
-//   2. If |E - targetE| < tolerance, return
-//   3. Compute correction: δp = (E - targetE) / |∇_p E|² * ∇_p E
-//   4. Apply: p_new = p - δp
-//   5. Iterate until convergence or max iterations
+//  1. Compute current E and ∇_p E
+//  2. If |E - targetE| < tolerance, return
+//  3. Compute correction: δp = (E - targetE) / |∇_p E|² * ∇_p E
+//  4. Apply: p_new = p - δp
+//  5. Iterate until convergence or max iterations
 //
 // Note: We only correct momentum p, not position q, to preserve the
 // observed position measurement.
@@ -151,15 +155,15 @@ func (mp *ManifoldProjector) ProjectToManifold(
 	// Quick check: already on manifold?
 	if initialDrift < mp.Tolerance {
 		return &ProjectionResult{
-			QC:           q,
-			PC:           p,
-			Grade:        GradeA,
-			InitialDrift: initialDrift,
-			FinalDrift:   initialDrift,
-			Iterations:   0,
-			Correction:   0.0,
-			Timestamp:    startTime,
-			Success:      true,
+			QC:                   q,
+			PC:                   p,
+			ConstraintViolations: make([]ConstraintViolation, 0),
+			InitialDrift:         initialDrift,
+			FinalDrift:           initialDrift,
+			Iterations:           0,
+			Correction:           0.0,
+			Timestamp:            startTime,
+			Success:              true,
 		}
 	}
 
@@ -208,57 +212,60 @@ func (mp *ManifoldProjector) ProjectToManifold(
 			(pCurrent[2]-p[2])*(pCurrent[2]-p[2]),
 	)
 
-	// Determine grade using certificate.go thresholds
-	// Grade A: drift < 1e-6
-	// Grade B: drift < 1e-4
-	// Grade C: drift < 1e-2
-	// Grade F: drift >= 1e-2
-	grade := mp.determineGrade(finalDrift, initialDrift, iterations)
+	violations := mp.determineConstraintViolations(finalDrift, iterations)
 
-	// Update consecutive Grade C counter
-	if grade == GradeC {
+	// Track consecutive significant drift events for escalation
+	energyDriftFailed := false
+	for _, v := range violations {
+		if v.Constraint == "energy_drift" && !v.Passed {
+			energyDriftFailed = true
+		}
+	}
+	if energyDriftFailed {
 		mp.ConsecutiveGradeC++
 	} else {
 		mp.ConsecutiveGradeC = 0
 	}
 
 	return &ProjectionResult{
-		QC:           q,
-		PC:           pCurrent,
-		Grade:        grade,
-		InitialDrift: initialDrift,
-		FinalDrift:   finalDrift,
-		Iterations:   iterations,
-		Correction:   correctionMag,
-		Timestamp:    time.Now(),
-		Success:      grade != GradeF,
+		QC:                   q,
+		PC:                   pCurrent,
+		ConstraintViolations: violations,
+		InitialDrift:         initialDrift,
+		FinalDrift:           finalDrift,
+		Iterations:           iterations,
+		Correction:           correctionMag,
+		Timestamp:            time.Now(),
+		Success:              AllPassed(violations),
 	}
 }
 
-// determineGrade assigns grade based on drift and projection success
-func (mp *ManifoldProjector) determineGrade(finalDrift, initialDrift float64, iterations int) PhysicsGrade {
-	// Get thresholds from certificate.go
-	// GradeA: MaxEnergyDriftA = 1e-6
-	// GradeB: MaxEnergyDriftB = 1e-4
-	// GradeC: MaxEnergyDriftC = 1e-2
-
-	// Grade F: Failed projection (extreme drift)
-	if finalDrift > 1e-2 {
-		return GradeF
+// determineConstraintViolations evaluates energy-drift constraints from manifold projection.
+func (mp *ManifoldProjector) determineConstraintViolations(finalDrift float64, iterations int) []ConstraintViolation {
+	th := DefaultGradeThresholds()
+	return []ConstraintViolation{
+		{
+			Constraint: "energy_drift",
+			Value:      finalDrift,
+			Threshold:  th.MaxEnergyDriftA,
+			Unit:       "relative",
+			Passed:     finalDrift < th.MaxEnergyDriftA,
+		},
+		{
+			Constraint: "projection_converged",
+			Value:      float64(iterations),
+			Threshold:  float64(mp.MaxIter - 1),
+			Unit:       "iterations",
+			Passed:     iterations < mp.MaxIter-1,
+		},
+		{
+			Constraint: "extreme_drift",
+			Value:      finalDrift,
+			Threshold:  th.MaxEnergyDriftC,
+			Unit:       "relative",
+			Passed:     finalDrift < th.MaxEnergyDriftC,
+		},
 	}
-
-	// Grade C: Significant drift or many iterations
-	if finalDrift > 1e-4 || iterations >= mp.MaxIter-1 {
-		return GradeC
-	}
-
-	// Grade B: Normal operation
-	if finalDrift > 1e-6 {
-		return GradeB
-	}
-
-	// Grade A: Perfect conservation
-	return GradeA
 }
 
 // =============================================================================
@@ -269,11 +276,11 @@ func (mp *ManifoldProjector) determineGrade(finalDrift, initialDrift float64, it
 type ResolutionAction int
 
 const (
-	ActionContinue ResolutionAction = iota // Normal operation
-	ActionAlert                            // Log warning, continue
-	ActionReInitialize                     // Re-initialize track from catalog
-	ActionManualReview                     // Flag for operator intervention
-	ActionSovereigntyBreach                // Emergency stop, alert IAF
+	ActionContinue          ResolutionAction = iota // Normal operation
+	ActionAlert                                     // Log warning, continue
+	ActionReInitialize                              // Re-initialize track from catalog
+	ActionManualReview                              // Flag for operator intervention
+	ActionSovereigntyBreach                         // Emergency stop, alert IAF
 )
 
 func (a ResolutionAction) String() string {
@@ -312,48 +319,42 @@ func NewConflictResolver(projector *ManifoldProjector) *ConflictResolver {
 // Resolve determines the appropriate action for a projection result
 //
 // Protocol:
-//   Grade A (drift < 1e-6): Continue normally
-//   Grade B (drift < 1e-4): Continue, log for monitoring
-//   Grade C (drift < 1e-2): Alert operator, track consecutive events
-//   Grade F (drift >= 1e-2): Sovereignty breach - stop and alert
 //
-// Escalation: 3 consecutive Grade C -> Force manual review
+// Resolve determines the system response based on projection constraint violations.
+//
+// Energy drift < 1e-6: Continue normally
+// Energy drift < 1e-4: Continue, log for monitoring
+// Energy drift < 1e-2: Alert operator, track consecutive events
+// Energy drift >= 1e-2: Sovereignty breach - stop and alert
+//
+// Escalation: 3 consecutive significant drift events -> Force manual review
 func (cr *ConflictResolver) Resolve(result *ProjectionResult) ResolutionAction {
-	switch result.Grade {
-	case GradeA:
-		// Perfect conservation - no action needed
-		return ActionContinue
-
-	case GradeB:
-		// Minor drift - log and continue
-		fmt.Printf("[ConflictResolver] Grade B: Drift=%.2e, continuing\n", result.FinalDrift)
-		return ActionContinue
-
-	case GradeC:
-		// Significant drift - check for escalation
-		fmt.Printf("[ConflictResolver] Grade C: Drift=%.2e, correction=%.2f km/s\n",
-			result.FinalDrift, result.Correction)
-
-		if cr.Projector.ConsecutiveGradeC >= cr.MaxConsecutiveGradeC {
-			fmt.Printf("[ConflictResolver] ESCALATION: %d consecutive Grade C events\n",
-				cr.Projector.ConsecutiveGradeC)
-			return ActionManualReview
-		}
-		return ActionAlert
-
-	case GradeF:
-		// Projection failed - sovereignty breach
-		cr.BreachCount++
-		fmt.Printf("[ConflictResolver] SOVEREIGNTY BREACH #%d: Drift=%.2e\n",
-			cr.BreachCount, result.FinalDrift)
-		fmt.Printf("  Initial drift: %.2e\n", result.InitialDrift)
-		fmt.Printf("  Iterations: %d\n", result.Iterations)
-		fmt.Printf("  Possible causes: Spoofing, hardware failure, or adversarial attack\n")
-		return ActionSovereigntyBreach
-
-	default:
+	if AllPassed(result.ConstraintViolations) {
 		return ActionContinue
 	}
+
+	// Check for extreme drift (sovereignty breach)
+	for _, v := range result.ConstraintViolations {
+		if v.Constraint == "extreme_drift" && !v.Passed {
+			cr.BreachCount++
+			fmt.Printf("[ConflictResolver] SOVEREIGNTY BREACH #%d: Drift=%.2e\n",
+				cr.BreachCount, result.FinalDrift)
+			fmt.Printf("  Initial drift: %.2e\n", result.InitialDrift)
+			fmt.Printf("  Iterations: %d\n", result.Iterations)
+			fmt.Printf("  Possible causes: Spoofing, hardware failure, or adversarial attack\n")
+			return ActionSovereigntyBreach
+		}
+	}
+
+	// Significant drift - check for escalation
+	fmt.Printf("[ConflictResolver] Significant drift: Drift=%.2e, correction=%.2f km/s\n",
+		result.FinalDrift, result.Correction)
+	if cr.Projector.ConsecutiveGradeC >= cr.MaxConsecutiveGradeC {
+		fmt.Printf("[ConflictResolver] ESCALATION: %d consecutive drift events\n",
+			cr.Projector.ConsecutiveGradeC)
+		return ActionManualReview
+	}
+	return ActionAlert
 }
 
 // ShouldReInitialize returns true if track should be re-initialized
@@ -432,47 +433,53 @@ func TestManifoldProjection() {
 	result := projector.ProjectToManifold(q, p, targetE)
 	fmt.Printf("Result: %s\n", result.String())
 
-	if result.Grade == GradeA && result.FinalDrift < 1e-12 {
-		fmt.Println("PASS: Grade A conservation verified")
+	if AllPassed(result.ConstraintViolations) && result.FinalDrift < 1e-12 {
+		fmt.Println("PASS: Perfect conservation verified")
 	} else {
-		fmt.Printf("FAIL: Expected Grade A, got %s\n", result.Grade)
+		fmt.Printf("FAIL: Expected all constraints passed\n")
 	}
 
-	// Test 2: Minor perturbation (Grade B)
-	fmt.Println("\n[Test 2] Grade B: Minor perturbation correction")
+	// Test 2: Minor perturbation
+	fmt.Println("\n[Test 2] Minor perturbation correction")
 	pPert := Vector3{0.01, 7.6686, 0.01} // 10 m/s error
 
 	result = projector.ProjectToManifold(q, pPert, targetE)
 	fmt.Printf("Initial drift: %.2e\n", result.InitialDrift)
 	fmt.Printf("Final drift:   %.2e\n", result.FinalDrift)
-	fmt.Printf("Grade: %s\n", result.Grade)
+	fmt.Printf("Violations: %v\n", result.ConstraintViolations)
 
-	if result.Grade == GradeB && result.FinalDrift < 1e-10 {
-		fmt.Println("PASS: Grade B correction successful")
-	} else if result.Grade == GradeA {
-		fmt.Println("PASS: Grade A (even better)")
+	if AllPassed(result.ConstraintViolations) && result.FinalDrift < 1e-10 {
+		fmt.Println("PASS: Minor correction successful")
+	} else if AllPassed(result.ConstraintViolations) {
+		fmt.Println("PASS: Perfect conservation (even better)")
 	} else {
-		fmt.Printf("FAIL: Expected Grade B, got %s\n", result.Grade)
+		fmt.Printf("FAIL: Expected all constraints passed\n")
 	}
 
-	// Test 3: Large perturbation (Grade C)
-	fmt.Println("\n[Test 3] Grade C: Large perturbation (possible spoofing)")
+	// Test 3: Large perturbation
+	fmt.Println("\n[Test 3] Large perturbation (possible spoofing)")
 	pLarge := Vector3{0.5, 7.5, 0.3} // 500 m/s error
 
 	result = projector.ProjectToManifold(q, pLarge, targetE)
 	fmt.Printf("Initial drift: %.2e\n", result.InitialDrift)
 	fmt.Printf("Final drift:   %.2e\n", result.FinalDrift)
 	fmt.Printf("Correction:    %.2f km/s\n", result.Correction)
-	fmt.Printf("Grade: %s\n", result.Grade)
+	fmt.Printf("Violations: %v\n", result.ConstraintViolations)
 
 	resolver := NewConflictResolver(projector)
 	action := resolver.Resolve(result)
 	fmt.Printf("Resolution: %s\n", action.String())
 
-	if result.Grade == GradeC || result.Grade == GradeB {
-		fmt.Println("PASS: Grade C handled correctly")
+	energyFailed := false
+	for _, v := range result.ConstraintViolations {
+		if v.Constraint == "energy_drift" && !v.Passed {
+			energyFailed = true
+		}
+	}
+	if energyFailed {
+		fmt.Println("PASS: Large perturbation handled correctly")
 	} else {
-		fmt.Printf("FAIL: Unexpected grade %s\n", result.Grade)
+		fmt.Printf("FAIL: Unexpected constraint status\n")
 	}
 
 	// Test 4: Conflict resolution escalation
@@ -482,8 +489,12 @@ func TestManifoldProjection() {
 	for i := 0; i < 3; i++ {
 		result = projector.ProjectToManifold(q, pLarge, targetE)
 		action = resolver.Resolve(result)
-		fmt.Printf("Event %d: Grade=%s, Action=%s, ConsecutiveC=%d\n",
-			i+1, result.Grade, action.String(), projector.ConsecutiveGradeC)
+		violations := "OK"
+		if !AllPassed(result.ConstraintViolations) {
+			violations = "FAIL"
+		}
+		fmt.Printf("Event %d: Violations=%s, Action=%s, ConsecutiveC=%d\n",
+			i+1, violations, action.String(), projector.ConsecutiveGradeC)
 	}
 
 	if action == ActionManualReview {

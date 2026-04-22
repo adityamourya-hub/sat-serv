@@ -13,7 +13,7 @@ import (
  * Uses Clohessy-Wiltshire (Hill's) equations for relative motion in near-circular orbits,
  * enabling accurate delta-v to miss distance mapping based on time-to-TCA.
  *
- * ADITI 4.0: Aligns with "fractional/manifold-aware mathematics" strategic direction.
+ * Aligns with "fractional/manifold-aware mathematics" strategic direction.
  */
 
 // ImpulsiveBurn represents an instantaneous velocity change (delta-v).

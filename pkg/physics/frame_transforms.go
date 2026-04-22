@@ -6,14 +6,14 @@ import (
 
 /**
  * WGS-84 and Frame Transformation Utilities
- * Hardened for IAF ADITI 4.0 'Sovereign' Grade Precision.
+ * Hardened for IAF 'Sovereign' Grade Precision.
  */
 
 const (
-	WGS84_A = 6378.137             // Semi-major axis (km)
-	WGS84_F = 1.0 / 298.257223563  // Flattening
-	WGS84_B = WGS84_A * (1.0 - WGS84_F)
-	WGS84_E2 = WGS84_F * (2.0 - WGS84_F)
+	WGS84_A   = 6378.137            // Semi-major axis (km)
+	WGS84_F   = 1.0 / 298.257223563 // Flattening
+	WGS84_B   = WGS84_A * (1.0 - WGS84_F)
+	WGS84_E2  = WGS84_F * (2.0 - WGS84_F)
 	WGS84_EP2 = (WGS84_A*WGS84_A - WGS84_B*WGS84_B) / (WGS84_B * WGS84_B)
 )
 
@@ -27,7 +27,7 @@ func ECEFToGeodeticWGS84(x, y, z float64) (lat, lon, alt float64) {
 
 	// Bowring's Method Initial Guess
 	phi := math.Atan2(z, p*(1.0-WGS84_E2))
-	
+
 	// Iteration for convergence
 	for i := 0; i < 5; i++ {
 		sinPhi := math.Sin(phi)
@@ -61,7 +61,7 @@ func GeodeticToECEFWGS84(lat, lon, alt float64) (x, y, z float64) {
 }
 
 /**
- * ECIToECEF approximates the rotation between ECI (Inertial) and ECEF (Fixed) 
+ * ECIToECEF approximates the rotation between ECI (Inertial) and ECEF (Fixed)
  * using Greenwich Sidereal Time.
  */
 func ECIToECEF(x, y, z, jd float64) (xf, yf, zf float64) {

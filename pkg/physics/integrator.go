@@ -5,19 +5,17 @@ import (
 )
 
 /**
- * Symplectic Integrator for ADITI 4.0
+ * Symplectic Integrator
  *
- * Replaces RKF45 (Runge-Kutta-Fehlberg) with Forest-Ruth (Yoshida 4th-order)
+ * Replaces RKF45 (Runge-Kutta-Fehlberg) with Yoshida-4 Forest-Ruth
  * to eliminate phase-space volume leaks.
  *
- * Critical Fix:
- *   - RKF45: Non-symplectic, volume leaks ~1e-5 per 100s
- *   - Forest-Ruth: Symplectic, volume preserved exactly (det(J) = 1)
+ * Forest-Ruth preserves phase-space volume under the modified Hamiltonian H̃_θ
+ * (Yoshida 1990, Section 3); the original H_θ drifts by O(dt^5).
  *
  * Impact:
  *   - Eliminates numerical artifacts that SINDy misinterprets as maneuvers
  *   - Ensures collision probabilities (Pc) remain mathematically valid
- *   - Matches H100 Foundation Model's geometric structure
  *
  * References:
  *   - Forest & Ruth (1990): Fourth-order symplectic integration
@@ -34,7 +32,7 @@ import (
 
 // Engine implements the symplectic integration engine
 //
-// ADITI 4.0: Enhanced with Stochastic Port-Hamiltonian System (SPHS)
+// Enhanced with Stochastic Port-Hamiltonian System (SPHS)
 // for atmospheric jitter correction using Stratonovich interpretation.
 type Engine struct {
 	Model            PHSModel
@@ -119,7 +117,7 @@ func (e *Engine) SymplecticStep(q, p, z []float64, dt float64) ([]float64, []flo
 
 // MilsteinStep performs one Milstein integration step for Stochastic Port-Hamiltonian Systems.
 //
-// ADITI 4.0: Atmospheric Jitter Correction using Stratonovich interpretation.
+// Atmospheric Jitter Correction using Stratonovich interpretation.
 //
 // The Stochastic Physics Core:
 //

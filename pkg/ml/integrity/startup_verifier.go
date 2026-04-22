@@ -1,10 +1,10 @@
-// Package integrity provides ADITI 4.0 Sovereign Integrity Verification
+// Package integrity provides Sovereign Integrity Verification
 //
 // This package implements the "M2 Final Flash" - startup verification
 // of model integrity via Hessian Hash checking. If the hash doesn't match
 // the Sovereign Signature, the system refuses to initialize.
 //
-// ADITI 4.0 Delhi War-Room: The ref_points are hard-coded as const
+// The ref_points are hard-coded as const
 // to prevent runtime tampering. On startup, the Go kernel calls ONNX
 // runtime to compute the hash. Mismatch = refusal to mount.
 package integrity
@@ -19,7 +19,7 @@ import (
 )
 
 // =============================================================================
-// Hard-Coded Axiom Points (ADITI 4.0 Canonical Reference States)
+// Hard-Coded Axiom Points (Canonical Reference States)
 // These are const to prevent runtime tampering.
 // =============================================================================
 
@@ -234,7 +234,7 @@ const (
 // This is the "M2 Final Flash" - if this fails, command_bridge refuses init
 func ExecuteStartupGate() StartupGateResult {
 	fmt.Println("\n" + strings.Repeat("=", 70))
-	fmt.Println("ADITI 4.0 SOVEREIGN STARTUP GATE")
+	fmt.Println("SOVEREIGN STARTUP GATE")
 	fmt.Println(strings.Repeat("=", 70))
 
 	verifier := NewStartupVerifier()

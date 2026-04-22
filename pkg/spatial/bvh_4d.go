@@ -6,7 +6,7 @@ import (
 )
 
 /**
- * ADITI 4.0: 4D Space-Time Linear BVH (LBVH)
+ * 4D Space-Time Linear BVH (LBVH)
  *
  * Indexes RSOs in 3D position + 1D time/energy space.
  * Uses Morton curve (Z-order) sorting for fast hierarchy construction.

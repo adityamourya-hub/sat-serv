@@ -1,4 +1,4 @@
-// pkg/physics/rkf45.go - ADITI 4.0 Adaptive RKF45 with Hamiltonian Monitoring
+// pkg/physics/rkf45.go - Adaptive RKF45 with Hamiltonian Monitoring
 //
 // Runge-Kutta-Fehlberg 4(5) adaptive step-size integrator
 // with altitude-specific tolerance profiles for M2 Air thermal management.

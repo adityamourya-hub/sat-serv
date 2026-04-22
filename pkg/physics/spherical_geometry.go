@@ -8,11 +8,11 @@ import (
 
 /**
  * Spherical Geometry and Keplerian Utilities
- * Hardened for IAF ADITI 4.0 ballistic impact precision.
+ * Hardened for IAF ballistic impact precision.
  */
 
 /**
- * SphericalProject calculates the destination coordinates (lat, lon) given an initial 
+ * SphericalProject calculates the destination coordinates (lat, lon) given an initial
  * point, an angular distance (psi), and an azimuth (beta).
  * Uses the Spherical Law of Cosines for great-circle navigation.
  */
@@ -41,10 +41,14 @@ func CalculateSubOrbitalToF(a, e, rBurnout, gamma, psi float64) float64 {
 	// cos(nu_b) = (a(1-e^2)/r - 1)/e
 	// More stable: tan(gamma) = e*sin(nu) / (1 + e*cos(nu))
 	cosEb := (1.0 - rBurnout/a) / e
-	if cosEb > 1 { cosEb = 1 }
-	if cosEb < -1 { cosEb = -1 }
+	if cosEb > 1 {
+		cosEb = 1
+	}
+	if cosEb < -1 {
+		cosEb = -1
+	}
 	eb := math.Acos(cosEb)
-	
+
 	// Adjust eb based on gamma (if gamma > 0, we are ascending)
 	if gamma < 0 {
 		eb = 2*math.Pi - eb
@@ -55,7 +59,7 @@ func CalculateSubOrbitalToF(a, e, rBurnout, gamma, psi float64) float64 {
 	sinNuB := (math.Sqrt(a*a*(1-e*e)) * math.Sin(eb)) / rBurnout
 	cosNuB := (math.Cos(eb) - e) / (1 - e*math.Cos(eb))
 	nuB := math.Atan2(sinNuB, cosNuB)
-	
+
 	nuI := nuB + psi
 	ei := 2.0 * math.Atan(math.Sqrt((1.0-e)/(1.0+e))*math.Tan(nuI/2.0))
 
@@ -68,7 +72,7 @@ func CalculateSubOrbitalToF(a, e, rBurnout, gamma, psi float64) float64 {
 	sqrtA3Mu := math.Sqrt(math.Pow(a, 3) / EARTH_MU_IAU)
 	maB := eb - e*math.Sin(eb)
 	maI := ei - e*math.Sin(ei)
-	
+
 	return sqrtA3Mu * (maI - maB)
 }
 

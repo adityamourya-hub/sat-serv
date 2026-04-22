@@ -1,4 +1,4 @@
-// Package physics provides the HNN Bridge for ADITI 4.0
+// Package physics provides the HNN Bridge for sovereign inference
 //
 // The HNN Bridge is the critical link between the Go-native "reflex" engine
 // and the JAX "brain." It enables sub-100ms OODA loops by utilizing Unix
@@ -29,7 +29,7 @@
 //   - Warm Start: PHS H(z) pre-aligned with Go gravity model
 //
 // References:
-//   - ADITI 4.0 HF-PGFM Architecture
+//   - HF-PGFM Architecture
 //   - Unix Domain Sockets for local IPC
 //   - Port-Hamiltonian Systems (ai/v3/port_hamiltonian.py)
 
@@ -98,7 +98,7 @@ type BridgeResponse struct {
 
 // HNNBridge connects Go-native physics with the JAX Port-Hamiltonian brain
 //
-// ADITI 4.0: Zero-copy IPC via Unix domain sockets for <1ms latency.
+// Zero-copy IPC via Unix domain sockets for <1ms latency.
 // Supports optional ONNX runtime for local inference (when JAX unavailable).
 //
 // Architecture:
@@ -106,7 +106,7 @@ type BridgeResponse struct {
 //	Go Physics → HNNBridge → Unix Socket → JAX PHS Brain → Inference
 //	Fallback: Go Physics → ONNX Runtime → Inference
 //
-// ADITI 4.0: Integrated with full ONNX Runtime for M2 Air thermal governor
+// Integrated with full ONNX Runtime for M2 Air thermal governor
 type HNNBridge struct {
 	mu         sync.RWMutex
 	SocketPath string   // Unix domain socket path

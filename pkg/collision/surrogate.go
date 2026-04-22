@@ -8,7 +8,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Conjunction Surrogate - Fast Pc Approximation
+ * Conjunction Surrogate - Fast Pc Approximation
  *
  * Hybrid pipeline:
  * 1. BVH geometric pruning (99.9% rejection)
@@ -220,13 +220,10 @@ func (ms *MockSurrogate) Type() string {
  * Discretizes feature space and stores pre-computed Pc values.
  */
 type TabularSurrogate struct {
-	Table    map[string]float64 // Feature hash → Pc
+	Table    map[string]float64 // Discretization steps
 	GridSize int                // Discretization steps
 }
 
-/**
- * NewTabularSurrogate creates lookup-table surrogate.
- */
 func NewTabularSurrogate(gridSize int) *TabularSurrogate {
 	return &TabularSurrogate{
 		Table:    make(map[string]float64),

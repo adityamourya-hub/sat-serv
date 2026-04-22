@@ -3,7 +3,7 @@ package orbital
 /**
  * CR3BP Lite: Memory-Optimized State for Bulk Operations
  *
- * ADITI 4.0 Risk Mitigation: STM Memory Pressure
+ * Risk Mitigation: STM Memory Pressure
  *
  * Problem: CR3BPStateSTM is 336 bytes (6 + 36 floats)
  *          100k objects = 33.6 MB, 2 GB/s bandwidth
@@ -116,7 +116,7 @@ func (s CR3BPLite) rk4Step(system *CR3BPSystem, h float64) CR3BPLite {
 }
 
 // forestRuthStep performs one Forest-Ruth (Yoshida 4th-order) symplectic integration step
-// ADITI 4.0: Replaces RK4 to preserve JᵀJM = J symplectic structure
+// Replaces RK4 to preserve JᵀJM = J symplectic structure
 // Coefficients: γ = 1/(2-2^(1/3)), a = [γ/2, (1-γ)/2, (1-γ)/2, γ/2], b = [γ, 1-2γ, γ, 0]
 func (s CR3BPLite) forestRuthStep(system *CR3BPSystem, h float64) CR3BPLite {
 	// Forest-Ruth coefficients (Yoshida 4th-order)

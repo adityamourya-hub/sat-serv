@@ -6,7 +6,7 @@ import (
 )
 
 /**
- * ADITI 4.0 Hamiltonian Neural Network (HNN) - Simplified Interface
+ * Hamiltonian Neural Network (HNN) - Simplified Interface
  *
  * This is a working stub that demonstrates the HNN integration architecture.
  * For production, connect to ONNX runtime with actual exported model.
@@ -43,11 +43,11 @@ type HamiltonianNetwork interface {
  * This stub uses analytical Hamiltonian for 2-body + J2 as baseline.
  */
 type StubHamiltonianNetwork struct {
-	Mu     float64 // GM (km³/s²)
-	J2     float64 // Oblateness
-	Re     float64 // Earth radius (km)
-	Mass   float64 // Satellite mass
-	Trained bool   // Flag indicating if real model loaded
+	Mu      float64 // GM (km³/s²)
+	J2      float64 // Oblateness
+	Re      float64 // Earth radius (km)
+	Mass    float64 // Satellite mass
+	Trained bool    // Flag indicating if real model loaded
 }
 
 /**
@@ -128,8 +128,8 @@ func (net *StubHamiltonianNetwork) Dynamics(state HNNState) (qDot, pDot [3]float
 	dHdq, dHdp := net.Gradients(state.Q, state.P)
 
 	// Hamilton's equations
-	qDot = dHdp           // ẋ = ∂H/∂p
-	pDot = negate(dHdq)   // ṗ = -∂H/∂q
+	qDot = dHdp         // ẋ = ∂H/∂p
+	pDot = negate(dHdq) // ṗ = -∂H/∂q
 
 	return qDot, pDot
 }
@@ -385,13 +385,13 @@ func (hp *HybridPropagator) Propagate(q, v [3]float64, dtHours, mass float64) ([
  * TrainingSample represents one training example.
  */
 type TrainingSample struct {
-	Q0     [3]float64 // Initial position
-	P0     [3]float64 // Initial momentum
-	Q1     [3]float64 // Position after dt
-	P1     [3]float64 // Momentum after dt
-	H      float64    // Hamiltonian (energy)
-	Dt     float64    // Time step
-	Epoch  float64    // Julian Date
+	Q0    [3]float64 // Initial position
+	P0    [3]float64 // Initial momentum
+	Q1    [3]float64 // Position after dt
+	P1    [3]float64 // Momentum after dt
+	H     float64    // Hamiltonian (energy)
+	Dt    float64    // Time step
+	Epoch float64    // Julian Date
 }
 
 /**

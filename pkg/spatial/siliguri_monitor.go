@@ -15,7 +15,7 @@ import (
  * Implements the "Strategic Cube" VOI (Volume of Interest) for the
  * Chicken's Neck - the narrow corridor connecting India's northeast.
  *
- * Reference: ADITI 4.0 Proposal - Volumetric Surveillance of Critical Geographies
+ * Reference: Volumetric Surveillance of Critical Geographies
  */
 
 // SiliguriBounds defines the strategic 3D volume
