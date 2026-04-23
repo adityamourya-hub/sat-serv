@@ -165,28 +165,91 @@ def plot_validation(results, output_path='validation_plot.png'):
     return output_path
 
 
-def load_champ_goce_csv(csv_path):
-    """Load CHAMP/GOCE accelerometer density data from CSV.
+def load_champ_goce_data(path):
+    """Load CHAMP/GOCE accelerometer density data from .txt or .csv.
 
-    Expected columns (case-insensitive):
-      - altitude or alt or height (km)
-      - density or rho (kg/m^3 or g/cm^3 — auto-detected by magnitude)
-    Optional columns used if present:
-      - f107, f10.7, f107a (solar flux)
-      - ap, ap_index (geomagnetic index)
-      - lat, latitude (deg)
-      - lon, longitude (deg)
-      - doy, day_of_year
+    Supports CHAMP/GOCE native space-delimited .txt format with # comment
+    headers, Fortran E-notation (e.g. 0.194E-11), altitude in meters, and
+    optional comma-separated CSV with headers.
     """
+    from datetime import datetime
     import csv
 
-    logger.info(f"Loading CHAMP/GOCE data from {csv_path}")
+    path = Path(path)
+    logger.info(f"Loading CHAMP/GOCE data from {path}")
 
-    with open(csv_path, 'r') as f:
+    if path.suffix.lower() == '.txt':
+        # ---- Native CHAMP/GOCE .txt format ----
+        # Two # header lines, then space-delimited data.
+        # Typical columns: Date/time alt lon lat lst arglat dens_x dens_mean flag...
+        # CHAMP uses:      Date/time alt lon lat lst arglat rho_x  rho_mean  flag...
+        rows = []
+        header_names = []
+        with open(path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith('#'):
+                    # Second # line has column names
+                    if not header_names and any(c.isalpha() for c in line):
+                        header_names = line.lstrip('#').strip().split()
+                    continue
+
+                tokens = line.split()
+                if len(tokens) < 10:
+                    continue
+
+                # Map columns by header name when available, else fixed positions
+                def tok(name_opts, default_pos):
+                    if header_names:
+                        for name in name_opts:
+                            try:
+                                idx = header_names.index(name)
+                                return tokens[idx]
+                            except ValueError:
+                                pass
+                    return tokens[default_pos] if default_pos < len(tokens) else None
+
+                # CHAMP: rho_x / rho_mean ; GOCE: dens_x / dens_mean
+                rho_tok = (tok(['rho_mean', 'dens_mean'], 9)
+                           or tok(['rho_x', 'dens_x'], 8)
+                           or tok(['rho', 'dens'], 8))
+                alt_tok = tok(['alt', 'altitude'], 3)
+                lon_tok = tok(['lon', 'longitude'], 4)
+                lat_tok = tok(['lat', 'latitude'], 5)
+
+                if rho_tok is None or alt_tok is None:
+                    continue
+
+                try:
+                    alt_m = float(alt_tok)
+                    rho = float(rho_tok)   # Python parses Fortran E-notation natively
+                except (ValueError, TypeError):
+                    continue
+
+                alt_km = alt_m / 1000.0
+                lat = float(lat_tok) if lat_tok else 0.0
+                lon = float(lon_tok) if lon_tok else 0.0
+
+                # DOY from date (first token: YYYY-MM-DD)
+                try:
+                    dt = datetime.strptime(tokens[0], '%Y-%m-%d')
+                    doy = dt.timetuple().tm_yday
+                except (ValueError, IndexError):
+                    doy = 180
+
+                # CHAMP/GOCE files do not contain f107/ap; use defaults
+                rows.append((alt_km, 150.0, 15.0, lat, lon, doy, rho))
+
+        logger.info(f"Loaded {len(rows)} CHAMP/GOCE density measurements from .txt")
+        return rows
+
+    # ---- Comma-separated CSV fallback ----
+    with open(path, 'r') as f:
         reader = csv.reader(f)
         headers = [h.strip().lower() for h in next(reader)]
 
-    # Find column indices
     def find_col(names):
         for n in names:
             if n in headers:
@@ -194,7 +257,7 @@ def load_champ_goce_csv(csv_path):
         return None
 
     alt_idx = find_col(['altitude', 'alt', 'height', 'alt_km'])
-    rho_idx = find_col(['density', 'rho', 'rho_total', 'dens'])
+    rho_idx = find_col(['density', 'rho', 'rho_total', 'dens', 'dens_mean', 'rho_mean'])
     f107_idx = find_col(['f107', 'f10.7', 'f107a'])
     ap_idx = find_col(['ap', 'ap_index', 'apind'])
     lat_idx = find_col(['lat', 'latitude'])
@@ -204,11 +267,11 @@ def load_champ_goce_csv(csv_path):
     if alt_idx is None or rho_idx is None:
         raise ValueError(
             f"CSV must contain altitude and density columns. Found: {headers}\n"
-            f"Expected columns like: altitude_km, density, f107, ap, lat, lon, doy"
+            f"Expected: altitude, density (or rho / dens_mean / rho_mean), lat, lon, doy"
         )
 
     rows = []
-    with open(csv_path, 'r') as f:
+    with open(path, 'r') as f:
         reader = csv.DictReader(f)
         for r in reader:
             try:
@@ -225,7 +288,7 @@ def load_champ_goce_csv(csv_path):
 
             rows.append((alt, f107, ap_val, lat, lon, doy, rho))
 
-    logger.info(f"Loaded {len(rows)} CHAMP/GOCE density measurements")
+    logger.info(f"Loaded {len(rows)} CHAMP/GOCE density measurements from CSV")
     return rows
 
 
@@ -239,9 +302,9 @@ def validate_real_data(model_path, csv_path, device=None):
     model = torch.load(model_path, map_location=device)
     model.eval()
 
-    rows = load_champ_goce_csv(csv_path)
+    rows = load_champ_goce_data(csv_path)
     if len(rows) == 0:
-        raise ValueError("No valid data rows found in CSV")
+        raise ValueError("No valid data rows found")
 
     errors = []
     for alt_km, f107, ap_val, lat, lon, doy, rho_measured in rows:

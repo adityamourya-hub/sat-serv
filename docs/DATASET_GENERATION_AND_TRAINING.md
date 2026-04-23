@@ -161,8 +161,8 @@ The synthetic training data must be validated against real accelerometer-derived
 **Step 1 — Download CHAMP/GOCE data (on your local machine)**:
 
 - **TU Delft Thermosphere Database**: [thermosphere.tudelft.nl](http://thermosphere.tudelft.nl/) — CHAMP (2001–2010) and GOCE (2009–2013) accelerometer densities
-- **NASA Earthdata**: Search "CHAMP density" or "GOCE density" — download as CSV with columns: `altitude_km`, `density`, `f107`, `ap`, `lat`, `lon`, `doy`
-- Typical file: `champ_density_2008.csv` (~50–200 MB per year)
+- **NASA Earthdata / TU Delft**: CHAMP/GOCE data comes as native `.txt` (space-delimited with `#` comment headers, Fortran `E-` notation, altitude in **meters**, density in `kg/m³`)
+- Typical files: `goce_density_2009.txt`, `champ_density_2000.txt` (~50–200 MB per year)
 
 **Required CSV columns** (case-insensitive, extras ignored):
 ```
@@ -174,9 +174,9 @@ altitude_km, density, f107, ap, lat, lon, doy
 # Create validation data folder in bucket
 gsutil mb -p YOUR_PROJECT_ID gs://ssis-training-1776624951/validation/ 2>/dev/null || true
 
-# Upload CHAMP/GOCE CSV files
-gsutil -m cp champ_density_*.csv gs://ssis-training-1776624951/validation/champ_goce/
-gsutil -m cp goce_density_*.csv gs://ssis-training-1776624951/validation/champ_goce/
+# Upload CHAMP/GOCE .txt files
+gsutil -m cp champ_density_*.txt gs://ssis-training-1776624951/validation/champ_goce/
+gsutil -m cp goce_density_*.txt gs://ssis-training-1776624951/validation/champ_goce/
 ```
 
 **Step 3 — Download to Spot VM (before validation)**:
@@ -185,7 +185,7 @@ source ~/ssis-env/bin/activate && cd ~/idex
 
 # Download validation data from GCS to VM local disk
 mkdir -p ai/data/p0_atmosphere/validation/
-gsutil -m cp gs://ssis-training-1776624951/validation/champ_goce/*.csv ai/data/p0_atmosphere/validation/
+gsutil -m cp gs://ssis-training-1776624951/validation/champ_goce/*.txt ai/data/p0_atmosphere/validation/
 ```
 
 ### Training
@@ -231,10 +231,10 @@ python3 scripts/validate_atmosphere.py \
 ```bash
 source ~/ssis-env/bin/activate && cd ~/idex
 
-# Ensure CHAMP/GOCE CSV data is downloaded from GCS first
+# Ensure CHAMP/GOCE .txt data is downloaded from GCS first
 python3 scripts/validate_atmosphere.py \
   --model weights/neural_atmosphere_best.pth \
-  --real-data ai/data/p0_atmosphere/validation/champ_density_2008.csv \
+  --real-data ai/data/p0_atmosphere/validation/champ_density_2000.txt \
   --device cuda
 ```
 

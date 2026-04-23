@@ -168,8 +168,8 @@ class FNO1d(nn.Module):
     def forward(self, x):
         # x: [batch, 6]
         x = self.fc0(x)
-        x = x.permute(0, 2, 1)  # [batch, width, 1]
-        
+        x = x.unsqueeze(-1)      # [batch, width, 1]
+
         # Fourier layers
         x1 = self.conv0(x)
         x2 = self.w0(x)
