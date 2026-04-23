@@ -100,24 +100,35 @@ idex/
 
 ## One-Time GCP Setup (~15 minutes)
 
+> **Why venv?** The GCP deep learning VM images ship with a system Python that `gsutil`, `nvidia-smi`, and the CUDA toolkit depend on. Installing training packages directly into it can silently break these tools. A virtualenv isolates your training deps while keeping the system Python intact. It also makes the environment reproducible across VM restarts/preemptions.
+
 SSH into your Spot VM:
 
 ```bash
-# 1. Python environment
+# 1. System dependencies
 sudo apt update && sudo apt install -y git python3-pip python3-venv hdf5-tools
-python3 -m venv ~/ssis-env && source ~/ssis-env/bin/activate
 
-# 2. ML + Physics stack (CUDA 12.1)
+# 2. Create isolated Python venv (REQUIRED — do NOT pip install into system Python)
+python3 -m venv ~/ssis-env
+source ~/ssis-env/bin/activate
+
+# 3. ML + Physics stack (CUDA 12.1)
+pip install --upgrade pip
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 pip install numpy pandas h5py scipy scikit-learn tqdm tensorboard matplotlib
 pip install torch-geometric pymsis poliastro google-cloud-storage onnx wandb
 
-# 3. Clone repo
+# 4. Clone repo
 git clone https://github.com/adityamourya-hub/idex.git && cd idex
 mkdir -p checkpoints weights logs
 
-# 4. Upload local datasets to GCS (run once from local machine)
-gsutil -m cp -r ../training-data/* gs://ssis-training-1776624951/datasets/
+# 5. Upload local datasets to GCS (run once from local machine, outside the VM)
+# gsutil -m cp -r ../training-data/* gs://ssis-training-1776624951/datasets/
+```
+
+**IMPORTANT — activate venv on every new SSH session**:
+```bash
+source ~/ssis-env/bin/activate && cd ~/idex
 ```
 
 **Preemption Rule**: Every 5 epochs (or on SIGTERM), checkpoints auto-sync to GCS. On preemption, restart the VM and re-run — training resumes from the latest checkpoint.
@@ -133,6 +144,8 @@ gsutil -m cp -r ../training-data/* gs://ssis-training-1776624951/datasets/
 Generate 10M synthetic samples using NRLMSISE-00 as the oracle:
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 # Existing script handles data generation internally via pymsis
 python3 scripts/train_neural_atmosphere.py \
   --num-samples 10000000 \
@@ -146,6 +159,8 @@ python3 scripts/train_neural_atmosphere.py \
 ### Training
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 python3 scripts/train_neural_atmosphere.py \
   --data_path ai/data/p0_atmosphere/train_data.h5 \
   --epochs 100 --batch_size 8192 --lr 1e-3 --device cuda
@@ -167,6 +182,8 @@ L = ||log(ρ_nn) - log(ρ_msis)||² + λ_phys ||∂P/∂h + ρg||²
 ### Validation
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 python3 scripts/validate_atmosphere.py \
   --model weights/atmosphere_fno.pt \
   --validation-data ai/data/p0_atmosphere/validation/
@@ -183,6 +200,8 @@ python3 scripts/validate_atmosphere.py \
 **Step 1 — Download public TLEs**:
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 python3 scripts/download_public_datasets.py --source celestrak \
   --categories stations active starlink gps-ops
 
@@ -195,6 +214,8 @@ This downloads from CelesTrak (no registration) and Space-Track.org (free regist
 **Step 2 — Generate synthetic orbital trajectories** (5M samples):
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 python3 ai/simulator/generate_scenarios.py \
   --n_scenarios 5000000 \
   --output ai/data/p1_orbital/scenarios_graph_v2.jsonl
@@ -211,6 +232,8 @@ The scenario generator produces 64-dim graph-native samples with:
 **Primary path** (PyTorch — Yoshida-4 symplectic):
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 python3 ai/neural_ode/train.py \
   --data ai/data/p1_orbital/scenarios_graph_v2.jsonl \
   --epochs 80 --output-dir models/ghnn \
@@ -221,6 +244,8 @@ python3 ai/neural_ode/train.py \
 **Canonical path** (JAX — Forest-Ruth symplectic):
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 python3 ai/v3/train_phs_jax.py \
   --data ai/data/p1_orbital/ \
   --epochs 80
@@ -236,6 +261,8 @@ python3 ai/v3/train_phs_jax.py \
 **Quality gate**: Run integrator validation:
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 python3 ai/neural_ode/train.py --data ai/data/p1_orbital/... --validate-integrator
 # Target: avg energy drift < 1e-8, max drift < 1e-7 over 10k steps
 
@@ -253,6 +280,8 @@ python3 scripts/verify_symplectic_volume.py --model models/ghnn/axiom_hnode_v1.o
 ### Dataset Generation
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 # Generate 3M hypersonic trajectories (3-DoF/6-DoF with zero-day maneuvers)
 python3 sda-train/scripts/gen_reentry_storms.py \
   --n_samples 3000000 \
@@ -266,6 +295,8 @@ python3 sda-train/scripts/gen_reentry.py --n_samples 500000
 ### Training
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 # HGV Physics-informed HNO
 python3 ai/v3/hgv_phno.py \
   --data ai/data/p2_hypersonic/ \
@@ -300,10 +331,11 @@ This prevents micro-thrust hallucination — the network cannot use tiny latent 
 Uses the existing all-in-one script with GCS checkpointing:
 
 ```bash
-# Upload datasets to GCS first (if not already done)
-gsutil -m cp -r ../training-data/* gs://ssis-training-1776624951/datasets/
+# Upload datasets to GCS first (if not already done — run from local machine)
+# gsutil -m cp -r ../training-data/* gs://ssis-training-1776624951/datasets/
 
-# Run on Spot VM — trains NavIC → Maneuver → Reentry → Collision sequentially
+# On Spot VM — activate venv, then run sequential training
+source ~/ssis-env/bin/activate && cd ~/idex
 bash scripts/train_all_sequential.sh
 ```
 
@@ -318,6 +350,8 @@ The script handles:
 ### Option B — Per-Component with Python Trainer
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 python3 scripts/gcp_spot_trainer_full.py \
   --gcs-bucket ssis-training-1776624951 \
   --component all \
@@ -328,6 +362,8 @@ python3 scripts/gcp_spot_trainer_full.py \
 Or train individual components:
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 # NavIC Anomaly Detection (~10 min)
 python3 scripts/gcp_spot_trainer_full.py \
   --gcs-bucket ssis-training-1776624951 --component navic --epochs 50
@@ -360,6 +396,8 @@ python3 scripts/gcp_spot_trainer_full.py \
 Before training task heads, preprocess raw datasets into model-ready formats:
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 # Preprocess all datasets
 python3 scripts/preprocess_training_data.py --dataset all
 
@@ -379,6 +417,8 @@ python3 scripts/preprocess_training_data.py --dataset D  # Reentry → sequences
 **Goal**: Sensor tasking, Maya deception detection, wolfpack coordination.
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 # Sensor Tasking RL
 python3 ai/v3/sensor_tasking_rl.py \
   --env ssis_sensor_tasking --epochs 200000 --device cuda
@@ -401,6 +441,8 @@ python3 ai/v3/maya_detector.py \
 **Goal**: Conformal prediction + evidential outputs for every model.
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 python3 ai/v3/conformal_uq.py \
   --load-checkpoint models/ghnn/axiom_hnode_v1.onnx \
   --calibration-data ai/data/p1_orbital/validation/ \
@@ -418,6 +460,8 @@ Produces calibrated uncertainty intervals (D1–D10 defensive features) for the 
 **Goal**: INT8 quantization → ONNX → Go inference runtime.
 
 ```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
 # Export all models to ONNX with INT8 quantization
 python3 ai/v3/onnx_export.py \
   --model-path models/ghnn/axiom_hnode_v1.pt \
@@ -458,10 +502,14 @@ gcloud compute instances create ssis-train-$(date +%m%d) \
 # Restart stopped VM
 gcloud compute instances start ssis-train-MMDD --zone=us-central1-a
 
-# SSH in and re-run the same training command — auto-resumes from GCS checkpoint
+# SSH in
 gcloud compute ssh ssis-train-MMDD --zone=us-central1-a
-source ~/ssis-env/bin/activate && cd idex
-bash scripts/train_all_sequential.sh  # Skips already-completed phases
+
+# Re-activate venv (persists across reboots, just needs re-sourcing)
+source ~/ssis-env/bin/activate && cd ~/idex
+
+# Re-run — auto-resumes from GCS checkpoint, skips completed phases
+bash scripts/train_all_sequential.sh
 ```
 
 ### Check Training Status
