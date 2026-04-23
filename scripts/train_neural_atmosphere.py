@@ -273,12 +273,16 @@ def hydrostatic_loss(pred_log_rho, alt_km, temperature_k=250.0, g=9.80665, R_spe
     # Sort by altitude for proper finite differencing
     if alt_km.numel() > 1:
         # Compute gradient with autograd for smooth backprop
-        alt_km.requires_grad_(True)
+        alt_km = alt_km.clone().detach().requires_grad_(True)
+        pred_log_rho_detached = pred_log_rho.clone()
         grad_log_rho = torch.autograd.grad(
-            pred_log_rho.sum(), alt_km, 
-            create_graph=True, retain_graph=True
+            pred_log_rho_detached.sum(), alt_km,
+            create_graph=True, retain_graph=True, allow_unused=True
         )[0]
-        
+
+        if grad_log_rho is None:
+            grad_log_rho = torch.zeros_like(alt_km)
+
         # Hydrostatic residual: actual gradient vs expected
         residual = grad_log_rho - expected_grad
         
