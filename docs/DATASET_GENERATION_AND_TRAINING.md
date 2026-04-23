@@ -154,7 +154,39 @@ python3 scripts/train_neural_atmosphere.py --generate-only \
 
 **Parameters sampled**: altitude (30–500 km), F10.7 (70–300), Ap (4–100), lat/lon, day-of-year.
 
-**Validation data**: Download CHAMP/GOCE accelerometer densities from [TU Delft Thermosphere](http://thermosphere.tudelft.nl/) or NASA Earthdata.
+### CHAMP/GOCE Real-World Validation Data
+
+The synthetic training data must be validated against real accelerometer-derived thermospheric densities to meet the P0 quality gate (<0.5% density error).
+
+**Step 1 — Download CHAMP/GOCE data (on your local machine)**:
+
+- **TU Delft Thermosphere Database**: [thermosphere.tudelft.nl](http://thermosphere.tudelft.nl/) — CHAMP (2001–2010) and GOCE (2009–2013) accelerometer densities
+- **NASA Earthdata**: Search "CHAMP density" or "GOCE density" — download as CSV with columns: `altitude_km`, `density`, `f107`, `ap`, `lat`, `lon`, `doy`
+- Typical file: `champ_density_2008.csv` (~50–200 MB per year)
+
+**Required CSV columns** (case-insensitive, extras ignored):
+```
+altitude_km, density, f107, ap, lat, lon, doy
+```
+
+**Step 2 — Upload to GCS (once, from local machine)**:
+```bash
+# Create validation data folder in bucket
+gsutil mb -p YOUR_PROJECT_ID gs://ssis-training-1776624951/validation/ 2>/dev/null || true
+
+# Upload CHAMP/GOCE CSV files
+gsutil -m cp champ_density_*.csv gs://ssis-training-1776624951/validation/champ_goce/
+gsutil -m cp goce_density_*.csv gs://ssis-training-1776624951/validation/champ_goce/
+```
+
+**Step 3 — Download to Spot VM (before validation)**:
+```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
+# Download validation data from GCS to VM local disk
+mkdir -p ai/data/p0_atmosphere/validation/
+gsutil -m cp gs://ssis-training-1776624951/validation/champ_goce/*.csv ai/data/p0_atmosphere/validation/
+```
 
 ### Training
 
@@ -187,12 +219,30 @@ L = ||log(ρ_nn) - log(ρ_msis)||² + λ_phys ||∂P/∂h + ρg||²
 
 ### Validation
 
+**Option A — Synthetic oracle validation** (quick, after training):
 ```bash
 source ~/ssis-env/bin/activate && cd ~/idex
 
 python3 scripts/validate_atmosphere.py \
-  --model weights/atmosphere_fno.pt \
-  --validation-data ai/data/p0_atmosphere/validation/
+  --model weights/neural_atmosphere_best.pth
+```
+
+**Option B — CHAMP/GOCE real-data validation** (required for P0 quality gate):
+```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
+# Ensure CHAMP/GOCE CSV data is downloaded from GCS first
+python3 scripts/validate_atmosphere.py \
+  --model weights/neural_atmosphere_best.pth \
+  --real-data ai/data/p0_atmosphere/validation/champ_density_2008.csv \
+  --device cuda
+```
+
+**Target**: Mean density error < 0.5% (0.5% = 3× tighter than the script's 3% synthetic target).
+
+**Upload validation plot for audit**:
+```bash
+gsutil cp validation_plot.png gs://ssis-training-1776624951/weights/p0_atmosphere/validation_$(date +%Y%m%d).png
 ```
 
 ---

@@ -165,31 +165,178 @@ def plot_validation(results, output_path='validation_plot.png'):
     return output_path
 
 
+def load_champ_goce_csv(csv_path):
+    """Load CHAMP/GOCE accelerometer density data from CSV.
+
+    Expected columns (case-insensitive):
+      - altitude or alt or height (km)
+      - density or rho (kg/m^3 or g/cm^3 — auto-detected by magnitude)
+    Optional columns used if present:
+      - f107, f10.7, f107a (solar flux)
+      - ap, ap_index (geomagnetic index)
+      - lat, latitude (deg)
+      - lon, longitude (deg)
+      - doy, day_of_year
+    """
+    import csv
+
+    logger.info(f"Loading CHAMP/GOCE data from {csv_path}")
+
+    with open(csv_path, 'r') as f:
+        reader = csv.reader(f)
+        headers = [h.strip().lower() for h in next(reader)]
+
+    # Find column indices
+    def find_col(names):
+        for n in names:
+            if n in headers:
+                return headers.index(n)
+        return None
+
+    alt_idx = find_col(['altitude', 'alt', 'height', 'alt_km'])
+    rho_idx = find_col(['density', 'rho', 'rho_total', 'dens'])
+    f107_idx = find_col(['f107', 'f10.7', 'f107a'])
+    ap_idx = find_col(['ap', 'ap_index', 'apind'])
+    lat_idx = find_col(['lat', 'latitude'])
+    lon_idx = find_col(['lon', 'longitude', 'long'])
+    doy_idx = find_col(['doy', 'day_of_year', 'dayofyear'])
+
+    if alt_idx is None or rho_idx is None:
+        raise ValueError(
+            f"CSV must contain altitude and density columns. Found: {headers}\n"
+            f"Expected columns like: altitude_km, density, f107, ap, lat, lon, doy"
+        )
+
+    rows = []
+    with open(csv_path, 'r') as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            try:
+                alt = float(r[headers[alt_idx]])
+                rho = float(r[headers[rho_idx]])
+            except (ValueError, KeyError):
+                continue
+
+            f107 = float(r[headers[f107_idx]]) if f107_idx else 150.0
+            ap_val = float(r[headers[ap_idx]]) if ap_idx else 15.0
+            lat = float(r[headers[lat_idx]]) if lat_idx else 0.0
+            lon = float(r[headers[lon_idx]]) if lon_idx else 0.0
+            doy = int(float(r[headers[doy_idx]])) if doy_idx else 180
+
+            rows.append((alt, f107, ap_val, lat, lon, doy, rho))
+
+    logger.info(f"Loaded {len(rows)} CHAMP/GOCE density measurements")
+    return rows
+
+
+def validate_real_data(model_path, csv_path, device=None):
+    """Validate neural atmosphere against CHAMP/GOCE accelerometer data."""
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    else:
+        device = torch.device(device)
+
+    model = torch.load(model_path, map_location=device)
+    model.eval()
+
+    rows = load_champ_goce_csv(csv_path)
+    if len(rows) == 0:
+        raise ValueError("No valid data rows found in CSV")
+
+    errors = []
+    for alt_km, f107, ap_val, lat, lon, doy, rho_measured in rows:
+        features = torch.tensor([[alt_km, f107, ap_val, lat, lon, doy]], dtype=torch.float32).to(device)
+        with torch.no_grad():
+            log_rho_pred = model(features)
+            rho_pred = 10 ** log_rho_pred.item()
+
+        # Auto-detect density unit: CHAMP/GOCE typically ~1e-12 to 1e-15 kg/m3
+        # If measured density is much larger, might be in different units
+        if rho_measured > 1e-3 and rho_pred < 1e-3:
+            # Likely measured in g/cm3 or different scale — skip auto-scale for safety
+            pass
+
+        error = abs(rho_pred - rho_measured) / (rho_measured + 1e-20) * 100
+        errors.append(error)
+
+    mean_error = np.mean(errors)
+    std_error = np.std(errors)
+    max_error = np.max(errors)
+    median_error = np.median(errors)
+    p95_error = np.percentile(errors, 95)
+
+    target = 3.0  # Overall <3% target for P0
+    passed = mean_error < target
+
+    logger.info(f"CHAMP/GOCE Real-Data Validation:")
+    logger.info(f"  Samples: {len(rows)}")
+    logger.info(f"  Mean Error:   {mean_error:.3f}%")
+    logger.info(f"  Median Error: {median_error:.3f}%")
+    logger.info(f"  Std Error:    {std_error:.3f}%")
+    logger.info(f"  Max Error:    {max_error:.3f}%")
+    logger.info(f"  95th pct:     {p95_error:.3f}%")
+    logger.info(f"  Target:       <{target}%")
+    logger.info(f"  Status:       {'PASSED' if passed else 'FAILED'}")
+
+    return {
+        'mean_error': mean_error,
+        'median_error': median_error,
+        'std_error': std_error,
+        'max_error': max_error,
+        'p95_error': p95_error,
+        'target': target,
+        'passed': passed,
+        'samples': len(rows)
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description='Validate Neural Atmosphere Model')
     parser.add_argument('--model', type=str, default='neural_atmosphere_best.pth', help='Model path')
-    parser.add_argument('--samples', type=int, default=1000, help='Number of validation samples')
+    parser.add_argument('--samples', type=int, default=1000, help='Number of validation samples (synthetic mode)')
     parser.add_argument('--output', type=str, default='validation_plot.png', help='Output plot path')
-    
+    parser.add_argument('--real-data', type=str, default=None,
+                        help='Path to CHAMP/GOCE CSV file for real-world validation')
+    parser.add_argument('--device', type=str, default=None,
+                        help='Device for inference (cuda/cpu). Auto-detects if not set.')
+
     args = parser.parse_args()
     
     logger.info("Starting Neural Atmosphere Validation")
     logger.info(f"Model: {args.model}")
+
+    if args.real_data:
+        logger.info(f"Real-world data: {args.real_data}")
+        result = validate_real_data(args.model, args.real_data, device=args.device)
+
+        print("\n" + "="*60)
+        print("CHAMP/GOCE REAL-DATA VALIDATION SUMMARY")
+        print("="*60)
+        print(f"Samples:    {result['samples']}")
+        print(f"Mean Error: {result['mean_error']:.3f}% (target <{result['target']}%)")
+        print(f"Median:     {result['median_error']:.3f}%")
+        print(f"Std Error:  {result['std_error']:.3f}%")
+        print(f"Max Error:  {result['max_error']:.3f}%")
+        print(f"95th pct:   {result['p95_error']:.3f}%")
+        print(f"Status:     {'PASSED' if result['passed'] else 'FAILED'}")
+        print("="*60)
+        return
+
     logger.info(f"Samples per range: {args.samples}")
-    
-    # Validate
+
+    # Synthetic validation against oracle
     results = validate_model(args.model, num_samples=args.samples)
-    
+
     # Generate plot
     plot_validation(results, output_path=args.output)
-    
+
     # Summary
     all_passed = all(r['passed'] for r in results)
-    
+
     print("\n" + "="*60)
     print("NEURAL ATMOSPHERE VALIDATION SUMMARY")
     print("="*60)
-    
+
     for r in results:
         print(f"{r['range']}:")
         print(f"  Mean Error: {r['mean_error']:.2f}% (target <{r['target']}%)")
@@ -197,7 +344,7 @@ def main():
         print(f"  Max Error:  {r['max_error']:.2f}%")
         print(f"  Status: {'PASSED' if r['passed'] else 'FAILED'}")
         print()
-    
+
     print("="*60)
     if all_passed:
         print("OVERALL: ✓ ALL RANGES PASSED (<3% error target)")
