@@ -146,8 +146,8 @@ Generate 10M synthetic samples using NRLMSISE-00 as the oracle:
 ```bash
 source ~/ssis-env/bin/activate && cd ~/idex
 
-# Existing script handles data generation internally via pymsis
-python3 scripts/train_neural_atmosphere.py \
+# Generate dataset only (saves to HDF5, no training)
+python3 scripts/train_neural_atmosphere.py --generate-only \
   --num-samples 10000000 \
   --output-path ai/data/p0_atmosphere/train_data.h5
 ```
@@ -161,12 +161,18 @@ python3 scripts/train_neural_atmosphere.py \
 ```bash
 source ~/ssis-env/bin/activate && cd ~/idex
 
+# Train from pre-generated HDF5 dataset
 python3 scripts/train_neural_atmosphere.py \
-  --data_path ai/data/p0_atmosphere/train_data.h5 \
-  --epochs 100 --batch_size 8192 --lr 1e-3 --device cuda
+  --data-path ai/data/p0_atmosphere/train_data.h5 \
+  --epochs 100 --batch-size 8192 --lr 1e-3 --device cuda
 
-# Upload weights
-gsutil cp weights/atmosphere_fno.pt gs://ssis-training-1776624951/weights/p0_atmosphere/
+# Or generate + train in one shot (for smaller datasets)
+python3 scripts/train_neural_atmosphere.py \
+  --num-samples 100000 --epochs 100 --device cuda
+
+# Upload weights to GCS
+gsutil cp weights/neural_atmosphere_final.pth gs://ssis-training-1776624951/weights/p0_atmosphere/
+gsutil cp weights/neural_atmosphere.onnx gs://ssis-training-1776624951/weights/p0_atmosphere/
 ```
 
 **Training script**: `scripts/train_neural_atmosphere.py` — trains a Fourier Neural Operator (FNO) with physics loss:

@@ -16,6 +16,14 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import argparse
 import logging
+import os
+
+try:
+    import h5py
+    H5PY_AVAILABLE = True
+except ImportError:
+    H5PY_AVAILABLE = False
+    print("Warning: h5py not installed. HDF5 save/load disabled. Run: pip install h5py")
 
 # Import NRLMSISE-00 wrapper
 try:
@@ -31,12 +39,38 @@ logger = logging.getLogger(__name__)
 class AtmosphereDataset(Dataset):
     """Synthetic atmospheric density dataset using NRLMSISE-00 as oracle"""
     
-    def __init__(self, num_samples=10000, altitude_range=(30, 500)):
+    def __init__(self, num_samples=10000, altitude_range=(30, 500), data_path=None):
         self.num_samples = num_samples
         self.alt_range = altitude_range
         
-        # Generate synthetic training data
-        self.data = self._generate_data()
+        if data_path and Path(data_path).exists():
+            self.data = self._load_h5(data_path)
+            self.num_samples = len(self.data)
+            logger.info(f"Loaded {self.num_samples} samples from {data_path}")
+        else:
+            # Generate synthetic training data
+            self.data = self._generate_data()
+    
+    def _load_h5(self, path):
+        """Load dataset from HDF5 file."""
+        if not H5PY_AVAILABLE:
+            raise RuntimeError("h5py required to load HDF5 files. Run: pip install h5py")
+        with h5py.File(path, 'r') as f:
+            features = f['features'][:]
+            labels = f['labels'][:]
+        return [(features[i], labels[i]) for i in range(len(features))]
+    
+    def save_h5(self, path):
+        """Save dataset to HDF5 file."""
+        if not H5PY_AVAILABLE:
+            raise RuntimeError("h5py required to save HDF5 files. Run: pip install h5py")
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        features = np.array([d[0] for d in self.data])
+        labels = np.array([d[1] for d in self.data])
+        with h5py.File(path, 'w') as f:
+            f.create_dataset('features', data=features, compression='gzip')
+            f.create_dataset('labels', data=labels, compression='gzip')
+        logger.info(f"Saved {len(self.data)} samples to {path} ({Path(path).stat().st_size / 1024 / 1024:.1f} MB)")
         
     def _generate_data(self):
         """Generate training samples with realistic parameter ranges"""
@@ -258,7 +292,7 @@ def hydrostatic_loss(pred_log_rho, alt_km, temperature_k=250.0, g=9.80665, R_spe
 
 
 def train_model(model, train_loader, val_loader, epochs=100, lr=1e-3, lambda_phys=0.1, 
-                temperature_profile=None):
+                temperature_profile=None, device=None):
     """
     Train the FNO model with physics-informed loss.
     
@@ -274,8 +308,12 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=1e-3, lambda_phy
         lambda_phys: Weight for physics loss (hydrostatic constraint)
         temperature_profile: Optional temperature function T(altitude_km) for 
                             altitude-dependent scale height. Default: T=250K constant.
+        device: torch device string or None for auto-detect
     """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    else:
+        device = torch.device(device)
     model = model.to(device)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -348,23 +386,84 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=1e-3, lambda_phy
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Train Neural Atmosphere FNO')
+    parser = argparse.ArgumentParser(
+        description='Train Neural Atmosphere FNO',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Step 1: Generate dataset (can be run separately)
+  python3 scripts/train_neural_atmosphere.py --generate-only \
+    --num-samples 10000000 --output-path ai/data/p0_atmosphere/train_data.h5
+
+  # Step 2: Train from saved dataset
+  python3 scripts/train_neural_atmosphere.py \
+    --data-path ai/data/p0_atmosphere/train_data.h5 \
+    --epochs 100 --batch-size 8192 --lr 1e-3 --device cuda
+
+  # Combined: generate + train in one shot (smaller datasets)
+  python3 scripts/train_neural_atmosphere.py \
+    --num-samples 100000 --epochs 100 --device cuda
+        """
+    )
+    # Data generation args
+    parser.add_argument('--num-samples', type=int, default=10000,
+                        help='Number of synthetic samples to generate (default: 10000)')
+    parser.add_argument('--output-path', type=str, default=None,
+                        help='Path to save generated dataset as HDF5 (e.g. ai/data/p0_atmosphere/train_data.h5)')
+    parser.add_argument('--generate-only', action='store_true',
+                        help='Only generate dataset and save to --output-path, skip training')
+    
+    # Training data args
+    parser.add_argument('--data-path', type=str, default=None,
+                        help='Path to pre-generated HDF5 dataset. If not set, generates in-memory.')
+    
+    # Training args
     parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
+    parser.add_argument('--batch-size', type=int, default=32, help='Batch size')
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
-    parser.add_argument('--lambda_phys', type=float, default=0.1, help='Physics loss weight')
+    parser.add_argument('--lambda-phys', type=float, default=0.1, help='Physics loss weight')
     parser.add_argument('--modes', type=int, default=16, help='Fourier modes')
     parser.add_argument('--width', type=int, default=64, help='Network width')
+    parser.add_argument('--device', type=str, default=None,
+                        help='Device to train on (cuda/cpu). Auto-detects if not set.')
+    
+    # Output args
+    parser.add_argument('--model-dir', type=str, default='weights',
+                        help='Directory to save trained model weights (default: weights/)')
+    parser.add_argument('--val-split', type=float, default=0.2,
+                        help='Fraction of data used for validation (default: 0.2)')
     
     args = parser.parse_args()
     
-    logger.info("Initializing Neural Atmosphere Training (P1 Audit: Hydrostatic Enhanced)")
-    logger.info(f"Config: epochs={args.epochs}, batch_size={args.batch_size}, lr={args.lr}, lambda_phys={args.lambda_phys}")
-    logger.info("Hydrostatic constraint: Temperature-dependent scale height (T=250K+150K*exp(-h/100km))")
+    # --- Step 1: Dataset generation / loading ---
+    if args.data_path and Path(args.data_path).exists():
+        logger.info(f"Loading dataset from {args.data_path}")
+        full_dataset = AtmosphereDataset(data_path=args.data_path)
+    else:
+        logger.info(f"Generating {args.num_samples} synthetic atmosphere samples...")
+        full_dataset = AtmosphereDataset(num_samples=args.num_samples, altitude_range=(30, 500))
+        
+        # Save to HDF5 if output path specified
+        if args.output_path:
+            full_dataset.save_h5(args.output_path)
+            logger.info(f"Dataset saved to {args.output_path}")
     
-    # Create datasets
-    train_dataset = AtmosphereDataset(num_samples=10000, altitude_range=(30, 500))
-    val_dataset = AtmosphereDataset(num_samples=2000, altitude_range=(30, 500))
+    if args.generate_only:
+        if not args.output_path:
+            logger.error("--generate-only requires --output-path")
+            return
+        logger.info("Dataset generation complete. Exiting (--generate-only).")
+        return
+    
+    # --- Step 2: Train/val split ---
+    n_val = max(1, int(len(full_dataset) * args.val_split))
+    n_train = len(full_dataset) - n_val
+    train_dataset, val_dataset = torch.utils.data.random_split(full_dataset, [n_train, n_val])
+    
+    logger.info("Initializing Neural Atmosphere Training (P1 Audit: Hydrostatic Enhanced)")
+    logger.info(f"Config: epochs={args.epochs}, batch_size={args.batch_size}, lr={args.lr}, "
+                f"lambda_phys={args.lambda_phys}, train={n_train}, val={n_val}")
+    logger.info("Hydrostatic constraint: Temperature-dependent scale height (T=250K+150K*exp(-h/100km))")
     
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
@@ -374,19 +473,25 @@ def main():
     
     # Train
     model = train_model(model, train_loader, val_loader, 
-                       epochs=args.epochs, lr=args.lr, lambda_phys=args.lambda_phys)
+                       epochs=args.epochs, lr=args.lr, lambda_phys=args.lambda_phys,
+                       device=args.device)
     
     # Save final model
-    torch.save(model.state_dict(), 'neural_atmosphere_final.pth')
-    logger.info("Training complete. Model saved.")
+    model_dir = Path(args.model_dir)
+    model_dir.mkdir(parents=True, exist_ok=True)
+    
+    pth_path = model_dir / 'neural_atmosphere_final.pth'
+    torch.save(model.state_dict(), pth_path)
+    logger.info(f"Model saved to {pth_path}")
     
     # Export to ONNX for Go runtime integration
     logger.info("Exporting to ONNX...")
     dummy_input = torch.randn(1, 6)
-    torch.onnx.export(model, dummy_input, 'neural_atmosphere.onnx',
+    onnx_path = model_dir / 'neural_atmosphere.onnx'
+    torch.onnx.export(model, dummy_input, str(onnx_path),
                      input_names=['input'], output_names=['density'],
                      dynamic_axes={'input': {0: 'batch_size'}, 'density': {0: 'batch_size'}})
-    logger.info("ONNX export complete: neural_atmosphere.onnx")
+    logger.info(f"ONNX export complete: {onnx_path}")
 
 
 if __name__ == '__main__':
