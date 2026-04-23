@@ -226,7 +226,11 @@ class SpectralConv1d(nn.Module):
         
         # Complex multiplication in Fourier domain
         out_ft = torch.zeros(batchsize, self.out_channels, x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
-        out_ft[:, :, :self.modes] = self.compl_mul1d(x_ft[:, :, :self.modes], self.weights)
+        max_modes = min(self.modes, x_ft.shape[-1])
+        if max_modes > 0:
+            out_ft[:, :, :max_modes] = self.compl_mul1d(
+                x_ft[:, :, :max_modes], self.weights[:, :, :max_modes]
+            )
         
         # Inverse FFT
         x = torch.fft.irfft(out_ft, n=x.size(-1))
