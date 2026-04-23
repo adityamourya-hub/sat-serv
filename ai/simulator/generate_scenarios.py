@@ -209,6 +209,8 @@ def main():
                         help="Output JSONL path. Defaults to ai/simulator/data/ssa_graph_scenarios_10k.jsonl")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for reproducibility (default: 42)")
+    parser.add_argument("--resume-from", type=int, default=None,
+                        help="Number of scenarios already written; resume appending from this index")
 
     args = parser.parse_args()
 
@@ -224,6 +226,20 @@ def main():
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    resume_from = args.resume_from
+    if resume_from is None:
+        resume_from = 0
+    elif resume_from < 0:
+        raise ValueError("--resume-from must be non-negative")
+
+    if resume_from >= count:
+        raise ValueError("--resume-from must be less than --n_scenarios")
+
+    if resume_from > 0 and not output_path.exists():
+        raise FileNotFoundError(f"Cannot resume: {output_path} does not exist")
+
+    write_mode = "a" if resume_from > 0 else "w"
+
     print(f"Generating {count} graph-native SSA scenarios for GATv2...")
     print(f" Canonical units: RE={RE_KM}km, μ={MU_KM}km³/s²")
     print(" Node features: 64-dim (26 kinematics + 32 spectral + 1 fractional_drag + 1 MGE + 1 photometric + 3 reserved)")
@@ -231,11 +247,16 @@ def main():
     print(" Ionospheric context: 16-dim spherical harmonics")
     print(" AMOS 2025: ConvNeXt spectral residuals + Slingshot photometric fingerprinting")
 
-    with output_path.open("w") as f:
-        for i in range(count):
+    if resume_from > 0:
+        print(f" Resuming from scenario index {resume_from} → appending to {output_path}")
+
+    id_width = max(5, len(str(count)))
+
+    with output_path.open(write_mode) as f:
+        for i in range(resume_from, count):
             if i % 1000 == 0:
                 print(f" > {i}/{count}")
-            scen = generate_graph_scenario(f"PH2-{i+1:05d}", rng)
+            scen = generate_graph_scenario(f"PH2-{i+1:0{id_width}d}", rng)
             f.write(json.dumps(scen) + "\n")
 
     print(f"✅ Completed! {count} scenarios → {output_path}")
