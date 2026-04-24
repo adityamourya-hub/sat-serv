@@ -374,41 +374,43 @@ The scenario generator produces 64-dim graph-native samples with:
 
 ### Training
 
-**Primary path** (PyTorch — Yoshida-4 symplectic):
+**Graph-native scenarios (GATv2 multi-task):**
+
+```bash
+source ~/ssis-env/bin/activate && cd ~/idex
+
+python3 ai/simulator/train_gatv2_multitask.py \
+  --data training-data/p1/scenarios/scenarios_graph_v2.jsonl \
+  --epochs 80 \
+  --output-dir models/gatv2
+```
+
+**Orbital trajectory training (Port-Hamiltonian System):**
 
 ```bash
 source ~/ssis-env/bin/activate && cd ~/idex
 
 python3 ai/neural_ode/train.py \
-  --data training-data/p1/scenarios/scenarios_graph_v2.jsonl \
+  --data training-data/p1/trajectories/ \
   --epochs 80 --output-dir models/ghnn \
   --lambda-sparse 0.01 --noise-floor 1e-5 \
   --validate-integrator
 ```
 
-**Canonical path** (JAX — Forest-Ruth symplectic):
-
-```bash
-source ~/ssis-env/bin/activate && cd ~/idex
-
-python3 ai/v3/train_phs_jax.py \
-  --data training-data/p1/scenarios/ \
-  --epochs 80
-```
-
 **Key models trained**:
 | Model | Script | Architecture |
 |-------|--------|--------------|
+| Multi-Task GATv2 | `ai/simulator/train_gatv2_multitask.py` | GATv2 encoder with 3 task heads (conjunction, maneuver, threat) |
 | Port-Hamiltonian System | `ai/neural_ode/train.py` | H-net + R-net + g-net (Yoshida-4) |
 | SE(3)-Equivariant HNN | `ai/v3/e3nn_equivariant_hnn.py` | E(3)NN irreps for attitude-independent features |
 | GHNN Vector Field | `ai/neural_ode/ghnn.py` | Graph Hamiltonian for multi-body interactions |
 
-**Quality gate**: Run integrator validation:
+**Quality gate** (for Port-Hamiltonian trajectory training only):
 
 ```bash
 source ~/ssis-env/bin/activate && cd ~/idex
 
-python3 ai/neural_ode/train.py --data training-data/p1/scenarios/scenarios_graph_v2.jsonl --validate-integrator
+python3 ai/neural_ode/train.py --data training-data/p1/trajectories/ --validate-integrator
 # Target: avg energy drift < 1e-8, max drift < 1e-7 over 10k steps
 
 python3 scripts/verify_symplectic_volume.py --model models/ghnn/axiom_hnode_v1.onnx
