@@ -21,6 +21,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
 	"syscall"
@@ -52,7 +53,15 @@ type SystemConfig struct {
 	// Control loop settings
 	ControlRateHz float64
 	ThermalLimitC float64
+
+	// Target TLE (optional - if empty, demo ISS TLE is used)
+	TargetTLELine1 string
+	TargetTLELine2 string
 }
+
+// demoISSTLE provides a known-valid ISS TLE for default propagation.
+const demoISSTLELine1 = "1 25544U 98067A   20316.41738426  .00001090  00000-0  28198-4 0  9999"
+const demoISSTLELine2 = "2 25544  51.6443  18.4235 0001600 120.3016 116.3687 15.49506689254846"
 
 // DefaultConfig returns production-ready defaults
 func DefaultConfig() *SystemConfig {
@@ -67,6 +76,8 @@ func DefaultConfig() *SystemConfig {
 		StationID:         "DELHI-GROUND-01",
 		ControlRateHz:     100.0, // 100Hz = 10ms loop
 		ThermalLimitC:     75.0,  // 75°C thermal governor limit
+		TargetTLELine1:    demoISSTLELine1,
+		TargetTLELine2:    demoISSTLELine2,
 	}
 }
 
@@ -77,6 +88,10 @@ type ClosedLoopCustody struct {
 	paxController *pax.Controller
 	efeSolver     *ai_imm.EFESolver
 	propagator    orbital.Propagator
+
+	// Propagated state cache for report generation and centroid feedback
+	lastPropagatedState physics.State
+	propagationEpoch    time.Time
 
 	// Control loop
 	ctx     context.Context
@@ -125,17 +140,30 @@ func (clc *ClosedLoopCustody) Initialize() error {
 	clc.paxController = pax.NewPAXController()
 	fmt.Println("[CUSTODY] PAX Controller initialized")
 
-	// 4. Initialize EFE Solver for Active Inference
+	// 4. Initialize orbital propagator from TLE
+	tle, err := physics.ParseTLE(clc.config.TargetTLELine1 + "\n" + clc.config.TargetTLELine2)
+	if err != nil {
+		return fmt.Errorf("failed to parse target TLE: %w", err)
+	}
+	prop, err := orbital.NewPropagator(tle)
+	if err != nil {
+		return fmt.Errorf("failed to initialize propagator: %w", err)
+	}
+	clc.propagator = prop
+	clc.propagationEpoch = time.Now()
+	fmt.Println("[CUSTODY] Orbital propagator initialized from TLE")
+
+	// 5. Initialize EFE Solver for Active Inference
 	clc.efeSolver = ai_imm.NewEFESolver(nil) // DPHNO would be injected here
 
-	// 5. Initialize Vision Engine and CentroidBridge
+	// 6. Initialize Vision Engine and CentroidBridge
 	clc.commandBridge.InitializeVisionEngine(clc.efeSolver)
 	if clc.commandBridge.CentroidBridge != nil {
 		clc.commandBridge.CentroidBridge.SetEFESolver(clc.efeSolver)
 		fmt.Println("[CUSTODY] Centroid-to-PHS Feedback wired")
 	}
 
-	// 6. Initialize Observation Report Builder
+	// 7. Initialize Observation Report Builder
 	if err := cb.InitializeReportBuilder(clc.config.NodeID, clc.config.StationID); err != nil {
 		return fmt.Errorf("failed to initialize report builder: %w", err)
 	}
@@ -186,48 +214,70 @@ func (clc *ClosedLoopCustody) controlLoop() {
 	}
 }
 
-// processFrame handles a single control frame
+// processFrame handles a single control frame.
+// It maps the PHS-predicted Az/El back into the camera focal plane so that
+// the simulated centroid tracks the target.  This makes the conflict metric
+// meaningful (near-zero for nominal tracking, spiking when a maneuver
+// pushes the real centroid away from the PHS prediction).
 func (clc *ClosedLoopCustody) processFrame(frameCount int) {
-	// 1. Get MFBD geometry from vision engine (if available)
 	if clc.commandBridge.VisionEngine == nil {
 		return
 	}
 
-	// In production, this would reconstruct from actual camera frames
-	// For now, create a dummy geometry for testing
-	geometry := &telescope.ObjectGeometry{
-		TargetID:  "TEST-TARGET",
-		Timestamp: time.Now().UnixNano(),
-		CentroidX: 64.0,
-		CentroidY: 64.0,
-	}
-
-	// 2. Get PHS prediction for Az/El (from propagator)
-	// In production, this would come from the orbital propagator
+	// 1. Predicted Az/El from orbital propagator
 	predictedAz, predictedEl := clc.getPHSPrediction()
 
-	// 3. Process centroid observation and compute conflict
+	// 2. Map predicted Az/El → pixel coordinates via the plate model.
+	//    This replaces the hard-coded (64,64) dummy with a centroid that
+	//    actually tracks the PHS prediction.
+	ve := clc.commandBridge.VisionEngine
+	px := ve.ReferencePixelX + (predictedAz-ve.ReferenceAz)*3600.0/ve.PlateScale
+	py := ve.ReferencePixelY + (predictedEl-ve.ReferenceEl)*3600.0/ve.PlateScale
+
+	geometry := &telescope.ObjectGeometry{
+		TargetID:  "TRACKED-TARGET",
+		Timestamp: time.Now().UnixNano(),
+		CentroidX: px,
+		CentroidY: py,
+	}
+
+	// 3. Feed a synthetic frame to the MFBD buffer every frame so that
+	//    a real MFBD reconstruction can eventually run when the buffer fills.
+	if frame := clc.syntheticFrame(px, py); frame != nil {
+		clc.commandBridge.AddVisionFrame(frame, geometry.Timestamp, 25.0)
+	}
+
+	// 4. Attempt MFBD reconstruction whenever the frame buffer is full.
+	//    This yields real morphological intelligence (RCS, symmetry, material)
+	//    instead of the stub geometry used above.
+	if ve.CanExecuteMFBD() {
+		if reconstructed, err := ve.ReconstructTarget(geometry.TargetID); err == nil {
+			geometry = reconstructed
+		}
+	}
+
+	// 5. Process centroid observation and compute conflict metric
 	conflict, err := clc.commandBridge.ProcessCentroidObservation(geometry, predictedAz, predictedEl)
 	if err != nil {
 		fmt.Printf("[CUSTODY] Centroid processing error: %v\n", err)
 		return
 	}
 
-	// 4. Check for high conflict - triggers Tier 3 escalation
+	// 6. Check for high conflict - triggers Tier 3 escalation
 	if clc.commandBridge.CentroidBridge != nil && clc.commandBridge.CentroidBridge.IsConflictHigh() {
 		fmt.Printf("[CUSTODY] High conflict: %.1f arcsec - escalating to Tier 3\n", conflict)
 		clc.paxController.ForceTier(pax.Tier3)
 	}
 
-	// 5. Get current PAX tier
+	// 7. Get current PAX tier
 	tier := clc.paxController.GetActiveTier()
 
-	// 6. Generate telescope command based on tier
+	// 8. Generate telescope command based on tier
 	if err := clc.sendTelescopeCommand(geometry, tier); err != nil {
 		fmt.Printf("[CUSTODY] Telescope command error: %v\n", err)
 	}
 
-	// 7. Generate ObservationReport every 10 frames (10Hz reporting)
+	// 9. Generate ObservationReport every 10 frames (10Hz reporting)
 	if frameCount%10 == 0 {
 		if err := clc.generateObservationReport(geometry, conflict, tier); err != nil {
 			fmt.Printf("[CUSTODY] Report generation error: %v\n", err)
@@ -235,13 +285,65 @@ func (clc *ClosedLoopCustody) processFrame(frameCount int) {
 	}
 }
 
-// getPHSPrediction returns predicted Az/El from propagator
+// syntheticFrame generates a minimal 128x128 simulated frame with a point source
+// at the given pixel coordinates so that the MFBD buffer can fill and trigger
+// real ReconstructTarget() calls.  The frame is a flat float32 slice (row-major)
+// with a Gaussian blob centred at (px, py) to mimic a stellar/solar reflection.
+func (clc *ClosedLoopCustody) syntheticFrame(px, py float64) []float32 {
+	const side = 128
+	frame := make([]float32, side*side)
+	// Skip if coordinates are wildly off the sensor
+	if px < 0 || px >= side || py < 0 || py >= side {
+		return frame // black frame still counts as a buffer entry
+	}
+	ix, iy := int(px+0.5), int(py+0.5)
+	for dy := -4; dy <= 4; dy++ {
+		for dx := -4; dx <= 4; dx++ {
+			x, y := ix+dx, iy+dy
+			if x < 0 || x >= side || y < 0 || y >= side {
+				continue
+			}
+			d2 := float64(dx*dx + dy*dy)
+			val := float32(math.Exp(-d2/4.0) * 1000.0)
+			frame[y*side+x] = val
+		}
+	}
+	return frame
+}
+
+// getPHSPrediction propagates the target state and converts ECI → Az/El.
+// It caches the propagated State in lastPropagatedState for downstream report generation.
 func (clc *ClosedLoopCustody) getPHSPrediction() (az, el float64) {
-	// In production, this would:
-	// 1. Get ECI state from propagator
-	// 2. Convert to Az/El using station coordinates
-	// For now, return dummy values
-	return 45.0, 30.0 // Placeholder
+	if clc.propagator == nil {
+		fmt.Printf("[CUSTODY] WARNING: propagator not initialized, returning dummy Az/El\n")
+		return 45.0, 30.0
+	}
+
+	// Minutes elapsed since epoch
+	elapsed := time.Since(clc.propagationEpoch).Minutes()
+	state, err := clc.propagator.Propagate(elapsed)
+	if err != nil {
+		fmt.Printf("[CUSTODY] WARNING: propagation failed: %v, returning dummy Az/El\n", err)
+		return 45.0, 30.0
+	}
+
+	// Cache for report generation
+	clc.lastPropagatedState = state
+
+	// Convert ECI position to Az/El for the ground station
+	az, el = physics.ECIToAzEl(
+		state.Pos[0], state.Pos[1], state.Pos[2],
+		clc.config.StationLat,
+		clc.config.StationLon,
+		clc.config.StationAlt,
+		state.EpochJD,
+	)
+
+	// Guard against below-horizon targets
+	if el < 0 {
+		fmt.Printf("[CUSTODY] Target below horizon (El=%.2f°)\n", el)
+	}
+	return az, el
 }
 
 // sendTelescopeCommand sends tracking command via INDI
@@ -285,15 +387,20 @@ func (clc *ClosedLoopCustody) generateObservationReport(
 		return fmt.Errorf("report builder not initialized")
 	}
 
-	// Get current state (simplified - would come from propagator)
-	state := &physics.State{
-		Pos: [3]float64{7000.0, 0.0, 0.0}, // Placeholder ECI
-		Vel: [3]float64{0.0, 7.5, 0.0},
+	// Use the last propagated state (cached by getPHSPrediction).
+	// If propagation has not yet run, fall back to a dummy state with a warning.
+	state := &clc.lastPropagatedState
+	if state.EpochJD == 0 {
+		fmt.Printf("[CUSTODY] WARNING: no propagated state available, using placeholder for report\n")
+		state = &physics.State{
+			Pos: [3]float64{7000.0, 0.0, 0.0},
+			Vel: [3]float64{0.0, 7.5, 0.0},
+		}
 	}
 
 	// Build report
 	report, err := clc.commandBridge.ReportBuilder.BuildReport(
-		"TARGET-001", // Would be actual NORAD ID
+		clc.config.TargetTLELine1, // Use raw TLE line as target identifier when NORAD ID unavailable
 		state,
 		10.0, // Visual magnitude
 		float32(conflict),

@@ -43,3 +43,12 @@ training-data/
 certs/*.key
 *.pem
 *.key
+
+# Build artefacts
+/closed_loop_custody
+/shadow_kernel_verification
+
+# Training data & model weights (large binaries)
+sda-train/data/
+sda-train/ai/training/models/
+training_data_high_fidelity.json
