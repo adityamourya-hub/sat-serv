@@ -218,6 +218,9 @@ def train_navic_detector(n_epochs: int = 50, batch_size: int = 128,
     criterion = nn.CrossEntropyLoss()
 
     best_val_acc = 0.0
+    output_dir = Path("ai/training/models")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     for epoch in range(n_epochs):
         model.train()
         perm = torch.randperm(len(X_train))
@@ -242,9 +245,25 @@ def train_navic_detector(n_epochs: int = 50, batch_size: int = 128,
             val_acc = (val_preds == y_val.to(device)).float().mean().item()
         if val_acc > best_val_acc:
             best_val_acc = val_acc
+            torch.save(model.state_dict(), output_dir / "navic_anomaly_detector_best.pt")
 
         if epoch % 10 == 0 or epoch == n_epochs - 1:
             print(f"Epoch {epoch:3d} | Loss {total_loss:.4f} | Val Acc {val_acc:.4f} (best {best_val_acc:.4f})")
+
+        # Periodic checkpoint every 10 epochs (survives VM reboot)
+        if epoch % 10 == 0 and epoch > 0:
+            checkpoint_path = output_dir / f"navic_checkpoint_epoch_{epoch}.pt"
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'best_val_acc': best_val_acc,
+            }, checkpoint_path)
+            print(f"  Checkpoint saved: {checkpoint_path}")
+
+    # Final save
+    torch.save(model.state_dict(), output_dir / "navic_anomaly_detector_final.pt")
 
     print(f"\nTraining complete. Best validation accuracy: {best_val_acc:.4f}")
     return model
