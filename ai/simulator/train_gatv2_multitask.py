@@ -20,6 +20,7 @@ import json
 import numpy as np
 from pathlib import Path
 from typing import List, Dict
+import argparse
 
 
 class MultiTaskGATv2(nn.Module):
@@ -219,19 +220,29 @@ def evaluate(model, loader, device):
 
 def main():
     """Main training loop"""
+    parser = argparse.ArgumentParser(description='Multi-Task GATv2 Training for SSA')
+    parser.add_argument('--data', type=str, required=True, help='Path to scenario JSONL file')
+    parser.add_argument('--epochs', type=int, default=50, help='Number of training epochs')
+    parser.add_argument('--output-dir', type=str, default='models/gatv2', help='Model output directory')
+    parser.add_argument('--batch-size', type=int, default=32, help='Batch size')
+    parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
+    args = parser.parse_args()
+
     print("=== : Multi-Task GATv2 Training ===")
 
     # Configuration
-    data_path = Path(__file__).parent / "data" / "ssa_graph_scenarios_10k.jsonl"
-    batch_size = 32
-    epochs = 50
-    lr = 0.001
+    data_path = Path(args.data)
+    batch_size = args.batch_size
+    epochs = args.epochs
+    lr = args.lr
+    output_dir = Path(args.output_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print(f"Device: {device}")
     print(f"Data path: {data_path}")
     print(f"Batch size: {batch_size}")
     print(f"Epochs: {epochs}")
+    print(f"Output dir: {output_dir}")
 
     # Load scenarios
     print("\nLoading scenarios...")
@@ -267,6 +278,9 @@ def main():
     print(f"\nModel parameters: {sum(p.numel() for p in model.parameters()):,}")
     print("\n=== Training ===")
 
+    # Create output directory
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     best_val_acc = 0
 
     for epoch in range(epochs):
@@ -284,11 +298,11 @@ def main():
 
         if val_avg > best_val_acc:
             best_val_acc = val_avg
-            torch.save(model.state_dict(), data_path.parent / "gatv2_multitask_best.pt")
+            torch.save(model.state_dict(), output_dir / "gatv2_multitask_best.pt")
 
     print(f"\n=== Training Complete ===")
     print(f"Best Val Accuracy: {best_val_acc:.3f}")
-    print(f"Model saved to: {data_path.parent / 'gatv2_multitask_best.pt'}")
+    print(f"Model saved to: {output_dir / 'gatv2_multitask_best.pt'}")
     print("\n=== Ready for deployment ===")
     print("Multi-task heads:")
     print(" - Conjunction: 3-class (Safe/Warning/Critical)")
