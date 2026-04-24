@@ -90,29 +90,55 @@ class CanonicalTrajectoryDataset(Dataset):
     def __init__(self, high_fidelity_file: str):
         self.samples = []
         logger.info(f"Loading high-fidelity data from {high_fidelity_file}")
-        
-        with open(high_fidelity_file, 'r') as f:
-            data = json.load(f)
-            
-        for sat in data:
+
+        path = Path(high_fidelity_file)
+
+        # Detect file format: JSONL (line-delimited) vs JSON (single object)
+        if path.suffix == '.jsonl':
+            # Stream JSONL line-by-line to avoid MemoryError on large files
+            with open(path, 'r') as f:
+                for line_num, line in enumerate(f):
+                    if line_num % 100000 == 0:
+                        logger.info(f"  Processed {line_num} lines...")
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        sat = json.loads(line)
+                        self._process_satellite(sat)
+                    except (json.JSONDecodeError, KeyError) as e:
+                        logger.warning(f"  Skipping malformed line {line_num}: {e}")
+                        continue
+        else:
+            # Legacy JSON format: single object containing list of satellites
+            with open(path, 'r') as f:
+                data = json.load(f)
+            for sat in data:
+                self._process_satellite(sat)
+
+        logger.info(f"Normalized {len(self.samples)} trajectories to DU/TU units.")
+
+    def _process_satellite(self, sat: dict):
+        """Process a single satellite trajectory and normalize to canonical units."""
+        try:
             states = np.array(sat['states'], dtype=np.float32)
             times = np.array(sat['time_points'], dtype=np.float32)
-            
+
             # Normalize to Canonical Units
             # states: [T, 6] -> [x, y, z, vx, vy, vz]
             q = states[:, :3] / RE_KM
             p = states[:, 3:] * (TU_SEC / RE_KM)
             normalized_states = np.concatenate([q, p], axis=-1)
             normalized_times = times / TU_SEC
-            
+
             self.samples.append({
                 'sat_id': sat['sat_id'],
                 'initial_state': normalized_states[0],
                 'times': normalized_times,
                 'states': normalized_states
             })
-        
-        logger.info(f"Normalized {len(self.samples)} trajectories to DU/TU units.")
+        except KeyError as e:
+            logger.warning(f"  Skipping satellite with missing key: {e}")
 
     def __len__(self):
         return len(self.samples)
