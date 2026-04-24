@@ -308,13 +308,29 @@ def main():
             print(f" Val Acc: Conj={val_conj:.3f}, Man={val_man:.3f}, Threat={val_threat:.3f}")
             print(f" Val Avg: {val_avg:.3f}")
 
+        # Save best model
         if val_avg > best_val_acc:
             best_val_acc = val_avg
             torch.save(model.state_dict(), output_dir / "gatv2_multitask_best.pt")
 
+        # Periodic checkpoint every 10 epochs (survives VM reboot)
+        if epoch % 10 == 0 and epoch > 0:
+            checkpoint_path = output_dir / f"checkpoint_epoch_{epoch}.pt"
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_val_acc': best_val_acc,
+            }, checkpoint_path)
+            print(f"  Checkpoint saved: {checkpoint_path}")
+
+    # Final save (always save at end)
+    torch.save(model.state_dict(), output_dir / "gatv2_multitask_final.pt")
+
     print(f"\n=== Training Complete ===")
     print(f"Best Val Accuracy: {best_val_acc:.3f}")
-    print(f"Model saved to: {output_dir / 'gatv2_multitask_best.pt'}")
+    print(f"Best model saved to: {output_dir / 'gatv2_multitask_best.pt'}")
+    print(f"Final model saved to: {output_dir / 'gatv2_multitask_final.pt'}")
     print("\n=== Ready for deployment ===")
     print("Multi-task heads:")
     print(" - Conjunction: 3-class (Safe/Warning/Critical)")
