@@ -113,12 +113,23 @@ class MultiTaskGATv2(nn.Module):
         return conj_logits, man_logits, threat_logits
 
 
-def load_scenarios(data_path: Path) -> List[Dict]:
-    """Load 10k scenarios from JSONL"""
+def load_scenarios(data_path: Path, max_scenarios: int = None) -> List[Dict]:
+    """Load scenarios from JSONL (streaming to avoid OOM)"""
     scenarios = []
     with data_path.open("r") as f:
-        for line in f:
-            scenarios.append(json.loads(line))
+        for line_num, line in enumerate(f):
+            if line_num % 100000 == 0:
+                print(f"  Processed {line_num} lines...")
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                scenarios.append(json.loads(line))
+                if max_scenarios and len(scenarios) >= max_scenarios:
+                    break
+            except json.JSONDecodeError as e:
+                print(f"  Skipping malformed line {line_num}: {e}")
+                continue
     return scenarios
 
 
@@ -226,6 +237,7 @@ def main():
     parser.add_argument('--output-dir', type=str, default='models/gatv2', help='Model output directory')
     parser.add_argument('--batch-size', type=int, default=32, help='Batch size')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
+    parser.add_argument('--max-scenarios', type=int, default=None, help='Limit number of scenarios to load (for testing)')
     args = parser.parse_args()
 
     print("=== : Multi-Task GATv2 Training ===")
@@ -246,7 +258,7 @@ def main():
 
     # Load scenarios
     print("\nLoading scenarios...")
-    scenarios = load_scenarios(data_path)
+    scenarios = load_scenarios(data_path, max_scenarios=args.max_scenarios)
     print(f"Loaded {len(scenarios)} scenarios")
 
     # Convert to PyG Data objects
