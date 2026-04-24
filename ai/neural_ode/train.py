@@ -36,7 +36,6 @@ from port_hamiltonian_pytorch import (
     PortHamiltonianSystem,
     create_port_hamiltonian_system,
     GHNNVectorField,  # DEPRECATED: Use PortHamiltonianSystem instead
-    HamiltonianNet,  # DEPRECATED: Use PortHamiltonianSystem instead
 )
 
 # Emit deprecation warning for training usage
