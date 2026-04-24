@@ -23,93 +23,93 @@ from typing import List, Dict
 
 
 class MultiTaskGATv2(nn.Module):
- """
- Multi-Task GATv2 for orbital dominance
- 
- Architecture:
- - GATv2 encoder (64-dim input → 128 hidden)
- - Shared backbone → 3 task-specific heads
- - Conjunction: 3-class classification
- - Maneuver: 3-class classification
- - Threat-level: 4-class classification
- """
- def __init__(
- self,
- in_channels: int = 64,
- hidden_channels: int = 128,
- num_layers: int = 3,
- heads: int = 4,
- dropout: float = 0.1
-):
- super().__init__()
- 
- # GATv2 encoder layers
- self.convs = nn.ModuleList()
- # First layer: handle edge attributes (7-dim)
- self.convs.append(GATv2Conv(in_channels, hidden_channels, heads=heads, dropout=dropout, edge_dim=7))
- for _ in range(num_layers - 1):
- self.convs.append(GATv2Conv(hidden_channels * heads, hidden_channels, heads=heads, dropout=dropout, edge_dim=7))
- 
- # Shared backbone
- self.backbone = nn.Sequential(
- nn.Linear(hidden_channels * heads, hidden_channels),
- nn.ReLU(),
- nn.Dropout(dropout)
-)
- 
- # Task-specific heads
- # Conjunction head: 3-class (Safe/Warning/Critical)
- self.conjunction_head = nn.Sequential(
- nn.Linear(hidden_channels, 64),
- nn.ReLU(),
- nn.Dropout(dropout),
- nn.Linear(64, 3)
-)
- 
- # Maneuver head: 3-class (None/Impulsive/Continuous)
- self.maneuver_head = nn.Sequential(
- nn.Linear(hidden_channels, 64),
- nn.ReLU(),
- nn.Dropout(dropout),
- nn.Linear(64, 3)
-)
- 
- # Threat-level head: 4-class (LOW/MEDIUM/HIGH/CRITICAL)
- self.threat_head = nn.Sequential(
- nn.Linear(hidden_channels, 64),
- nn.ReLU(),
- nn.Dropout(dropout),
- nn.Linear(64, 4)
-)
- 
- def forward(self, data: Data):
- """
- Forward pass with multi-task outputs
- 
- Returns:
- conj_logits: (B, 3) conjunction logits
- man_logits: (B, 3) maneuver logits
- threat_logits: (B, 4) threat-level logits
- """
- x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
- 
- # GATv2 encoding
- for conv in self.convs:
- x = conv(x, edge_index, edge_attr)
- x = F.elu(x)
- 
- # Global mean pooling (graph-level representation) with batch index
- x = global_mean_pool(x, batch) # (B, hidden)
- 
- # Shared backbone
- x = self.backbone(x)
- 
- # Task-specific heads
- conj_logits = self.conjunction_head(x)
- man_logits = self.maneuver_head(x)
- threat_logits = self.threat_head(x)
- 
- return conj_logits, man_logits, threat_logits
+    """
+    Multi-Task GATv2 for orbital dominance
+
+    Architecture:
+    - GATv2 encoder (64-dim input → 128 hidden)
+    - Shared backbone → 3 task-specific heads
+    - Conjunction: 3-class classification
+    - Maneuver: 3-class classification
+    - Threat-level: 4-class classification
+    """
+    def __init__(
+        self,
+        in_channels: int = 64,
+        hidden_channels: int = 128,
+        num_layers: int = 3,
+        heads: int = 4,
+        dropout: float = 0.1
+    ):
+        super().__init__()
+
+        # GATv2 encoder layers
+        self.convs = nn.ModuleList()
+        # First layer: handle edge attributes (7-dim)
+        self.convs.append(GATv2Conv(in_channels, hidden_channels, heads=heads, dropout=dropout, edge_dim=7))
+        for _ in range(num_layers - 1):
+            self.convs.append(GATv2Conv(hidden_channels * heads, hidden_channels, heads=heads, dropout=dropout, edge_dim=7))
+
+        # Shared backbone
+        self.backbone = nn.Sequential(
+            nn.Linear(hidden_channels * heads, hidden_channels),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
+
+        # Task-specific heads
+        # Conjunction head: 3-class (Safe/Warning/Critical)
+        self.conjunction_head = nn.Sequential(
+            nn.Linear(hidden_channels, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, 3)
+        )
+
+        # Maneuver head: 3-class (None/Impulsive/Continuous)
+        self.maneuver_head = nn.Sequential(
+            nn.Linear(hidden_channels, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, 3)
+        )
+
+        # Threat-level head: 4-class (LOW/MEDIUM/HIGH/CRITICAL)
+        self.threat_head = nn.Sequential(
+            nn.Linear(hidden_channels, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, 4)
+        )
+
+    def forward(self, data: Data):
+        """
+        Forward pass with multi-task outputs
+
+        Returns:
+        conj_logits: (B, 3) conjunction logits
+        man_logits: (B, 3) maneuver logits
+        threat_logits: (B, 4) threat-level logits
+        """
+        x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
+
+        # GATv2 encoding
+        for conv in self.convs:
+            x = conv(x, edge_index, edge_attr)
+            x = F.elu(x)
+
+        # Global mean pooling (graph-level representation) with batch index
+        x = global_mean_pool(x, batch) # (B, hidden)
+
+        # Shared backbone
+        x = self.backbone(x)
+
+        # Task-specific heads
+        conj_logits = self.conjunction_head(x)
+        man_logits = self.maneuver_head(x)
+        threat_logits = self.threat_head(x)
+
+        return conj_logits, man_logits, threat_logits
 
 
 def load_scenarios(data_path: Path) -> List[Dict]:
