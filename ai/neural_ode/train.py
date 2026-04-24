@@ -760,15 +760,40 @@ def main():
         return  # Exit after validation
     
     logger.info("Starting Sovereign GHNN Training...")
+
+    best_loss = float('inf')
+
     for epoch in range(args.epochs):
         loss = trainer.train_epoch(loader)
         if epoch % 10 == 0:
             logger.info(f"Epoch {epoch}: Loss = {loss:.6f}")
-            
+
+        # Save best model
+        if loss < best_loss:
+            best_loss = loss
+            torch.save(model.state_dict(), output_dir / "ghnn_best.pt")
+            logger.info(f"Saved best model with loss: {best_loss:.6f}")
+
+        # Periodic checkpoint every 10 epochs (survives VM reboot)
+        if epoch % 10 == 0 and epoch > 0:
+            checkpoint_path = output_dir / f"ghnn_checkpoint_epoch_{epoch}.pt"
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': trainer.optimizer.state_dict(),
+                'best_loss': best_loss,
+            }, checkpoint_path)
+            logger.info(f"Checkpoint saved: {checkpoint_path}")
+
+    # Final save
+    torch.save(model.state_dict(), output_dir / "ghnn_final.pt")
+
     # Final Export
     onnx_path = output_dir / "axiom_hnode_v1.onnx"
     export_ghnn_to_onnx(model, str(onnx_path))
     logger.info(f"Training complete. Model exported to {onnx_path}")
+    logger.info(f"Best model saved to: {output_dir / 'ghnn_best.pt'}")
+    logger.info(f"Final model saved to: {output_dir / 'ghnn_final.pt'}")
 
 if __name__ == "__main__":
     main()

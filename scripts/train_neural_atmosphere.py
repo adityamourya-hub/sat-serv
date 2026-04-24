@@ -328,43 +328,47 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=1e-3, lambda_phy
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs)
     
     best_val_loss = float('inf')
-    
+
+    # Create output directory for checkpoints
+    output_dir = Path('weights')
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     # Default temperature profile: constant 250K (typical mid-thermosphere)
     if temperature_profile is None:
         temperature_profile = lambda h: 250.0 + 150.0 * np.exp(-h / 100.0)  # T increases with altitude
-    
+
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
         phys_loss_acc = 0.0
-        
+
         for features, log_rho in train_loader:
             features, log_rho = features.to(device), log_rho.to(device)
-            
+
             optimizer.zero_grad()
-            
+
             # Forward pass
             pred_log_rho = model(features)
-            
+
             # Data loss: MSE on log density
             data_loss = nn.MSELoss()(pred_log_rho, log_rho)
-            
+
             # Physics loss: hydrostatic equilibrium with temperature-dependent scale height
             alt_km = features[:, 0].detach().cpu().numpy()
-            temps = torch.tensor([temperature_profile(a) for a in alt_km], 
+            temps = torch.tensor([temperature_profile(a) for a in alt_km],
                                 dtype=torch.float32, device=device)
-            
+
             phys_loss, _ = hydrostatic_loss(pred_log_rho, features[:, 0], temperature_k=temps.mean().item())
             phys_loss_acc += phys_loss.item()
-            
+
             # Total loss
             loss = data_loss + lambda_phys * phys_loss
-            
+
             loss.backward()
             optimizer.step()
-            
+
             train_loss += loss.item()
-        
+
         # Validation
         model.eval()
         val_loss = 0.0
@@ -374,20 +378,33 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=1e-3, lambda_phy
                 pred_log_rho = model(features)
                 loss = nn.MSELoss()(pred_log_rho, log_rho)
                 val_loss += loss.item()
-        
+
         train_loss /= len(train_loader)
         val_loss /= len(val_loader)
         avg_phys_loss = phys_loss_acc / len(train_loader)
-        
+
         scheduler.step()
-        
+
         logger.info(f"Epoch {epoch+1}/{epochs} - Train Loss: {train_loss:.6f}, "
                    f"Val Loss: {val_loss:.6f}, Phys Loss: {avg_phys_loss:.6e}")
-        
+
+        # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), 'neural_atmosphere_best.pth')
+            torch.save(model.state_dict(), output_dir / 'neural_atmosphere_best.pth')
             logger.info(f"Saved best model with val loss: {best_val_loss:.6f}")
+
+        # Periodic checkpoint every 10 epochs (survives VM reboot)
+        if epoch % 10 == 0 and epoch > 0:
+            checkpoint_path = output_dir / f"neural_atmosphere_checkpoint_epoch_{epoch}.pth"
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'best_val_loss': best_val_loss,
+            }, checkpoint_path)
+            logger.info(f"Checkpoint saved: {checkpoint_path}")
     
     logger.info(f"Training complete. Best validation loss: {best_val_loss:.6f}")
     return model
