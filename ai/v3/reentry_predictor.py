@@ -385,41 +385,56 @@ def train_reentry_predictor(
     
     # Training
     best_val_loss = float('inf')
-    
+    output_dir = Path("ai/training/models")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     for epoch in range(epochs):
         model.train()
-        
+
         # Mini-batch
         batch_size = 128
         losses = []
-        
+
         for i in range(0, n_train, batch_size):
             batch_x = X_train[i:i+batch_size].to(device)
             batch_y = y_train[i:i+batch_size].to(device)
-            
+
             preds = model(batch_x)
             loss = model.physics_informed_loss(preds, batch_y, batch_x)
-            
+
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-            
+
             losses.append(loss.item())
-        
+
         # Validation
         if epoch % 10 == 0:
             model.eval()
             with torch.no_grad():
                 val_preds = model(X_val.to(device))
                 val_loss = model.physics_informed_loss(val_preds, y_val.to(device), X_val.to(device))
-            
+
             print(f"Epoch {epoch}: Train Loss = {np.mean(losses):.4f}, Val Loss = {val_loss:.4f}")
-            
+
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                torch.save(model.state_dict(), "ai/training/models/reentry_predictor_best.pt")
-    
+                torch.save(model.state_dict(), output_dir / "reentry_predictor_best.pt")
+
+            # Periodic checkpoint every 10 epochs (survives VM reboot)
+            checkpoint_path = output_dir / f"reentry_checkpoint_epoch_{epoch}.pt"
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_val_loss': best_val_loss,
+            }, checkpoint_path)
+            print(f"  Checkpoint saved: {checkpoint_path}")
+
+    # Final save
+    torch.save(model.state_dict(), output_dir / "reentry_predictor_final.pt")
+
     print(f"Training complete. Best val loss: {best_val_loss:.4f}")
     return model
 
