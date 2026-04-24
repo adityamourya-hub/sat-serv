@@ -167,33 +167,58 @@ def train():
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     ce_loss = nn.CrossEntropyLoss()
     
+    best_loss = float('inf')
+    output_dir = Path("ai/training/models")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     for epoch in range(cfg.epochs):
         model.train()
         total_loss = 0
         for nodes, adj, iono, y_conj, y_man in train_loader:
             nodes, adj, iono = nodes.to(device), adj.to(device), iono.to(device)
             y_conj, y_man = y_conj.to(device), y_man.to(device)
-            
+
             alphas, man_logits = model(nodes, adj, iono)
-            
+
             loss_conj = evidential_loss(alphas, y_conj)
             loss_man = ce_loss(man_logits, y_man)
-            
+
             # Simple homoscedastic weighting (could be uncertainty weighted)
             loss = loss_conj + 0.5 * loss_man
-            
+
             opt.zero_grad()
             loss.backward()
             opt.step()
             total_loss += loss.item()
-            
-        print(f"Epoch {epoch+1}/{cfg.epochs} - Loss: {total_loss/len(train_loader):.4f}")
+
+        avg_loss = total_loss / len(train_loader)
+        print(f"Epoch {epoch+1}/{cfg.epochs} - Loss: {avg_loss:.4f}")
+
+        # Save best model
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            torch.save(model.state_dict(), output_dir / "collision_multi_task_best.pt")
+            print(f"  Saved best model with loss: {best_loss:.4f}")
+
+        # Periodic checkpoint every 10 epochs (survives VM reboot)
+        if epoch % 10 == 0 and epoch > 0:
+            checkpoint_path = output_dir / f"collision_checkpoint_epoch_{epoch}.pt"
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': opt.state_dict(),
+                'best_loss': best_loss,
+            }, checkpoint_path)
+            print(f"  Checkpoint saved: {checkpoint_path}")
+
+    # Final save
+    torch.save(model.state_dict(), output_dir / "collision_multi_task_final.pt")
 
     # Export
     model.eval()
-    
+
     # Save PT weights for Validator
-    pt_path = Path("ai/training/models/collision_multi_task_v2.pt")
+    pt_path = output_dir / "collision_multi_task_v2.pt"
     torch.save(model.state_dict(), pt_path)
     print(f"Saved PT weights to {pt_path}")
 

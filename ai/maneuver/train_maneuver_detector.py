@@ -229,6 +229,17 @@ def train(config: TrainConfig, out_dir: Path):
                 print("early stopping")
                 break
 
+        # Periodic checkpoint every 10 epochs (survives VM reboot)
+        if epoch % 10 == 0 and epoch > 0:
+            checkpoint_path = out_dir / f"maneuver_checkpoint_epoch_{epoch}.pt"
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': opt.state_dict(),
+                'best_val': best_val,
+            }, checkpoint_path)
+            print(f"  Checkpoint saved: {checkpoint_path}")
+
     if best_state is not None:
         model.load_state_dict(best_state)
 
