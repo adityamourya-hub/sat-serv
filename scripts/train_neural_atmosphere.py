@@ -299,8 +299,8 @@ def hydrostatic_loss(pred_log_rho, alt_km, temperature_k=250.0, g=9.80665, R_spe
     return loss, log_rho_proj
 
 
-def train_model(model, train_loader, val_loader, epochs=100, lr=1e-3, lambda_phys=0.1, 
-                temperature_profile=None, device=None):
+def train_model(model, train_loader, val_loader, epochs=100, lr=1e-3, lambda_phys=0.1,
+                 temperature_profile=None, device=None, checkpoint_path=None):
     """
     Train the FNO model with physics-informed loss.
     
@@ -323,21 +323,33 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=1e-3, lambda_phy
     else:
         device = torch.device(device)
     model = model.to(device)
-    
+
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs)
-    
+
     best_val_loss = float('inf')
+    start_epoch = 0
 
     # Create output directory for checkpoints
     output_dir = Path('weights')
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Load checkpoint if resume path provided
+    if checkpoint_path and Path(checkpoint_path).exists():
+        logger.info(f"Resuming from checkpoint: {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        best_val_loss = checkpoint['best_val_loss']
+        logger.info(f"Resumed from epoch {checkpoint['epoch']}, best_val_loss: {best_val_loss:.6f}")
+
     # Default temperature profile: constant 250K (typical mid-thermosphere)
     if temperature_profile is None:
         temperature_profile = lambda h: 250.0 + 150.0 * np.exp(-h / 100.0)  # T increases with altitude
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         model.train()
         train_loss = 0.0
         phys_loss_acc = 0.0
@@ -457,6 +469,8 @@ Examples:
                         help='Directory to save trained model weights (default: weights/)')
     parser.add_argument('--val-split', type=float, default=0.2,
                         help='Fraction of data used for validation (default: 0.2)')
+    parser.add_argument('--resume-from', type=str, default=None,
+                        help='Path to checkpoint file to resume training from (e.g., weights/neural_atmosphere_checkpoint_epoch_70.pth)')
     
     args = parser.parse_args()
     
@@ -497,9 +511,9 @@ Examples:
     model = FNO1d(modes=args.modes, width=args.width)
     
     # Train
-    model = train_model(model, train_loader, val_loader, 
+    model = train_model(model, train_loader, val_loader,
                        epochs=args.epochs, lr=args.lr, lambda_phys=args.lambda_phys,
-                       device=args.device)
+                       device=args.device, checkpoint_path=args.resume_from)
     
     # Save final model
     model_dir = Path(args.model_dir)
