@@ -34,8 +34,10 @@ def validate_model(model_path, num_samples=1000):
     # Load model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Instantiate model architecture
-    from q.core.hno_pytorch import FNO1d
+    # Instantiate model architecture (FNO1d is defined in train_neural_atmosphere.py)
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    from train_neural_atmosphere import FNO1d
     model = FNO1d(modes=16, width=64)
     model = model.to(device)
 
