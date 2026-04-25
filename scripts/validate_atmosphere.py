@@ -30,10 +30,18 @@ def synthetic_density(alt_km, f107=150, ap=15):
 
 def validate_model(model_path, num_samples=1000):
     """Validate neural atmosphere model against oracle"""
-    
+
     # Load model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = torch.load(model_path, map_location=device)
+
+    # Instantiate model architecture
+    from q.core.hno_pytorch import FNO1d
+    model = FNO1d(modes=16, width=64)
+    model = model.to(device)
+
+    # Load state dict
+    state_dict = torch.load(model_path, map_location=device)
+    model.load_state_dict(state_dict)
     model.eval()
     
     # Altitude ranges for validation
