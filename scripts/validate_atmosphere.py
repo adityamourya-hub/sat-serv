@@ -309,7 +309,16 @@ def validate_real_data(model_path, csv_path, device=None):
     else:
         device = torch.device(device)
 
-    model = torch.load(model_path, map_location=device)
+    # Instantiate model architecture (FNO1d is defined in train_neural_atmosphere.py)
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    from train_neural_atmosphere import FNO1d
+    model = FNO1d(modes=16, width=64)
+    model = model.to(device)
+
+    # Load state dict
+    state_dict = torch.load(model_path, map_location=device)
+    model.load_state_dict(state_dict)
     model.eval()
 
     rows = load_champ_goce_data(csv_path)
