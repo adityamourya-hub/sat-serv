@@ -525,7 +525,8 @@ Examples:
     
     # Export to ONNX for Go runtime integration
     logger.info("Exporting to ONNX...")
-    dummy_input = torch.randn(1, 6).to(model.device)
+    model_device = next(model.parameters()).device
+    dummy_input = torch.randn(1, 6).to(model_device)
     onnx_path = model_dir / 'neural_atmosphere.onnx'
     torch.onnx.export(model, dummy_input, str(onnx_path),
                      input_names=['input'], output_names=['density'],
