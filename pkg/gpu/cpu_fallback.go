@@ -65,15 +65,14 @@ func (gp *GPUPropagator) PropagateBatch(tles []TLEGPU, targetJD float64) ([]Stat
 
 	// Sequential CPU propagation (placeholder)
 	// In real implementation, call orbital.PropagateCartesianState
-	for i, tle := range tles {
-		// Simplified: just copy position
+	for i := range tles {
+		// Simplified: just copy position (ignoring actual TLE data)
 		results[i].Pos[0] = 7000.0 * math.Cos(float64(i))
 		results[i].Pos[1] = 7000.0 * math.Sin(float64(i))
 		results[i].Pos[2] = 0.0
 		results[i].Vel[0] = -7.5 * math.Sin(float64(i))
 		results[i].Vel[1] = 7.5 * math.Cos(float64(i))
 		results[i].Vel[2] = 0.0
-		_ = tle // Use tle
 	}
 
 	return results, nil

@@ -6,9 +6,9 @@ services:
     image: timescale/timescaledb-ha:pg16
     container_name: ssis_datalake
     restart: always
+    env_file:
+      - .env
     environment:
-      - POSTGRES_PASSWORD=iaf_secure_alpha
-      - POSTGRES_USER=aditya_admin
       - POSTGRES_DB=ssis_db
     ports:
       - "5432:5432"

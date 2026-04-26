@@ -34,11 +34,12 @@ var hamiltonianCmd = &cobra.Command{
 		fmt.Printf("[VERIFY] Running Hessian-Signed Hamiltonian Audit...\n")
 		fmt.Printf("[VERIFY] Target: %s | Threshold: %.2e\n", target, threshold)
 
-		// TODO: Load state, compute Hamiltonian, verify drift
-		// TODO: Check Hessian hash and Ed25519 signature
+		if target == "" {
+			fmt.Println("[VERIFY] Error: --target required")
+			return
+		}
 
-		fmt.Printf("[VERIFY] ✓ Hamiltonian invariant verified\n")
-		fmt.Printf("[VERIFY] ✓ Energy drift: <%.2e (PASSED)\n", threshold)
+		fmt.Printf("[VERIFY] Error: Hamiltonian audit not yet implemented\n")
 	},
 }
 
@@ -49,13 +50,13 @@ var integrityCmd = &cobra.Command{
 		file, _ := cmd.Flags().GetString("file")
 
 		fmt.Printf("[VERIFY] Checking integrity: %s\n", file)
-		fmt.Printf("[VERIFY] ✓ Hessian hash verified\n")
-		fmt.Printf("[VERIFY] ✓ Ed25519 signature valid\n")
-		fmt.Printf("[VERIFY] ✓ No tampering detected\n")
 
-		// TODO: Load checkpoint file
-		// TODO: Verify Hessian hash
-		// TODO: Verify Ed25519 signature
+		if file == "" {
+			fmt.Println("[VERIFY] Error: --file required")
+			return
+		}
+
+		fmt.Printf("[VERIFY] Error: Integrity verification not yet implemented\n")
 	},
 }
 
@@ -68,11 +69,13 @@ var manifoldCmd = &cobra.Command{
 
 		fmt.Printf("[VERIFY] Verifying manifold projection for: %s\n", target)
 		fmt.Printf("[VERIFY] Projection grade: %s\n", projection)
-		fmt.Printf("[VERIFY] ✓ Manifold consistency verified\n")
 
-		// TODO: Load manifold projection
-		// TODO: Verify grade (A/B/C/F)
-		// TODO: Check falsifiable predictions
+		if target == "" || projection == "" {
+			fmt.Println("[VERIFY] Error: --target and --projection required")
+			return
+		}
+
+		fmt.Printf("[VERIFY] Error: Manifold verification not yet implemented\n")
 	},
 }
 

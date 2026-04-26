@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"math/rand"
 	"sort"
 	"strings"
 	"time"
@@ -42,6 +43,9 @@ type SINDy struct {
 
 	// Bootstrap CI parameters
 	BootstrapResamples int // Number of bootstrap resamples for CI (default 1000)
+
+	// Random source for reproducible bootstrap resampling
+	randSource *rand.Rand
 }
 
 // NewSINDy creates a SINDy discoverer with default parameters
@@ -54,6 +58,7 @@ func NewSINDy() *SINDy {
 		MaxIterations:      10,
 		RidgeLambda:        1e-2,
 		BootstrapResamples: 1000,
+		randSource:         rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -311,11 +316,8 @@ func (s *SINDy) bootstrapCI(
 		resampledResiduals := mat.NewDense(nSamples, nDims, nil)
 
 		for i := 0; i < nSamples; i++ {
-			// Random index (with replacement)
-			idx := int(math.Mod(float64(i*7+b*13), float64(nSamples)))
-			if idx < 0 || idx >= nSamples {
-				idx = i % nSamples
-			}
+			// Random index with replacement
+			idx := s.randSource.Intn(nSamples)
 
 			// Copy row
 			for j := 0; j < nTerms; j++ {

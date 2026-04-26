@@ -118,9 +118,9 @@ func (ck *CatalogKernel) ProcessObservation(obs Observation) Result {
 
 	// Update state estimation (IMM)
 	if _, exists := ck.filters[obs.ObjectID]; exists {
-		pos := [3]float64{obs.State.Pos[0], obs.State.Pos[1], obs.State.Pos[2]}
-		_ = pos // Use position in production filter update
-		// filter.Update(pos)
+		// TODO: Update existing filter with obs.State.Pos
+		// pos := [3]float64{obs.State.Pos[0], obs.State.Pos[1], obs.State.Pos[2]}
+		// ck.filters[obs.ObjectID].Update(pos)
 	} else {
 		// Create new IMM filter for this object
 		// filter := tracking.NewIMMFilter(obs.ObjectID, obs.State)

@@ -12,9 +12,10 @@ package main
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
 	"ssis/pkg/config"
 	"ssis/pkg/physics"
+
+	"github.com/spf13/cobra"
 )
 
 var propagateCmd = &cobra.Command{
@@ -68,11 +69,6 @@ Viper defaults are used for regime and tolerance if not specified via flags.`,
 			fmt.Printf("[ADITI] Error: unknown regime: %s\n", regime)
 			return
 		}
-
-		// Initialize Hybrid Integrator
-		// In production, would load actual field functions from config
-		integrator := physics.NewHybridIntegrator(flightRegime, nil, nil, nil)
-		_ = integrator // Use integrator in actual implementation
 
 		fmt.Printf("[ADITI] Hybrid Integrator initialized: Forest-Ruth + RKF45\n")
 		fmt.Printf("[ADITI] PAX Governor: Regime %v, TOL=%.2e\n", flightRegime, tol)

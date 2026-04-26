@@ -1,0 +1,78 @@
+name: Sprint 0 CI Guard
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  parse-guard:
+    name: Language Parse & Build Guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Go Build
+        run: go build ./...
+
+      - name: Python Parse Check
+        run: |
+          set -e
+          find . -name '*.py' -not -path './.git/*' -print0 | while IFS= read -r -d '' file; do
+            python3 -m py_compile "$file"
+          done
+
+  forensic-guard:
+    name: Forensic Regression Guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check compiler-silencing patterns
+        run: |
+          if grep -rE '_ = .*// Use' --include='*.go' .; then
+            echo "ERROR: Found compiler-silencing patterns (_ = X // Use X)"
+            exit 1
+          fi
+
+      - name: Check fake verification prints
+        run: |
+          if grep -rE 'fmt\.Printf.*\\u2713.*PASSED' --include='*.go' .; then
+            echo "ERROR: Found fake verification prints"
+            exit 1
+          fi
+
+      - name: Check hardcoded byte-array auth signatures
+        run: |
+          if grep -rE 'authSig := \[\]byte\{' --include='*.go' .; then
+            echo "ERROR: Found hardcoded auth signatures"
+            exit 1
+          fi
+
+      - name: Check math/rand in comms/auth packages
+        run: |
+          if grep -rE '"math/rand"' --include='*.go' pkg/comms/; then
+            echo "ERROR: math/rand found in comms/auth package (use crypto/rand)"
+            exit 1
+          fi
+
+      - name: Check hardcoded PostgreSQL password in docker-compose
+        run: |
+          if grep -rE 'POSTGRES_PASSWORD=.*[^$]' --include='docker-compose.yml' .; then
+            echo "ERROR: Hardcoded POSTGRES_PASSWORD in docker-compose.yml"
+            exit 1
+          fi

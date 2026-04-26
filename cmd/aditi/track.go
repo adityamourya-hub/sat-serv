@@ -10,8 +10,6 @@ package main
 import (
 	"fmt"
 
-	"ssis/pkg/hypersonic"
-
 	"github.com/spf13/cobra"
 )
 
@@ -57,23 +55,6 @@ DeepONet mode enables:
 		}
 
 		fmt.Printf("[ADITI] Threshold: %.2f | SINDy: %v\n", threshold, sindy)
-
-		// Initialize Discovery Filter with HGV constants
-		// In production, would load from configuration
-		hgv := hypersonic.HGVConstants{
-			Mass:           1000.0, // kg
-			ReferenceArea:  0.5,    // m²
-			MaxLD:          4.0,
-			MinLD:          2.0,
-			BallisticCoeff: 500.0,
-			CdBallistic:    0.2,
-			CdGlide:        0.5,
-			CdManeuver:     0.8,
-			LDGlide:        3.0,
-			LDManeuver:     3.5,
-		}
-		filter := hypersonic.NewDiscoveryIMM(hgv)
-		_ = filter // Use filter in actual implementation
 
 		// SINDy discovery is enabled by default in DiscoveryModeFilter
 		// Tier 3 triggers when ModeProbs[Discovery] > threshold

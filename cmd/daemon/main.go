@@ -104,7 +104,7 @@ func (s *SensorInterface) generateMockHGVState() SensorState {
 	t := float64(time.Now().UnixMilli()%10000) / 1000.0
 
 	// Altitude oscillation (skip-glide)
-	altitude := 60.0 + 15.0*sin(0.5*t) // 60±15km
+	altitude := 60.0 + 15.0*math.Sin(0.5*t) // 60±15km
 
 	// Downrange distance
 	downrange := 100.0 + 7.0*t // ~7km/s
@@ -118,9 +118,9 @@ func (s *SensorInterface) generateMockHGVState() SensorState {
 
 	// Velocity
 	vel := [3]float64{
-		7.0,              // Vx: ~Mach 23
-		0.0,              // Vy
-		1.5 * cos(0.5*t), // Vz: vertical rate from skip
+		7.0,                   // Vx: ~Mach 23
+		0.0,                   // Vy
+		1.5 * math.Cos(0.5*t), // Vz: vertical rate from skip
 	}
 
 	return SensorState{
@@ -168,7 +168,7 @@ func (na *NeuralAtmosphere) GetLocalConditions(pos [3]float64) (AtmosphereCondit
 	// Simple exponential atmosphere model (mock)
 	rho0 := 1.225 // kg/m³ at sea level
 	H := 8.5      // Scale height (km)
-	density := rho0 * exp(-altitude/H)
+	density := rho0 * math.Exp(-altitude/H)
 
 	// Temperature and Mach
 	temp := 288.15 - 0.0065*altitude*1000 // Standard atmosphere
@@ -177,7 +177,7 @@ func (na *NeuralAtmosphere) GetLocalConditions(pos [3]float64) (AtmosphereCondit
 	}
 
 	// Speed of sound
-	a := sqrt(1.4 * 287.05 * temp)
+	a := math.Sqrt(1.4 * 287.05 * temp)
 
 	// Velocity magnitude (mock: assume ~7km/s)
 	vMag := 7.0 // km/s
@@ -217,7 +217,7 @@ func (phs *PHSModel) Predict(state SensorState, rho float64) [6]float64 {
 	vel := state.Velocity
 
 	// Distance from Earth center
-	r := sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2])
+	r := math.Sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2])
 
 	// Gravity acceleration
 	mu := 398600.4418 // km³/s²
@@ -226,7 +226,7 @@ func (phs *PHSModel) Predict(state SensorState, rho float64) [6]float64 {
 	az_grav := -mu * pos[2] / (r * r * r)
 
 	// Drag acceleration (simplified)
-	vMag := sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2])
+	vMag := math.Sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2])
 	if vMag > 1e-6 {
 		// Drag coefficient (mock)
 		Cd := 0.3
@@ -308,8 +308,8 @@ func (s *SymplecticPHS) Hamiltonian(q, p, z []float64) float64 {
 	pos := [3]float64{q[0], q[1], q[2]}
 	vel := [3]float64{p[0], p[1], p[2]}
 
-	r := sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2])
-	vMag := sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2])
+	r := math.Sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2])
+	vMag := math.Sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2])
 
 	mu := 398600.4418 // km³/s²
 
@@ -485,7 +485,7 @@ func (mg *ManifoldGate) Validate(state SensorState) (valid bool, reason string) 
 	mg.totalChecks++
 
 	// Check position norm
-	posNorm := sqrt(state.Position[0]*state.Position[0] +
+	posNorm := math.Sqrt(state.Position[0]*state.Position[0] +
 		state.Position[1]*state.Position[1] +
 		state.Position[2]*state.Position[2])
 
@@ -495,7 +495,7 @@ func (mg *ManifoldGate) Validate(state SensorState) (valid bool, reason string) 
 	}
 
 	// Check velocity norm
-	velNorm := sqrt(state.Velocity[0]*state.Velocity[0] +
+	velNorm := math.Sqrt(state.Velocity[0]*state.Velocity[0] +
 		state.Velocity[1]*state.Velocity[1] +
 		state.Velocity[2]*state.Velocity[2])
 
@@ -546,12 +546,6 @@ func computeResidual(actual [3]float64, predicted [6]float64) [6]float64 {
 		actual[2] - predicted[5],
 	}
 }
-
-// Math helpers (to avoid import issues)
-func sin(x float64) float64  { return math.Sin(x) }
-func cos(x float64) float64  { return math.Cos(x) }
-func sqrt(x float64) float64 { return math.Sqrt(x) }
-func exp(x float64) float64  { return math.Exp(x) }
 
 // repeatString repeats a string n times (helper for logging)
 func repeatString(s string, n int) string {

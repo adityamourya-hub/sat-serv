@@ -43,6 +43,8 @@ training-data/
 certs/*.key
 *.pem
 *.key
+.env
+.env.*
 
 # Build artefacts
 /closed_loop_custody
