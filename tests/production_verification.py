@@ -22,15 +22,17 @@ def test_maneuver_onnx():
     sess = ort.InferenceSession(path)
     assert len(sess.get_inputs()) == 1
     assert sess.get_inputs()[0].name == "maneuver_window"
-    # NOTE: Model exported with fixed batch size in attention reshape.
-    # Runtime inference requires exact export batch or re-export with
-    # dynamic_axes for batch dimension. Loading verified, inference
-    # skipped pending re-export.
+    # Test inference with multiple batch sizes
+    for bs in [1, 4]:
+        dummy = np.random.randn(bs, 10, 2).astype(np.float32)
+        out = sess.run(None, {"maneuver_window": dummy})
+        assert len(out) == 4
+        assert out[0].shape == (bs, 1)  # probability
+        assert out[1].shape == (bs, 2)  # type logits
     names = [o.name for o in sess.get_outputs()]
     assert "maneuver_probability" in names
-    assert len(names) == 4
-    RESULTS["maneuver_detector"] = "PASS (load only — batch reshape pending re-export)"
-    print("[PASS] Maneuver detector ONNX load verified (inference needs batch-matched re-export)")
+    RESULTS["maneuver_detector"] = "PASS"
+    print("[PASS] Maneuver detector ONNX load + inference (dynamic batch)")
 
 
 def test_collision_onnx():

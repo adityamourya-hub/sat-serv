@@ -1,5 +1,5 @@
 {
-  "maneuver_detector": "PASS (load only \u2014 batch reshape pending re-export)",
+  "maneuver_detector": "PASS",
   "collision_risk": "PASS",
   "navic_anomaly": "PASS",
   "navic_pytorch_onnx_parity": "PASS",

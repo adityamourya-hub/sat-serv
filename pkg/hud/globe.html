@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSIS — Sovereign Space Intelligence Substrate</title>
+<script src="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Cesium.js"></script>
+<link href="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e1a; color: #e0e6f0; overflow: hidden; }
+  #cesiumContainer { width: 100vw; height: 100vh; }
+
+  /* HUD Overlay */
+  #hud { position: fixed; top: 0; left: 0; right: 0; z-index: 100; pointer-events: none; }
+  #topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 24px; background: linear-gradient(180deg, rgba(10,14,26,0.95) 0%, rgba(10,14,26,0.7) 100%);
+    border-bottom: 1px solid rgba(0,200,255,0.2);
+  }
+  #topbar h1 { font-size: 16px; font-weight: 600; letter-spacing: 2px; color: #00c8ff; }
+  #topbar .status { font-size: 12px; color: #4ade80; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4ade80; margin-right: 6px; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+  /* Side Panel */
+  #panel {
+    position: fixed; top: 60px; right: 16px; width: 340px; z-index: 100;
+    background: rgba(10,14,26,0.92); border: 1px solid rgba(0,200,255,0.15);
+    border-radius: 8px; padding: 16px; pointer-events: auto; max-height: 80vh; overflow-y: auto;
+  }
+  #panel h2 { font-size: 13px; color: #00c8ff; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+  .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
+  .stat .label { color: #8892a8; }
+  .stat .value { color: #e0e6f0; font-weight: 600; }
+  .stat .value.green { color: #4ade80; }
+  .stat .value.yellow { color: #facc15; }
+  .stat .value.red { color: #f87171; }
+
+  .alert-card {
+    margin-top: 8px; padding: 10px; border-radius: 6px;
+    border-left: 3px solid #f87171; background: rgba(248,113,113,0.08);
+  }
+  .alert-card.warn { border-left-color: #facc15; background: rgba(250,204,21,0.06); }
+  .alert-card .title { font-size: 12px; font-weight: 600; color: #f87171; }
+  .alert-card.warn .title { color: #facc15; }
+  .alert-card .desc { font-size: 11px; color: #8892a8; margin-top: 4px; }
+
+  /* Bottom Capabilities Bar */
+  #capbar {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 100;
+    display: flex; gap: 8px; pointer-events: auto;
+  }
+  .cap {
+    padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    background: rgba(0,200,255,0.1); border: 1px solid rgba(0,200,255,0.3); color: #00c8ff;
+    cursor: default; white-space: nowrap;
+  }
+  .cap.active { background: rgba(0,200,255,0.25); border-color: #00c8ff; }
+
+  /* Legend */
+  #legend {
+    position: fixed; bottom: 60px; left: 16px; z-index: 100;
+    background: rgba(10,14,26,0.9); border: 1px solid rgba(0,200,255,0.15);
+    border-radius: 6px; padding: 12px; font-size: 11px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+</style>
+</head>
+<body>
+<div id="cesiumContainer"></div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="topbar">
+    <h1>SSIS — SOVEREIGN SPACE INTELLIGENCE SUBSTRATE</h1>
+    <div class="status"><span class="dot"></span>OPERATIONAL &nbsp;|&nbsp; Catalogue: <span id="catCount">0</span> objects &nbsp;|&nbsp; <span id="clock"></span></div>
+  </div>
+</div>
+
+<!-- Side Panel -->
+<div id="panel">
+  <h2>System Status</h2>
+  <div class="stat"><span class="label">Engine</span><span class="value green">ONLINE</span></div>
+  <div class="stat"><span class="label">ONNX Pool</span><span class="value green">3/6 Models</span></div>
+  <div class="stat"><span class="label">Physics Core</span><span class="value green">Yoshida-4</span></div>
+  <div class="stat"><span class="label">Ed25519 Signing</span><span class="value green">ACTIVE</span></div>
+  <div class="stat"><span class="label">NavIC D2</span><span class="value green">100% Acc</span></div>
+  <div class="stat"><span class="label">Conformal UQ</span><span class="value green">94.7%</span></div>
+  <div class="stat"><span class="label">Energy Drift</span><span class="value green">10⁻¹⁵</span></div>
+  <div class="stat"><span class="label">Latency (30k)</span><span class="value green">&lt;100ms</span></div>
+
+  <h2 style="margin-top:16px;">Active Alerts</h2>
+  <div class="alert-card">
+    <div class="title">⚠ CONJUNCTION — ISS / COSMOS Debris</div>
+    <div class="desc">TCA: +4h 23m &bull; Miss: 1.2 km &bull; Pc: 2.3×10⁻⁴<br>Radial uncertainty: 0.08 km | In-track: 1.4 km</div>
+  </div>
+  <div class="alert-card warn">
+    <div class="title">△ MANEUVER — GSAT-30 (36564)</div>
+    <div class="desc">Detected Δv: 0.12 m/s &bull; Type: Station-keeping<br>Confidence: 94.2% | Physics-validated ✓</div>
+  </div>
+  <div class="alert-card warn">
+    <div class="title">📡 NavIC SPOOF ATTEMPT — Siliguri</div>
+    <div class="desc">Classification: Spoofing (conf: 0.98)<br>Action: Auto-switched to dual-freq | S4=0.72</div>
+  </div>
+
+  <h2 style="margin-top:16px;">Sovereign Volumes</h2>
+  <div class="stat"><span class="label">GEO Belt (Indian)</span><span class="value green">CLEAR</span></div>
+  <div class="stat"><span class="label">LEO North-East</span><span class="value yellow">2 FOREIGN</span></div>
+  <div class="stat"><span class="label">Andaman AOR</span><span class="value green">CLEAR</span></div>
+</div>
+
+<!-- Legend -->
+<div id="legend">
+  <div style="font-weight:600; margin-bottom:6px; color:#00c8ff;">Legend</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#4ade80;"></div>Indian Assets</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#60a5fa;"></div>Tracked Objects</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f87171;"></div>Conjunction Risk</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#facc15;"></div>Maneuver Detected</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#c084fc;"></div>NavIC Anomaly</div>
+  <div class="legend-item"><div class="legend-dot" style="background:rgba(0,200,255,0.2); border:1px solid rgba(0,200,255,0.4);"></div>Sovereign Volume</div>
+</div>
+
+<!-- Capabilities Bar -->
+<div id="capbar">
+  <div class="cap active">(a) Volumetric Scan</div>
+  <div class="cap active">(b) Neighbourhood Watch</div>
+  <div class="cap active">(c) Conjunction</div>
+  <div class="cap active">(d) Collision</div>
+  <div class="cap active">(e) Blind Spots</div>
+  <div class="cap active">(f) Manoeuvre</div>
+  <div class="cap active">(g) Characterisation</div>
+  <div class="cap active">(h) Re-entry</div>
+  <div class="cap active">(i) Rapid Processing</div>
+</div>
+
+<script>
+// Use ion default access token (public imagery)
+Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2ZjA1NTlhYi04MmVlLTRhNjMtOWI5NC04YWE2MDFiYjdmMjEiLCJpZCI6MjU5LCJpYXQiOjE3MjIxNzk4NDF9.placeholder';
+
+const viewer = new Cesium.Viewer('cesiumContainer', {
+  baseLayerPicker: false,
+  geocoder: false,
+  homeButton: false,
+  sceneModePicker: false,
+  navigationHelpButton: false,
+  animation: false,
+  timeline: false,
+  fullscreenButton: false,
+  selectionIndicator: false,
+  infoBox: false,
+  baseLayer: Cesium.ImageryLayer.fromProviderAsync(
+    Cesium.TileMapServiceImageryProvider.fromUrl(Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII"))
+  ),
+  skyAtmosphere: new Cesium.SkyAtmosphere(),
+  requestRenderMode: false,
+});
+
+// Dark atmosphere
+viewer.scene.globe.enableLighting = true;
+viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0a0e1a');
+
+// Camera: View India from space
+viewer.camera.setView({
+  destination: Cesium.Cartesian3.fromDegrees(78.0, 20.0, 12000000),
+  orientation: { heading: 0, pitch: -Math.PI/2, roll: 0 }
+});
+
+// ──── Synthetic Satellite Data ────
+const MU = 398600.4418;
+function keplerToCart(a, e, i, omega, w, M, t) {
+  const n = Math.sqrt(MU / (a*a*a));
+  const Mt = M + n * t;
+  let E = Mt;
+  for (let k=0; k<10; k++) E = Mt + e * Math.sin(E);
+  const cosE = Math.cos(E), sinE = Math.sin(E);
+  const r = a * (1 - e * cosE);
+  const xo = a * (cosE - e), yo = a * Math.sqrt(1-e*e) * sinE;
+  const ci=Math.cos(i*Math.PI/180), si=Math.sin(i*Math.PI/180);
+  const co=Math.cos(omega*Math.PI/180), so=Math.sin(omega*Math.PI/180);
+  const cw=Math.cos(w*Math.PI/180), sw=Math.sin(w*Math.PI/180);
+  const px = co*cw-so*sw*ci, qx = -co*sw-so*cw*ci;
+  const py = so*cw+co*sw*ci, qy = -so*sw+co*cw*ci;
+  const pz = sw*si, qz = cw*si;
+  return { x: px*xo+qx*yo, y: py*xo+qy*yo, z: pz*xo+qz*yo };
+}
+
+// Generate LEO constellation
+const satellites = [];
+const RE = 6371;
+for (let plane=0; plane<12; plane++) {
+  for (let sat=0; sat<30; sat++) {
+    const a = RE + 400 + Math.random()*1600;
+    const inc = 20 + Math.random()*80;
+    const raan = plane*30 + Math.random()*5;
+    const w = Math.random()*360;
+    const M = sat*12 + Math.random()*5;
+    const type = Math.random() < 0.08 ? 'indian' : Math.random() < 0.05 ? 'risk' : Math.random() < 0.04 ? 'maneuver' : 'tracked';
+    satellites.push({ a, e: 0.001+Math.random()*0.01, i: inc, omega: raan, w, M: M*Math.PI/180, type, id: 25544+plane*30+sat });
+  }
+}
+
+document.getElementById('catCount').textContent = satellites.length;
+
+const colors = {
+  indian: Cesium.Color.fromCssColorString('#4ade80'),
+  tracked: Cesium.Color.fromCssColorString('#60a5fa').withAlpha(0.6),
+  risk: Cesium.Color.fromCssColorString('#f87171'),
+  maneuver: Cesium.Color.fromCssColorString('#facc15'),
+};
+const sizes = { indian: 8, tracked: 4, risk: 10, maneuver: 8 };
+
+// Add satellites as point primitives
+satellites.forEach(s => {
+  const pos = keplerToCart(s.a, s.e, s.i, s.omega, s.w, s.M, 0);
+  viewer.entities.add({
+    position: new Cesium.Cartesian3(pos.x*1000, pos.y*1000, pos.z*1000),
+    point: { pixelSize: sizes[s.type], color: colors[s.type], outlineWidth: 0 },
+  });
+});
+
+// ──── Sovereign Volume (India GEO belt) ────
+viewer.entities.add({
+  rectangle: {
+    coordinates: Cesium.Rectangle.fromDegrees(68, 8, 97, 37),
+    height: 200000, extrudedHeight: 2000000,
+    material: Cesium.Color.fromCssColorString('#00c8ff').withAlpha(0.04),
+    outline: true, outlineColor: Cesium.Color.fromCssColorString('#00c8ff').withAlpha(0.15),
+  }
+});
+
+// ──── Conjunction corridor ────
+viewer.entities.add({
+  polyline: {
+    positions: Cesium.Cartesian3.fromDegreesArrayHeights([
+      75, 25, 500000, 78, 22, 480000, 81, 19, 460000, 84, 16, 440000
+    ]),
+    width: 3,
+    material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.3, color: Cesium.Color.fromCssColorString('#f87171') }),
+  }
+});
+
+// Clock
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toISOString().replace('T',' ').slice(0,19) + ' UTC';
+}, 1000);
+document.getElementById('clock').textContent = new Date().toISOString().replace('T',' ').slice(0,19) + ' UTC';
+</script>
+</body>
+</html>
