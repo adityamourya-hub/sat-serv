@@ -141,8 +141,9 @@ class ConformalPredictor:
 
         Negative score means y is inside the interval.
         """
-        score = jnp.maximum(q_lower - y_true, y_true - q_upper)
-        return float(score)
+        score = jnp.maximum(jnp.squeeze(q_lower) - jnp.squeeze(y_true),
+                            jnp.squeeze(y_true) - jnp.squeeze(q_upper))
+        return float(jnp.squeeze(score))
 
     def calibrate(
         self,
@@ -246,6 +247,8 @@ class ConformalPredictor:
 
         if self.quantile_model is not None:
             q_lower, q_upper = self.quantile_model.apply(self.quantile_params, x)
+            q_lower = jnp.squeeze(q_lower)
+            q_upper = jnp.squeeze(q_upper)
         else:
             q_lower = y_pred - 1.0
             q_upper = y_pred + 1.0
