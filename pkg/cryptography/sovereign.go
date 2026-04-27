@@ -17,6 +17,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/binary"
+	"math"
 	"time"
 )
 
@@ -39,9 +40,9 @@ type Auditor interface {
 type ManeuverDetection struct {
 	ObjectID    string
 	Timestamp   time.Time
-	ResidualRMS float64   // Mathematical proof (non-ballistic behavior)
-	Confidence  float64   // Bayesian score (0-1)
-	Threshold   float64   // Detection threshold used
+	ResidualRMS float64    // Mathematical proof (non-ballistic behavior)
+	Confidence  float64    // Bayesian score (0-1)
+	Threshold   float64    // Detection threshold used
 	Position    [3]float64 // ECI km
 	Velocity    [3]float64 // ECI km/s
 }
@@ -49,13 +50,13 @@ type ManeuverDetection struct {
 // Attestation is the "Proof of Aggression" datagram
 type Attestation struct {
 	// Header
-	Version   uint8     // Schema version (1)
-	Timestamp int64     // Unix nanoseconds
-	AuditorID [16]byte  // Unique auditor identifier
+	Version   uint8    // Schema version (1)
+	Timestamp int64    // Unix nanoseconds
+	AuditorID [16]byte // Unique auditor identifier
 
 	// Event
-	ObjectID  string  // NORAD ID
-	EventType uint8   // 0x01 = MANEUVER
+	ObjectID  string // NORAD ID
+	EventType uint8  // 0x01 = MANEUVER
 
 	// Proof
 	MerkleRoot  [32]byte // Commitment to raw frames
@@ -163,14 +164,14 @@ func serializeAttestation(a Attestation) []byte {
 	buf = append(buf, []byte(a.ObjectID)...)
 	buf = append(buf, a.EventType)
 	buf = append(buf, a.MerkleRoot[:]...)
-	buf = binary.LittleEndian.AppendUint64(buf, uint64(a.ResidualRMS))
-	buf = binary.LittleEndian.AppendUint64(buf, uint64(a.Confidence))
-	buf = binary.LittleEndian.AppendUint64(buf, uint64(a.Threshold))
+	buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(a.ResidualRMS))
+	buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(a.Confidence))
+	buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(a.Threshold))
 
 	// Position and velocity
 	for i := 0; i < 3; i++ {
-		buf = binary.LittleEndian.AppendUint64(buf, uint64(a.Position[i]))
-		buf = binary.LittleEndian.AppendUint64(buf, uint64(a.Velocity[i]))
+		buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(a.Position[i]))
+		buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(a.Velocity[i]))
 	}
 
 	return buf

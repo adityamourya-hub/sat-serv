@@ -54,7 +54,8 @@ class PlasmaConsumer:
         self,
         plasma_socket: str = "/tmp/plasma",
         zmq_endpoint: str = "ipc:///tmp/sensor_notify.sock",
-        temp_dir: str = "/tmp/iaf_frames"
+        temp_dir: str = "/tmp/iaf_frames",
+        zmq_topic: str = "SSIS_SENSOR"
     ):
         self.plasma_client = None
         self.temp_dir = temp_dir
@@ -71,7 +72,7 @@ class PlasmaConsumer:
         self.zmq_context = zmq.Context()
         self.zmq_socket = self.zmq_context.socket(zmq.SUB)
         self.zmq_socket.connect(zmq_endpoint)
-        self.zmq_socket.setsockopt_string(zmq.SUBSCRIBE, "")  # Subscribe to all
+        self.zmq_socket.setsockopt_string(zmq.SUBSCRIBE, zmq_topic)  # Filtered subscription
 
         self.callbacks: List[Callable[[np.ndarray, SensorFrameMetadata], None]] = []
 
@@ -147,10 +148,11 @@ class PlasmaConsumer:
                 logger.warning(f"Object not found in Plasma: {metadata.object_id}")
                 return None
 
-            # Convert to NumPy array (zero-copy via buffer protocol)
+            # Convert to NumPy array via buffer protocol (zero-copy)
             buffer = buffers[0]
-            frame_array = np.frombuffer(buffer, dtype=metadata.dtype).copy()
-            frame_array = frame_array.reshape((metadata.height, metadata.width))
+            frame_array = np.frombuffer(buffer, dtype=metadata.dtype).reshape(
+                (metadata.height, metadata.width)
+            )
 
             # Release Plasma object reference
             self.plasma_client.release(obj_id)

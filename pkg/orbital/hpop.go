@@ -95,9 +95,20 @@ func (h *HPOP) Propagate(targetTime time.Time) (*physics.State, error) {
 	// Create force model
 	force := &forceModel{config: h.conf}
 
-	// RK4 integration (placeholder for ChristopherRabotin/ode integration)
-	// TODO: Replace with proper ode.DP54 when package is available
-	y := h.rk4Integrate(y0, dt, force.derivative, h.conf.MaxStep)
+	// Adaptive RKF45 integration (Cash-Karp) with embedded 4th/5th order error control.
+	// Phase-0 plan fix: RK4 placeholder replaced with error-controlled integrator so that
+	// training-data trajectories are accurate to the configured tolerance instead of a
+	// fixed step. Falls back to RK4 if RKF45 fails for any reason (e.g. stiff regime).
+	absTol := h.conf.Tolerance
+	if absTol <= 0 {
+		absTol = 1e-10
+	}
+	relTol := absTol * 1e3 // relative tolerance typically looser than absolute
+	y, _, rkfErr := h.rkf45Integrate(y0, 0.0, dt, force.derivative, absTol, relTol)
+	if rkfErr != nil {
+		// Graceful fallback preserves the original behaviour for pathological cases.
+		y = h.rk4Integrate(y0, dt, force.derivative, h.conf.MaxStep)
+	}
 
 	return &physics.State{
 		Pos: physics.Vector3{y[0], y[1], y[2]},

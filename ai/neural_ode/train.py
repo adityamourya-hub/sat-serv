@@ -36,7 +36,6 @@ from port_hamiltonian_pytorch import (
     PortHamiltonianSystem,
     create_port_hamiltonian_system,
     GHNNVectorField,  # DEPRECATED: Use PortHamiltonianSystem instead
-    HamiltonianNet,  # DEPRECATED: Use PortHamiltonianSystem instead
 )
 
 # Emit deprecation warning for training usage
@@ -91,29 +90,55 @@ class CanonicalTrajectoryDataset(Dataset):
     def __init__(self, high_fidelity_file: str):
         self.samples = []
         logger.info(f"Loading high-fidelity data from {high_fidelity_file}")
-        
-        with open(high_fidelity_file, 'r') as f:
-            data = json.load(f)
-            
-        for sat in data:
+
+        path = Path(high_fidelity_file)
+
+        # Detect file format: JSONL (line-delimited) vs JSON (single object)
+        if path.suffix == '.jsonl':
+            # Stream JSONL line-by-line to avoid MemoryError on large files
+            with open(path, 'r') as f:
+                for line_num, line in enumerate(f):
+                    if line_num % 100000 == 0:
+                        logger.info(f"  Processed {line_num} lines...")
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        sat = json.loads(line)
+                        self._process_satellite(sat)
+                    except (json.JSONDecodeError, KeyError) as e:
+                        logger.warning(f"  Skipping malformed line {line_num}: {e}")
+                        continue
+        else:
+            # Legacy JSON format: single object containing list of satellites
+            with open(path, 'r') as f:
+                data = json.load(f)
+            for sat in data:
+                self._process_satellite(sat)
+
+        logger.info(f"Normalized {len(self.samples)} trajectories to DU/TU units.")
+
+    def _process_satellite(self, sat: dict):
+        """Process a single satellite trajectory and normalize to canonical units."""
+        try:
             states = np.array(sat['states'], dtype=np.float32)
             times = np.array(sat['time_points'], dtype=np.float32)
-            
+
             # Normalize to Canonical Units
             # states: [T, 6] -> [x, y, z, vx, vy, vz]
             q = states[:, :3] / RE_KM
             p = states[:, 3:] * (TU_SEC / RE_KM)
             normalized_states = np.concatenate([q, p], axis=-1)
             normalized_times = times / TU_SEC
-            
+
             self.samples.append({
                 'sat_id': sat['sat_id'],
                 'initial_state': normalized_states[0],
                 'times': normalized_times,
                 'states': normalized_states
             })
-        
-        logger.info(f"Normalized {len(self.samples)} trajectories to DU/TU units.")
+        except KeyError as e:
+            logger.warning(f"  Skipping satellite with missing key: {e}")
 
     def __len__(self):
         return len(self.samples)
@@ -332,99 +357,6 @@ def compute_sparse_loss(z_sequence, noise_floor=1e-5, lambda_sparse=0.01):
     sparsity_loss = torch.mean(deadband_penalty)
     
     return lambda_sparse * sparsity_loss
-
-
-def get_symplectic_form(device):
-    """
-    Returns the standard symplectic form J = [[0, I], [-I, 0]].
-    
-    Args:
-        device: torch device
-        
-    Returns:
-        J: [6, 6] skew-symmetric matrix
-    """
-    I = torch.eye(3, device=device)
-    Z = torch.zeros(3, 3, device=device)
-    J = torch.cat([
-        torch.cat([Z, I], dim=1),
-        torch.cat([-I, Z], dim=1)
-    ], dim=0)
-    return J
-
-
-def compute_symplectic_jacobian_loss(model, z_t, dt, lambda_symp=1e-3):
-    """
-    Compute symplectic loss by penalizing Jacobian deviation from symplectic condition.
-    
-    The symplectic condition requires: M^T * J * M = J
-    where M = d(z_next)/d(z_t) is the Jacobian of the flow map.
-    
-    Loss: L_symp = ||M^T * J * M - J||_F^2
-    
-    Args:
-        model: GHNNVectorField
-        z_t: [batch, 6] Current state
-        dt: Time step
-        lambda_symp: Weight for symplectic penalty
-        
-    Returns:
-        loss_symp: Scalar symplectic loss
-        residual_norm: Frobenius norm of symplectic residual (for monitoring)
-    """
-    batch_size = z_t.shape[0]
-    device = z_t.device
-    
-    # Get symplectic form
-    J = get_symplectic_form(device)  # [6, 6]
-    
-    # Define single-step map for Jacobian computation
-    def single_step_map(z_single):
-        """Wrapper for vmap - takes and returns single state."""
-        z_in = z_single.unsqueeze(0)  # [1, 6]
-        z_out = forest_ruth_step(model, z_in, dt)  # [1, 6]
-        return z_out.squeeze(0)  # [6]
-    
-    # Compute Jacobian using vmap for efficiency on H100
-    # batch_jacobian[i] = d(z_next_i)/d(z_i) for sample i
-    # This gives us [batch, 6, 6] Jacobian tensor
-    try:
-        batch_jacobian = torch.vmap(
-            lambda z: torch.autograd.functional.jacobian(single_step_map, z, create_graph=True)
-        )(z_t)
-    except RuntimeError:
-        # Fallback: compute Jacobians individually if vmap fails
-        jacobians = []
-        for i in range(batch_size):
-            z_i = z_t[i]
-            jac_i = torch.autograd.functional.jacobian(single_step_map, z_i, create_graph=True)
-            jacobians.append(jac_i)
-        batch_jacobian = torch.stack(jacobians)
-    
-    # Compute symplectic residual: M^T * J * M - J
-    # batch_jacobian: [batch, 6, 6]
-    MT = batch_jacobian.transpose(-1, -2)  # [batch, 6, 6]
-    
-    # M^T * J
-    MT_J = torch.matmul(MT, J.unsqueeze(0).expand(batch_size, -1, -1))  # [batch, 6, 6]
-    
-    # M^T * J * M
-    MT_J_M = torch.matmul(MT_J, batch_jacobian)  # [batch, 6, 6]
-    
-    # Symplectic residual
-    J_expanded = J.unsqueeze(0).expand(batch_size, -1, -1)  # [batch, 6, 6]
-    symp_residual = MT_J_M - J_expanded  # [batch, 6, 6]
-    
-    # Frobenius norm squared (per sample)
-    residual_norm_sq = torch.sum(symp_residual ** 2, dim=(-2, -1))  # [batch]
-    
-    # Mean over batch
-    loss_symp = lambda_symp * residual_norm_sq.mean()
-    
-    # Return loss and monitoring metric
-    residual_norm = torch.sqrt(residual_norm_sq).mean()
-    
-    return loss_symp, residual_norm
 
 
 class SymplecticAugmentedLoss(nn.Module):
@@ -828,15 +760,40 @@ def main():
         return  # Exit after validation
     
     logger.info("Starting Sovereign GHNN Training...")
+
+    best_loss = float('inf')
+
     for epoch in range(args.epochs):
         loss = trainer.train_epoch(loader)
         if epoch % 10 == 0:
             logger.info(f"Epoch {epoch}: Loss = {loss:.6f}")
-            
+
+        # Save best model
+        if loss < best_loss:
+            best_loss = loss
+            torch.save(model.state_dict(), output_dir / "ghnn_best.pt")
+            logger.info(f"Saved best model with loss: {best_loss:.6f}")
+
+        # Periodic checkpoint every 10 epochs (survives VM reboot)
+        if epoch % 10 == 0 and epoch > 0:
+            checkpoint_path = output_dir / f"ghnn_checkpoint_epoch_{epoch}.pt"
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': trainer.optimizer.state_dict(),
+                'best_loss': best_loss,
+            }, checkpoint_path)
+            logger.info(f"Checkpoint saved: {checkpoint_path}")
+
+    # Final save
+    torch.save(model.state_dict(), output_dir / "ghnn_final.pt")
+
     # Final Export
     onnx_path = output_dir / "axiom_hnode_v1.onnx"
     export_ghnn_to_onnx(model, str(onnx_path))
     logger.info(f"Training complete. Model exported to {onnx_path}")
+    logger.info(f"Best model saved to: {output_dir / 'ghnn_best.pt'}")
+    logger.info(f"Final model saved to: {output_dir / 'ghnn_final.pt'}")
 
 if __name__ == "__main__":
     main()

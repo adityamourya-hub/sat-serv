@@ -9,20 +9,30 @@ import (
 
 /**
  * ONNXPool manages the lifecycle of multiple inference sessions.
- * It provides "Provider-Agile" loading (CPU/CUDA/oneDNN) and acts as the 
+ * It provides "Provider-Agile" loading (CPU/CUDA/oneDNN) and acts as the
  * centralized dispatcher for the 75 UKF workers and the collision worker.
- * 
+ *
  * Finalized in Phase 1.7 to include ATeena-IQNet (Sensing) integration.
- * 
- * <plan_complexity>Medium</plan_complexity><total_lines_estimate>180</total_lines_estimate>
+ *
+ * <plan_complexity>Medium</plan_complexity><total_lines_estimate>180</plan_complexity>
  */
 type ONNXPool struct {
 	Axiom    *onnx.Session
 	Maneuver *onnx.Session
 	PC       *onnx.Session // Collision Probability model
 	Sensing  *onnx.Session // ATeena-IQNet Sensing model
-	
-	SHM      *SharedMemoryManager
+
+	SHM *SharedMemoryManager
+
+	// DegradedModels tracks model IDs that fell back to MockInferrer.
+	// A non-empty slice means the pool is operating in degraded mode.
+	DegradedModels []string
+}
+
+// IsHealthy returns true only when all models loaded from real ONNX files.
+// Safety-critical callers must check this before using inference results.
+func (p *ONNXPool) IsHealthy() bool {
+	return len(p.DegradedModels) == 0
 }
 
 /**
@@ -30,7 +40,7 @@ type ONNXPool struct {
  */
 func NewONNXPool(modelDir string, provider string) (*ONNXPool, error) {
 	fmt.Printf("DEBUG: Initializing ONNXPool with provider=%s at %v\n", provider, time.Now())
-	
+
 	if provider == "" {
 		provider = "CPU"
 	}
@@ -43,14 +53,14 @@ func NewONNXPool(modelDir string, provider string) (*ONNXPool, error) {
 		MaxBatchSize:      32,
 		ExecutionProvider: provider,
 	}
-	
+
 	maneuverCfg := onnx.SessionConfig{
 		ModelPath:         fmt.Sprintf("%s/maneuver_v2.onnx", modelDir),
 		ModelID:           "Ateena-Maneuver-GATv2",
 		MaxBatchSize:      32,
 		ExecutionProvider: provider,
 	}
-	
+
 	pcCfg := onnx.SessionConfig{
 		ModelPath:         fmt.Sprintf("%s/collision_risk_v2.onnx", modelDir),
 		ModelID:           "Sovereign-Evidential-PC",
@@ -69,13 +79,16 @@ func NewONNXPool(modelDir string, provider string) (*ONNXPool, error) {
 	var axiomInferrer, maneuverInferrer, pcInferrer, sensingInferrer onnx.Inferrer
 	var err error
 
+	var degraded []string
+
 	axiomInferrer, err = onnx.NewNativeInferrer(
 		axiomCfg.ModelPath, axiomCfg.ModelID, "v1.0",
 		[]string{"state"}, []string{"dynamics"},
 	)
 	if err != nil {
-		fmt.Printf("WARNING: Failed to load Native Axiom Inferrer: %v. Falling back to Mock.\n", err)
+		fmt.Printf("[CRITICAL] Axiom-HNODE ONNX load failed: %v — using MockInferrer. Inference results are NON-AUTHORITATIVE.\n", err)
 		axiomInferrer = &MockInferrer{ID: "Axiom"}
+		degraded = append(degraded, "Axiom-HNODE")
 	}
 
 	maneuverInferrer, err = onnx.NewNativeInferrer(
@@ -83,7 +96,9 @@ func NewONNXPool(modelDir string, provider string) (*ONNXPool, error) {
 		[]string{"history"}, []string{"maneuver_class", "confidence"},
 	)
 	if err != nil {
+		fmt.Printf("[CRITICAL] Maneuver-GATv2 ONNX load failed: %v — using MockInferrer. Inference results are NON-AUTHORITATIVE.\n", err)
 		maneuverInferrer = &MockInferrer{ID: "Maneuver"}
+		degraded = append(degraded, "Maneuver-GATv2")
 	}
 
 	pcInferrer, err = onnx.NewNativeInferrer(
@@ -91,7 +106,9 @@ func NewONNXPool(modelDir string, provider string) (*ONNXPool, error) {
 		[]string{"proximity_data"}, []string{"pc", "ttca"},
 	)
 	if err != nil {
+		fmt.Printf("[CRITICAL] Collision-PC ONNX load failed: %v — using MockInferrer. Inference results are NON-AUTHORITATIVE.\n", err)
 		pcInferrer = &MockInferrer{ID: "PC"}
+		degraded = append(degraded, "Sovereign-Evidential-PC")
 	}
 
 	sensingInferrer, err = onnx.NewNativeInferrer(
@@ -99,19 +116,25 @@ func NewONNXPool(modelDir string, provider string) (*ONNXPool, error) {
 		[]string{"iq_buffer"}, []string{"detection_matrix"},
 	)
 	if err != nil {
+		fmt.Printf("[CRITICAL] ATeena-IQNet ONNX load failed: %v — using MockInferrer. Inference results are NON-AUTHORITATIVE.\n", err)
 		sensingInferrer = &MockInferrer{ID: "Sensing"}
+		degraded = append(degraded, "ATeena-IQNet")
 	}
 
 	pool := &ONNXPool{
-		Axiom:    onnx.NewSession(axiomCfg, axiomInferrer),
-		Maneuver: onnx.NewSession(maneuverCfg, maneuverInferrer),
-		PC:       onnx.NewSession(pcCfg, pcInferrer),
-		Sensing:  onnx.NewSession(sensingCfg, sensingInferrer),
-		SHM:      shm,
+		Axiom:          onnx.NewSession(axiomCfg, axiomInferrer),
+		Maneuver:       onnx.NewSession(maneuverCfg, maneuverInferrer),
+		PC:             onnx.NewSession(pcCfg, pcInferrer),
+		Sensing:        onnx.NewSession(sensingCfg, sensingInferrer),
+		SHM:            shm,
+		DegradedModels: degraded,
 	}
-	
-	fmt.Printf("DEBUG: ONNXPool initialized successfully.\n")
-	// Exit Point: Pool Ready
+
+	if len(degraded) > 0 {
+		fmt.Printf("[CRITICAL] ONNXPool degraded: %v. Pool is NOT flight-ready.\n", degraded)
+	} else {
+		fmt.Printf("[INFO] ONNXPool initialized — all models healthy.\n")
+	}
 	return pool, nil
 }
 
@@ -160,9 +183,17 @@ func (m *MockInferrer) Close() error { return nil }
  * Close shuts down all managed sessions.
  */
 func (p *ONNXPool) Close() error {
-	if p.Axiom != nil { p.Axiom.Close() }
-	if p.Maneuver != nil { p.Maneuver.Close() }
-	if p.PC != nil { p.PC.Close() }
-	if p.Sensing != nil { p.Sensing.Close() }
+	if p.Axiom != nil {
+		p.Axiom.Close()
+	}
+	if p.Maneuver != nil {
+		p.Maneuver.Close()
+	}
+	if p.PC != nil {
+		p.PC.Close()
+	}
+	if p.Sensing != nil {
+		p.Sensing.Close()
+	}
 	return nil
 }

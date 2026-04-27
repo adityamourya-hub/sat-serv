@@ -1,11 +1,11 @@
 package engine
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"runtime"
 	"syscall"
-	"unsafe"
 
 	"github.com/apache/arrow/go/v15/arrow"
 	"github.com/apache/arrow/go/v15/arrow/array"
@@ -16,7 +16,7 @@ import (
 /**
  * SharedMemoryManager handles zero-copy IPC between Go and Python (ONNX).
  * It utilizes the Apache Arrow IPC format and POSIX shared memory (/dev/shm).
- * 
+ *
  * Finalized in Phase 2 for high-throughput IQ and SAR streaming.
  */
 type SharedMemoryManager struct {
@@ -35,7 +35,7 @@ func NewSharedMemoryManager(name string, size int64) (*SharedMemoryManager, erro
 		shmPath = fmt.Sprintf("/tmp/%s", name) // macOS fallback
 	}
 
-	f, err := os.OpenFile(shmPath, os.O_RDWR|os.O_CREATE, 0666)
+	f, err := os.OpenFile(shmPath, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("shm open failed: %w", err)
 	}
@@ -60,16 +60,26 @@ func NewSharedMemoryManager(name string, size int64) (*SharedMemoryManager, erro
 /**
  * WriteRecord serializes an Arrow Record to the shared memory buffer.
  * It uses the Arrow IPC Stream format for true zero-copy accessibility.
+ * Pre-serializes to a temporary buffer to measure size before committing to mmap.
  */
 func (s *SharedMemoryManager) WriteRecord(record arrow.Record) error {
-	// Create a buffer wrapper over the mmap'd shared memory
-	// In Phase 2, we ensure the stream header is correctly aligned
-	writer := ipc.NewWriter(os.NewFile(uintptr(unsafe.Pointer(&s.data[0])), "shm"), ipc.WithSchema(record.Schema()))
-	defer writer.Close()
-
+	// Pre-serialize into a temporary buffer to determine the write size
+	var buf bytes.Buffer
+	writer := ipc.NewWriter(&buf, ipc.WithSchema(record.Schema()))
 	if err := writer.Write(record); err != nil {
-		return fmt.Errorf("arrow zero-copy write failed: %w", err)
+		writer.Close()
+		return fmt.Errorf("arrow ipc serialize failed: %w", err)
 	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("arrow ipc close failed: %w", err)
+	}
+
+	payload := buf.Bytes()
+	if int64(len(payload)) > s.size {
+		return fmt.Errorf("record size %d exceeds shm buffer %d: refusing write", len(payload), s.size)
+	}
+
+	copy(s.data, payload)
 	return nil
 }
 

@@ -326,8 +326,23 @@ func (wr *WALReplay) replayRSOUpdate(entry WALEntry) error {
 }
 
 func (wr *WALReplay) replayRRUpdate(entry WALEntry) error {
-	// RRI updates are handled by the RRIStore
-	// This is a placeholder for RRI replay logic
+	// Validate payload is large enough to hold a ReachabilityIndex header
+	if len(entry.Payload) < 8 {
+		return fmt.Errorf("RRI payload too small: %d bytes", len(entry.Payload))
+	}
+
+	// Deserialize target ID from payload to confirm the record is parseable
+	targetID := binary.LittleEndian.Uint32(entry.Payload[0:4])
+
+	// NOTE: Full RRI replay requires an RRIStore reference wired into WALReplay.
+	// Until then, flag these objects for re-computation on next observation cycle.
+	if state, ok := wr.catalog.Get(targetID); ok {
+		state.Flags |= 0x04 // RRI_NEEDS_RECOMPUTE
+		if err := wr.catalog.Put(state); err != nil {
+			return fmt.Errorf("failed to flag RRI recompute for target %d: %w", targetID, err)
+		}
+	}
+	fmt.Printf("[WAL] RRI replay: target %d flagged for RRI recompute (wire up RRIStore for full recovery)\n", targetID)
 	return nil
 }
 

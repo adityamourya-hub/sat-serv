@@ -51,8 +51,8 @@ func NewONNXSession(modelPath, device string) (*ONNXSession, error) {
 	// Create session with default input/output names
 	session, err := onnx.NewAdvancedSession(
 		modelPath,
-		[]string{"output"}, // output name
 		[]string{"input"},  // input name
+		[]string{"output"}, // output name
 		[]*onnx.Tensor{inputTensor},
 		[]*onnx.Tensor{outputTensor},
 		nil, // session options
@@ -123,7 +123,9 @@ func (s *ONNXSession) GetOutputShape() []int64 {
 // Close releases the ONNX session resources
 func (s *ONNXSession) Close() error {
 	if s.session != nil {
+		err := s.session.Destroy()
 		s.session = nil
+		return err
 	}
 	return nil
 }
