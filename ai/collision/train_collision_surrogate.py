@@ -67,9 +67,16 @@ class CollisionGraphDataset(Dataset):
         # Ionospheric context
         iono = torch.tensor(rec["iono_context"], dtype=torch.float32)
         
-        # Labels
-        y_conj = torch.tensor(rec["labels"]["conjunction"], dtype=torch.float32)
-        y_man = torch.tensor(rec["labels"]["maneuver"], dtype=torch.long)
+        # Labels — support both nested {"labels": {...}} and flat {"conjunction_risk": ..., "maneuver_label": ...}
+        if "labels" in rec:
+            y_conj = torch.tensor(rec["labels"]["conjunction"], dtype=torch.float32)
+            y_man = torch.tensor(rec["labels"]["maneuver"], dtype=torch.long)
+        else:
+            conj_raw = rec.get("conjunction_risk", [rec.get("pc", 0.0), 0.0, 0.0])
+            if not isinstance(conj_raw, list):
+                conj_raw = [float(conj_raw), 0.0, 0.0]
+            y_conj = torch.tensor(conj_raw, dtype=torch.float32)
+            y_man = torch.tensor(int(rec.get("maneuver_label", 0)), dtype=torch.long)
         
         return torch.from_numpy(nodes), torch.from_numpy(adj), iono, y_conj, y_man
 

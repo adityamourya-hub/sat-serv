@@ -523,15 +523,30 @@ Examples:
     torch.save(model.state_dict(), pth_path)
     logger.info(f"Model saved to {pth_path}")
     
-    # Export to ONNX for Go runtime integration
-    logger.info("Exporting to ONNX...")
+    # Export model for Go runtime integration
     model_device = next(model.parameters()).device
     dummy_input = torch.randn(1, 6).to(model_device)
+
+    # Save TorchScript traced model (always works; usable via libtorch or torchscript)
+    pt_path = model_dir / 'neural_atmosphere_traced.pt'
+    try:
+        traced = torch.jit.trace(model, dummy_input)
+        traced.save(str(pt_path))
+        logger.info(f"TorchScript export complete: {pt_path}")
+    except Exception as e:
+        logger.warning(f"TorchScript export failed: {e}")
+
+    # Attempt ONNX export (aten::fft_rfft support varies by opset/version)
     onnx_path = model_dir / 'neural_atmosphere.onnx'
-    torch.onnx.export(model, dummy_input, str(onnx_path),
-                     input_names=['input'], output_names=['density'],
-                     dynamic_axes={'input': {0: 'batch_size'}, 'density': {0: 'batch_size'}})
-    logger.info(f"ONNX export complete: {onnx_path}")
+    try:
+        torch.onnx.export(model, dummy_input, str(onnx_path),
+                         opset_version=17,
+                         input_names=['input'], output_names=['density'],
+                         dynamic_axes={'input': {0: 'batch_size'}, 'density': {0: 'batch_size'}})
+        logger.info(f"ONNX export complete: {onnx_path}")
+    except Exception as e:
+        logger.warning(f"ONNX export not supported for FNO (FFT ops): {e}")
+        logger.warning("Use the TorchScript model (.pt) for inference instead.")
 
 
 if __name__ == '__main__':
