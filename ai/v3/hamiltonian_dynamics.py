@@ -20,6 +20,11 @@ import torch.nn.functional as F
 from typing import Tuple, Optional, List
 import numpy as np
 
+try:
+    from .sympnet import LASympNet, GSympNet
+except ImportError:
+    from sympnet import LASympNet, GSympNet
+
 
 class SymplecticLinear(nn.Module):
     """
@@ -455,30 +460,107 @@ class ManeuverResidualHNN(nn.Module):
         return detected, max_anomaly, residuals
 
 
+class SympNetFlow(nn.Module):
+    """
+    SympNet-based symplectic flow map for orbital dynamics.
+
+    Replaces the autograd-based GeneralizedHNN with a LASympNet or GSympNet
+    that is symplectic by construction (Jin 2020). The network itself IS the
+    integrator, avoiding the need for separate symplectic integration or
+    energy-drift monitoring.
+
+    Uses LASympNet by default (fewer parameters, faster) or GSympNet
+    for higher expressivity when HGV wake complexity demands it.
+    """
+
+    def __init__(self,
+                 state_dim: int = 6,
+                 arch: str = "lasympnet",
+                 depth: int = 5,
+                 nhidden: int = 1,
+                 n_layers: int = 2,
+                 upscaling_dim: Optional[int] = None,
+                 activation=nn.Tanh(),
+                 dt_scale: bool = True):
+        super().__init__()
+        self.state_dim = state_dim
+        self.dt_scale = dt_scale
+
+        if arch == "lasympnet":
+            self.net = LASympNet(
+                dim=state_dim,
+                depth=depth,
+                nhidden=nhidden,
+                activation=activation,
+                init_upper_linear=True,
+                init_upper_act=True
+            )
+        elif arch == "gsympnet":
+            self.net = GSympNet(
+                dim=state_dim,
+                n_layers=n_layers,
+                upscaling_dim=upscaling_dim or 2 * state_dim,
+                activation=activation,
+                init_upper=True
+            )
+        else:
+            raise ValueError(f"Unknown arch: {arch}. Choose 'lasympnet' or 'gsympnet'.")
+
+    def forward(self, state: torch.Tensor, dt: float = 60.0) -> torch.Tensor:
+        """Single symplectic step via the learned flow map."""
+        if self.dt_scale:
+            # Scale state by dt to encode time-step information
+            # The network learns to map scaled state -> next state
+            scaled = state * dt / 600.0  # Normalize to 10-min reference
+            out = self.net(scaled)
+            return state + out  # Residual connection for better gradient flow
+        else:
+            return self.net(state)
+
+    def integrate(self, initial_state: torch.Tensor, dt: float, n_steps: int) -> torch.Tensor:
+        """Integrate trajectory using the symplectic flow map."""
+        return self.net.integrate(initial_state, dt, n_steps)
+
+    def hamiltonian(self, state: torch.Tensor) -> torch.Tensor:
+        """
+        SympNets are flow maps, not Hamiltonian networks.
+        Return zero as a placeholder; for true Hamiltonian recovery,
+        use the DPHNO layer or GeneralizedHNN.
+        """
+        return torch.zeros(state.size(0), 1, device=state.device)
+
+    def equations_of_motion(self, state: torch.Tensor) -> torch.Tensor:
+        """Approximate vector field from finite difference."""
+        dt = 1.0
+        next_state = self.forward(state, dt)
+        return (next_state - state) / dt
+
+
 def train_hnn_orbital():
     """Training orchestrator for HNN on orbital data"""
     pass
 
 
 if __name__ == "__main__":
-    # Quick test
-    hnn = GeneralizedHNN(state_dim=6, hidden_dim=128, n_layers=3)
-    
     # Test state: LEO-like orbit
     initial_state = torch.tensor([[7000.0, 0.0, 0.0, 0.0, 7.5, 0.0]])  # [km, km/s]
-    
-    # Integrate for 1 orbit (~90 min at 10-min steps)
-    dt = 600.0  # 10 minutes
+    dt = 600.0
     n_steps = 9
-    
+
+    # --- GeneralizedHNN (autograd-based, vanilla Greydanus HNN) ---
+    hnn = GeneralizedHNN(state_dim=6, hidden_dim=128, n_layers=3)
     trajectory = hnn.integrate(initial_state, dt, n_steps, method="leapfrog")
-    
-    # Check energy drift
     drift = hnn.energy_drift(trajectory)
-    print(f"Trajectory shape: {trajectory.shape}")
-    print(f"Energy drift: {drift.item():.2e}")
-    
-    # Test reachability cone
+    print(f"[GeneralizedHNN] Trajectory shape: {trajectory.shape}")
+    print(f"[GeneralizedHNN] Energy drift: {drift.item():.2e}")
+
+    # --- SympNetFlow (symplectic by construction, Jin 2020) ---
+    symp = SympNetFlow(state_dim=6, arch="lasympnet", depth=5, nhidden=1, activation=nn.Tanh())
+    symp_traj = symp.integrate(initial_state, dt, n_steps)
+    print(f"[SympNetFlow] Trajectory shape: {symp_traj.shape}")
+    print(f"[SympNetFlow] Guaranteed symplectic by construction (no energy-drift check needed)")
+
+    # --- ReachabilityCone ---
     reachability = ReachabilityCone(hnn, time_horizon_hours=6.0)
     cone = reachability.compute_reachable_set(initial_state, impulse_budget_ms=5.0)
     print(f"Reachability cone max radius: {cone['max_radius_km']:.2f} km")

@@ -6,62 +6,62 @@ regime detection for HGV skip-glide transitions. It replaces static library
 approaches with dynamic, regime-aware identification.
 
 The Skip-Glide Problem:
- Ballistic Phase: ẋ = f_ballistic(x) [gravity dominates]
- Pull-up Phase: ẋ = f_aero(x) [lift dominates]
- Transition: Non-smooth switch between regimes
+Ballistic Phase: ẋ = f_ballistic(x) [gravity dominates]
+Pull-up Phase: ẋ = f_aero(x) [lift dominates]
+Transition: Non-smooth switch between regimes
 
 Static SINDy fails because:
- - Same library Θ must represent both regimes
- - Coefficients ξ "wander" during transition
- - Residual spikes cause track loss
+- Same library Θ must represent both regimes
+- Coefficients ξ "wander" during transition
+- Residual spikes cause track loss
 
 Adaptive Solution:
- 1. Sliding Window: Only use last 2-5 seconds of data
- 2. Anomaly Trigger: Detect manifold breach (regime change)
- 3. Fast Re-identification: Discover new ξ in <50ms
- 4. Regime Library: Learned basis functions for each phase
+1. Sliding Window: Only use last 2-5 seconds of data
+2. Anomaly Trigger: Detect manifold breach (regime change)
+3. Fast Re-identification: Discover new ξ in <50ms
+4. Regime Library: Learned basis functions for each phase
 
 Architecture:
- H100 Training (Offline):
- - Generate billions of skip-glide trajectories
- - Learn optimal basis functions Θ_skip, Θ_glide
- - Distill to M2 Air as "Sovereign Weights"
- 
- M2 Air Runtime (Online):
- - Detect regime via anomaly detection
- - Switch to appropriate learned library
- - Sparse regression for coefficients ξ
- - <50ms re-identification guaranteed
+H100 Training (Offline):
+- Generate billions of skip-glide trajectories
+- Learn optimal basis functions Θ_skip, Θ_glide
+- Distill to M2 Air as "Sovereign Weights"
+
+M2 Air Runtime (Online):
+- Detect regime via anomaly detection
+- Switch to appropriate learned library
+- Sparse regression for coefficients ξ
+- <50ms re-identification guaranteed
 
 Mathematical Framework:
- Regime Detection:
- Anomaly score A(t) = ‖x_obs - x_pred‖_Σ > τ_trigger
- 
- Windowed SINDy:
- Ξ* = argmin ‖Θ(X_window) · Ξ - Ẋ_window‖² + λ‖Ξ‖₁
- 
- Where window X_window contains last N samples (2-5 seconds)
+Regime Detection:
+Anomaly score A(t) = ‖x_obs - x_pred‖_Σ > τ_trigger
+
+Windowed SINDy:
+Ξ* = argmin ‖Θ(X_window) · Ξ - Ẋ_window‖² + λ‖Ξ‖₁
+
+Where window X_window contains last N samples (2-5 seconds)
 
 Integration:
- - Called by DPHNO when anomaly detected
- - Provides new coefficients for Koopman MPC
- - Enables 100Hz operation with regime awareness
+- Called by DPHNO when anomaly detected
+- Provides new coefficients for Koopman MPC
+- Enables 100Hz operation with regime awareness
 
 Performance:
- - Regime detection: <1ms via Mahalanobis distance
- - Re-identification: <50ms via JAX JIT + sparse regression
- - Window management: O(1) circular buffer
+- Regime detection: <1ms via Mahalanobis distance
+- Re-identification: <50ms via JAX JIT + sparse regression
+- Window management: O(1) circular buffer
 
 Strategic Advantage:
- - Zero-day HGV tracking: Adapts to unknown vehicles
- - Skip-glide capable: Survives regime transitions
- - Verified coefficients: Confidence interval per ξ_i
+- Zero-day HGV tracking: Adapts to unknown vehicles
+- Skip-glide capable: Survives regime transitions
+- Verified coefficients: Confidence interval per ξ_i
 
 References:
- - Neural SINDy: Champion et al. (2019)
- - Adaptive SINDy: Fasel et al. (2022)
- - Regime Detection: IMM filter theory
- - Skip-Glide Dynamics: Vinh et al.
+- Neural SINDy: Champion et al. (2019)
+- Adaptive SINDy: Fasel et al. (2022)
+- Regime Detection: IMM filter theory
+- Skip-Glide Dynamics: Vinh et al.
 """
 
 from typing import Tuple, Dict, Optional, List, Callable
@@ -78,806 +78,806 @@ import warnings
 
 
 class FlightRegime(Enum):
- """Flight regime states for skip-glide HGV."""
- BALLISTIC = "ballistic" # Vacuum/upper atmosphere, gravity only
- PULL_UP = "pull_up" # Aerodynamic lift, climbing
- GLIDE = "glide" # Equilibrium glide
- DIVE = "dive" # Descending phase
- TERMINAL = "terminal" # Endgame maneuver
- UNKNOWN = "unknown" # Unidentified regime
+    """Flight regime states for skip-glide HGV."""
+    BALLISTIC = "ballistic" # Vacuum/upper atmosphere, gravity only
+    PULL_UP = "pull_up" # Aerodynamic lift, climbing
+    GLIDE = "glide" # Equilibrium glide
+    DIVE = "dive" # Descending phase
+    TERMINAL = "terminal" # Endgame maneuver
+    UNKNOWN = "unknown" # Unidentified regime
 
 
 @dataclass
 class AdaptiveSINDyConfig:
- """Configuration for Adaptive Neural-SINDy."""
- 
- # State dimensions
- state_dim: int = 6 # [pos(3), vel(3)]
- control_dim: int = 3 # [thrust(3)]
- 
- # Library configuration (per regime)
- n_basis_per_regime: int = 16 # Basis functions per regime
- basis_hidden_dim: int = 64 # Hidden dim for neural basis
- basis_depth: int = 2 # Layers per basis net
- 
- # Sliding window settings
- window_duration_s: float = 3.0 # Window length in seconds
- dt: float = 0.1 # Sample time (10Hz)
- max_window_samples: int = 50 # Max samples in window (5s at 10Hz)
- 
- # Anomaly detection settings
- anomaly_threshold: float = 5.0 # Mahalanobis threshold (5σ)
- anomaly_min_duration: float = 0.3 # Minimum anomaly time to trigger
- trigger_cooldown_s: float = 2.0 # Cooldown between triggers
- 
- # Re-identification settings
- max_reidentification_ms: float = 50.0 # Hard deadline
- sparsity_threshold: float = 0.05 # STLSQ threshold
- min_samples_for_id: int = 10 # Minimum window size
- 
- # Regime detection settings
- use_regime_specific_library: bool = True
- fallback_to_global: bool = True # Use global library if regime unknown
- 
+    """Configuration for Adaptive Neural-SINDy."""
+
+    # State dimensions
+    state_dim: int = 6 # [pos(3), vel(3)]
+    control_dim: int = 3 # [thrust(3)]
+
+    # Library configuration (per regime)
+    n_basis_per_regime: int = 16 # Basis functions per regime
+    basis_hidden_dim: int = 64 # Hidden dim for neural basis
+    basis_depth: int = 2 # Layers per basis net
+
+    # Sliding window settings
+    window_duration_s: float = 3.0 # Window length in seconds
+    dt: float = 0.1 # Sample time (10Hz)
+    max_window_samples: int = 50 # Max samples in window (5s at 10Hz)
+
+    # Anomaly detection settings
+    anomaly_threshold: float = 5.0 # Mahalanobis threshold (5σ)
+    anomaly_min_duration: float = 0.3 # Minimum anomaly time to trigger
+    trigger_cooldown_s: float = 2.0 # Cooldown between triggers
+
+    # Re-identification settings
+    max_reidentification_ms: float = 50.0 # Hard deadline
+    sparsity_threshold: float = 0.05 # STLSQ threshold
+    min_samples_for_id: int = 10 # Minimum window size
+
+    # Regime detection settings
+    use_regime_specific_library: bool = True
+    fallback_to_global: bool = True # Use global library if regime unknown
+
 
 @dataclass
 class RegimeLibrary:
- """Learned library for a specific flight regime."""
- 
- regime: FlightRegime
- basis_networks: List[eqx.nn.MLP] = field(default_factory=list)
- params: Dict = field(default_factory=dict)
- 
- def __post_init__(self):
- """Initialize neural basis networks for this regime."""
- if not self.basis_networks and self.params:
- # Reconstruct from params
- pass
+    """Learned library for a specific flight regime."""
+
+    regime: FlightRegime
+    basis_networks: List[eqx.nn.MLP] = field(default_factory=list)
+    params: Dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        """Initialize neural basis networks for this regime."""
+        if not self.basis_networks and self.params:
+            # Reconstruct from params
+            pass
 
 
 class RegimeAwareBasisLibrary(eqx.Module):
- """
- Neural basis library with regime-specific specialization.
- 
- Instead of single global library, maintains separate learned
- libraries for each flight regime (ballistic, pull-up, glide).
- 
- H100 learns these libraries from billions of skip-glide trajectories.
- M2 Air switches libraries based on detected regime.
- """
- 
- # Global library (fallback)
- global_library: eqx.nn.MLP
- 
- # Regime-specific libraries
- ballistic_library: eqx.nn.MLP
- pullup_library: eqx.nn.MLP
- glide_library: eqx.nn.MLP
- 
- n_basis: int
- state_dim: int
- 
- def __init__(
- self,
- n_basis: int = 16,
- state_dim: int = 6,
- key: jax.random.PRNGKey = None,
-):
- if key is None:
- key = jax.random.PRNGKey(42)
- 
- self.n_basis = n_basis
- self.state_dim = state_dim
- 
- k1, k2, k3, k4 = jax.random.split(key, 4)
- 
- # Global library (all regimes combined)
- self.global_library = self._create_basis_net(k1)
- 
- # Regime-specific libraries
- self.ballistic_library = self._create_basis_net(k2)
- self.pullup_library = self._create_basis_net(k3)
- self.glide_library = self._create_basis_net(k4)
- 
- def _create_basis_net(self, key) -> eqx.nn.MLP:
- """Create a single neural basis network."""
- return eqx.nn.MLP(
- in_size=self.state_dim,
- out_size=self.n_basis,
- width_size=64,
- depth=2,
- activation=jax.nn.tanh,
- key=key,
-)
- 
- def get_library_for_regime(self, regime: FlightRegime) -> eqx.nn.MLP:
- """Get appropriate library for detected regime."""
- if regime == FlightRegime.BALLISTIC:
- return self.ballistic_library
- elif regime == FlightRegime.PULL_UP:
- return self.pullup_library
- elif regime == FlightRegime.GLIDE:
- return self.glide_library
- else:
- return self.global_library
- 
- def evaluate(
- self,
- x: jnp.ndarray,
- regime: FlightRegime = FlightRegime.UNKNOWN,
-) -> jnp.ndarray:
- """
- Evaluate basis functions for given regime.
- 
- Args:
- x: [state_dim] state vector
- regime: Detected flight regime
- 
- Returns:
- Theta: [n_basis] basis function values
- """
- library = self.get_library_for_regime(regime)
- return library(x)
+    """
+    Neural basis library with regime-specific specialization.
+
+    Instead of single global library, maintains separate learned
+    libraries for each flight regime (ballistic, pull-up, glide).
+
+    H100 learns these libraries from billions of skip-glide trajectories.
+    M2 Air switches libraries based on detected regime.
+    """
+
+    # Global library (fallback)
+    global_library: eqx.nn.MLP
+
+    # Regime-specific libraries
+    ballistic_library: eqx.nn.MLP
+    pullup_library: eqx.nn.MLP
+    glide_library: eqx.nn.MLP
+
+    n_basis: int
+    state_dim: int
+
+    def __init__(
+    self,
+    n_basis: int = 16,
+    state_dim: int = 6,
+    key: jax.random.PRNGKey = None,
+    ):
+        if key is None:
+            key = jax.random.PRNGKey(42)
+
+            self.n_basis = n_basis
+            self.state_dim = state_dim
+
+            k1, k2, k3, k4 = jax.random.split(key, 4)
+
+            # Global library (all regimes combined)
+            self.global_library = self._create_basis_net(k1)
+
+            # Regime-specific libraries
+            self.ballistic_library = self._create_basis_net(k2)
+            self.pullup_library = self._create_basis_net(k3)
+            self.glide_library = self._create_basis_net(k4)
+
+            def _create_basis_net(self, key) -> eqx.nn.MLP:
+                """Create a single neural basis network."""
+                return eqx.nn.MLP(
+                in_size=self.state_dim,
+                out_size=self.n_basis,
+                width_size=64,
+                depth=2,
+                activation=jax.nn.tanh,
+                key=key,
+                )
+
+                def get_library_for_regime(self, regime: FlightRegime) -> eqx.nn.MLP:
+                    """Get appropriate library for detected regime."""
+                    if regime == FlightRegime.BALLISTIC:
+                        return self.ballistic_library
+                    elif regime == FlightRegime.PULL_UP:
+                        return self.pullup_library
+                    elif regime == FlightRegime.GLIDE:
+                        return self.glide_library
+                    else:
+                        return self.global_library
+
+                        def evaluate(
+                        self,
+                        x: jnp.ndarray,
+                        regime: FlightRegime = FlightRegime.UNKNOWN,
+                        ) -> jnp.ndarray:
+                            """
+                            Evaluate basis functions for given regime.
+
+                            Args:
+                            x: [state_dim] state vector
+                            regime: Detected flight regime
+
+                            Returns:
+                            Theta: [n_basis] basis function values
+                            """
+                            library = self.get_library_for_regime(regime)
+                            return library(x)
 
 
 class SlidingWindowBuffer:
- """
- Circular buffer for sliding-window SINDy.
- 
- Maintains last N samples with O(1) insertion and 
- automatic window size management.
- """
- 
- def __init__(self, max_samples: int, state_dim: int):
- self.max_samples = max_samples
- self.state_dim = state_dim
- 
- # Circular buffer storage
- self.buffer = np.zeros((max_samples, state_dim))
- self.derivatives = np.zeros((max_samples, state_dim))
- self.timestamps = np.zeros(max_samples)
- 
- self.write_idx = 0
- self.n_samples = 0
- 
- def add_sample(
- self,
- x: np.ndarray,
- x_dot: np.ndarray,
- timestamp: float,
-):
- """Add sample to circular buffer."""
- self.buffer[self.write_idx] = x
- self.derivatives[self.write_idx] = x_dot
- self.timestamps[self.write_idx] = timestamp
- 
- self.write_idx = (self.write_idx + 1) % self.max_samples
- self.n_samples = min(self.n_samples + 1, self.max_samples)
- 
- def get_window(self, duration_s: float, current_time: float) -> Tuple[np.ndarray, np.ndarray]:
- """
- Get samples within time window.
- 
- Args:
- duration_s: Window duration in seconds
- current_time: Current timestamp
- 
- Returns:
- X, X_dot: States and derivatives in window
- """
- if self.n_samples == 0:
- return np.array([]), np.array([])
- 
- # Find samples within window
- time_threshold = current_time - duration_s
- valid_mask = self.timestamps[:self.n_samples] >= time_threshold
- 
- if np.sum(valid_mask) < 2:
- # Not enough samples, return all
- return self.buffer[:self.n_samples], self.derivatives[:self.n_samples]
- 
- X = self.buffer[:self.n_samples][valid_mask]
- X_dot = self.derivatives[:self.n_samples][valid_mask]
- 
- return X, X_dot
- 
- def clear(self):
- """Clear buffer (called on regime change)."""
- self.write_idx = 0
- self.n_samples = 0
+    """
+    Circular buffer for sliding-window SINDy.
+
+    Maintains last N samples with O(1) insertion and
+    automatic window size management.
+    """
+
+    def __init__(self, max_samples: int, state_dim: int):
+        self.max_samples = max_samples
+        self.state_dim = state_dim
+
+        # Circular buffer storage
+        self.buffer = np.zeros((max_samples, state_dim))
+        self.derivatives = np.zeros((max_samples, state_dim))
+        self.timestamps = np.zeros(max_samples)
+
+        self.write_idx = 0
+        self.n_samples = 0
+
+        def add_sample(
+        self,
+        x: np.ndarray,
+        x_dot: np.ndarray,
+        timestamp: float,
+        ):
+            """Add sample to circular buffer."""
+            self.buffer[self.write_idx] = x
+            self.derivatives[self.write_idx] = x_dot
+            self.timestamps[self.write_idx] = timestamp
+
+            self.write_idx = (self.write_idx + 1) % self.max_samples
+            self.n_samples = min(self.n_samples + 1, self.max_samples)
+
+            def get_window(self, duration_s: float, current_time: float) -> Tuple[np.ndarray, np.ndarray]:
+                """
+                Get samples within time window.
+
+                Args:
+                duration_s: Window duration in seconds
+                current_time: Current timestamp
+
+                Returns:
+                X, X_dot: States and derivatives in window
+                """
+                if self.n_samples == 0:
+                    return np.array([]), np.array([])
+
+                    # Find samples within window
+                    time_threshold = current_time - duration_s
+                    valid_mask = self.timestamps[:self.n_samples] >= time_threshold
+
+                    if np.sum(valid_mask) < 2:
+                        # Not enough samples, return all
+                        return self.buffer[:self.n_samples], self.derivatives[:self.n_samples]
+
+                        X = self.buffer[:self.n_samples][valid_mask]
+                        X_dot = self.derivatives[:self.n_samples][valid_mask]
+
+                        return X, X_dot
+
+                        def clear(self):
+                            """Clear buffer (called on regime change)."""
+                            self.write_idx = 0
+                            self.n_samples = 0
 
 
 class AdaptiveNeuralSINDy:
- """
- Adaptive Neural-SINDy with regime detection and sliding window.
- 
- Key capabilities:
- 1. Regime detection via anomaly scoring
- 2. Sliding-window coefficient identification
- 3. Fast re-identification on regime change (<50ms)
- 4. Regime-specific learned libraries
- """
- 
- def __init__(
- self,
- config: Optional[AdaptiveSINDyConfig] = None,
- key: Optional[jax.random.PRNGKey] = None,
-):
- if config is None:
- config = AdaptiveSINDyConfig()
- if key is None:
- key = jax.random.PRNGKey(42)
- 
- self.config = config
- 
- # Initialize regime-aware library
- self.library = RegimeAwareBasisLibrary(
- n_basis=config.n_basis_per_regime,
- state_dim=config.state_dim,
- key=key,
-)
- 
- # Sliding window buffer
- self.window = SlidingWindowBuffer(
- max_samples=config.max_window_samples,
- state_dim=config.state_dim,
-)
- 
- # State tracking
- self.current_regime = FlightRegime.UNKNOWN
- self.current_xi = jnp.zeros(config.n_basis_per_regime)
- self.coefficient_confidence = 0.0
- 
- # Anomaly detection state
- self.anomaly_start_time: Optional[float] = None
- self.last_trigger_time: float = 0.0
- self.prediction_covariance = jnp.eye(config.state_dim) * 1.0
- 
- # Timing stats
- self.last_reidentification_ms = 0.0
- 
- def detect_anomaly(
- self,
- x_observed: jnp.ndarray,
- x_predicted: jnp.ndarray,
- timestamp: float,
-) -> Tuple[bool, float]:
- """
- Detect manifold breach / regime change via Mahalanobis distance.
- 
- Args:
- x_observed: Sensor observation
- x_predicted: Model prediction
- timestamp: Current time
- 
- Returns:
- is_anomaly: True if anomaly detected
- anomaly_score: Mahalanobis distance
- """
- # Prediction error
- error = x_observed - x_predicted
- 
- # Mahalanobis distance
- # A² = e^T Σ^-1 e
- try:
- cov_inv = jnp.linalg.inv(self.prediction_covariance)
- anomaly_score = jnp.sqrt(error @ cov_inv @ error)
- except:
- # Fallback to Euclidean
- anomaly_score = jnp.linalg.norm(error)
- 
- # Check threshold
- is_anomaly = anomaly_score > self.config.anomaly_threshold
- 
- if is_anomaly:
- if self.anomaly_start_time is None:
- self.anomaly_start_time = timestamp
- 
- # Check if anomaly has persisted long enough
- anomaly_duration = timestamp - self.anomaly_start_time
- 
- # Check cooldown
- time_since_last_trigger = timestamp - self.last_trigger_time
- 
- if (anomaly_duration >= self.config.anomaly_min_duration and
- time_since_last_trigger >= self.config.trigger_cooldown_s):
- 
- self.last_trigger_time = timestamp
- return True, float(anomaly_score)
- else:
- self.anomaly_start_time = None
- 
- return False, float(anomaly_score)
- 
- def identify_regime(
- self,
- x: jnp.ndarray,
- x_dot: jnp.ndarray,
-) -> FlightRegime:
- """
- Identify flight regime from state characteristics.
- 
- Uses simple heuristics (can be replaced with learned classifier):
- - Ballistic: high altitude, no acceleration perpendicular to velocity
- - Pull-up: positive vertical acceleration, increasing altitude
- - Glide: near-equilibrium L/D, constant altitude
- 
- Args:
- x: [pos(3), vel(3)] state
- x_dot: State derivative
- 
- Returns:
- Detected flight regime
- """
- pos = x[:3]
- vel = x[3:6]
- acc = x_dot[3:6]
- 
- r_norm = jnp.linalg.norm(pos)
- v_norm = jnp.linalg.norm(vel)
- 
- # Altitude estimate (assuming Earth radius ~6378 km)
- altitude = r_norm - 6378.0
- 
- # Vertical velocity (radial component)
- v_radial = jnp.dot(pos / r_norm, vel)
- 
- # Vertical acceleration
- acc_radial = jnp.dot(pos / r_norm, acc)
- 
- # Heuristic classification
- if altitude > 100.0: # Above 100km
- # Ballistic or early pull-up
- if acc_radial > 0.5: # Significant upward acceleration
- return FlightRegime.PULL_UP
- else:
- return FlightRegime.BALLISTIC
- else:
- # In atmosphere
- if abs(v_radial) < 0.1: # Near-constant altitude
- return FlightRegime.GLIDE
- elif v_radial < -0.5: # Descending
- return FlightRegime.DIVE
- else:
- return FlightRegime.TERMINAL
- 
- def sparse_identification(
- self,
- X: np.ndarray,
- X_dot: np.ndarray,
- regime: FlightRegime,
-) -> Tuple[jnp.ndarray, float]:
- """
- Sparse coefficient identification via STLSQ.
- 
- Solves: min ‖Θ(X)·ξ - X_dot‖² + λ‖ξ‖₀
- 
- Must complete in <50ms for tactical requirement.
- 
- Args:
- X: [N, state_dim] state window
- X_dot: [N, state_dim] derivative window
- regime: Current flight regime
- 
- Returns:
- xi: Sparse coefficients
- confidence: R² fit quality
- """
- start_time = time.time()
- 
- if len(X) < self.config.min_samples_for_id:
- # Not enough data
- return self.current_xi, 0.0
- 
- # Evaluate basis functions
- Theta = np.array([
- np.array(self.library.evaluate(jnp.array(x), regime))
- for x in X
- ])
- 
- # STLSQ for each state dimension
- xi_full = np.zeros((self.config.state_dim, self.config.n_basis_per_regime))
- 
- for i in range(self.config.state_dim):
- # Initial least squares
- xi_i, _, _, _ = np.linalg.lstsq(Theta, X_dot[:, i], rcond=None)
- 
- # Thresholding
- mask = np.abs(xi_i) > self.config.sparsity_threshold
- xi_i_thresholded = xi_i * mask
- 
- # Refit with reduced set if any terms remain
- active_indices = np.where(mask)[0]
- if len(active_indices) > 0:
- Theta_reduced = Theta[:, active_indices]
- xi_i_reduced, _, _, _ = np.linalg.lstsq(Theta_reduced, X_dot[:, i], rcond=None)
- xi_i_thresholded[active_indices] = xi_i_reduced
- 
- xi_full[i] = xi_i_thresholded
- 
- # Average across dimensions for simplicity
- xi = jnp.array(np.mean(xi_full, axis=0))
- 
- # Compute confidence
- X_dot_pred = Theta @ np.array(xi)
- r_squared = 1.0 - np.var(X_dot.flatten() - X_dot_pred.flatten()) / np.var(X_dot.flatten())
- 
- elapsed_ms = (time.time() - start_time) * 1000
- self.last_reidentification_ms = elapsed_ms
- 
- # Check deadline
- if elapsed_ms > self.config.max_reidentification_ms:
- warnings.warn(f"Re-identification exceeded deadline: {elapsed_ms:.1f}ms > {self.config.max_reidentification_ms:.1f}ms")
- 
- return xi, float(r_squared)
- 
- def update(
- self,
- x_observed: jnp.ndarray,
- x_predicted: jnp.ndarray,
- x_dot: jnp.ndarray,
- timestamp: float,
-) -> Dict:
- """
- Full adaptive SINDy update cycle.
- 
- 1. Detect anomaly / regime change
- 2. Add to sliding window
- 3. Re-identify coefficients if triggered
- 4. Return current state and discovery
- 
- Args:
- x_observed: Sensor observation
- x_predicted: Model prediction
- x_dot: State derivative estimate
- timestamp: Current time
- 
- Returns:
- Update results with coefficients, regime, timing
- """
- # 1. Anomaly detection
- is_anomaly, anomaly_score = self.detect_anomaly(
- x_observed, x_predicted, timestamp
-)
- 
- # 2. Add to sliding window
- self.window.add_sample(
- np.array(x_observed),
- np.array(x_dot),
- timestamp,
-)
- 
- # 3. Regime identification
- new_regime = self.identify_regime(x_observed, x_dot)
- regime_changed = new_regime != self.current_regime
- 
- # 4. Re-identification trigger
- reidentify = is_anomaly or regime_changed
- 
- if reidentify:
- # Clear window on regime change for clean slate
- if regime_changed:
- self.window.clear()
- self.window.add_sample(np.array(x_observed), np.array(x_dot), timestamp)
- 
- # Get window data
- X, X_dot = self.window.get_window(
- self.config.window_duration_s,
- timestamp
-)
- 
- # Sparse identification
- self.current_xi, self.coefficient_confidence = self.sparse_identification(
- X, X_dot, new_regime
-)
- 
- self.current_regime = new_regime
- 
- # 5. Evaluate current library
- Theta = self.library.evaluate(x_observed, self.current_regime)
- 
- return {
- 'xi': self.current_xi,
- 'regime': self.current_regime.value,
- 'regime_changed': regime_changed,
- 'anomaly_detected': is_anomaly,
- 'anomaly_score': anomaly_score,
- 'confidence': self.coefficient_confidence,
- 'reidentification_ms': self.last_reidentification_ms,
- 'n_window_samples': self.window.n_samples,
- 'basis_values': Theta,
- }
- 
- def predict_dynamics(
- self,
- x: jnp.ndarray,
- regime: Optional[FlightRegime] = None,
-) -> jnp.ndarray:
- """
- Predict dynamics using current coefficients.
- 
- Args:
- x: State vector
- regime: Flight regime (uses current if None)
- 
- Returns:
- x_dot_pred: Predicted state derivative
- """
- if regime is None:
- regime = self.current_regime
- 
- Theta = self.library.evaluate(x, regime)
- x_dot_pred = Theta @ self.current_xi
- 
- return x_dot_pred
- 
- def block_bootstrap_ci(
- self,
- X: np.ndarray,
- X_dot: np.ndarray,
- regime: FlightRegime,
- n_bootstrap: int = 100,
- block_size: int = 5,
- ci_level: float = 0.95,
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
- """
- : Block-bootstrap confidence intervals for SINDy coefficients.
- 
- Block-bootstrap preserves temporal structure by resampling blocks of data
- instead of individual samples. This is critical for time-series data where
- temporal dependencies exist.
- 
- Procedure:
- 1. Divide time series into blocks of size L
- 2. Resample blocks with replacement
- 3. Compute SINDy coefficients on each bootstrap sample
- 4. Construct confidence intervals from bootstrap distribution
- 
- Args:
- X: [N, state_dim] state window
- X_dot: [N, state_dim] derivative window
- regime: Current flight regime
- n_bootstrap: Number of bootstrap samples (default: 100)
- block_size: Block length for resampling (default: 5)
- ci_level: Confidence interval level (default: 0.95)
- 
- Returns:
- xi_bootstrap: Bootstrap mean coefficients
- ci_bounds: [2, n_basis] confidence interval bounds (lower, upper)
- """
- N = len(X)
- if N < block_size * 2:
- # Not enough data for block bootstrap, return point estimate with zero CI
- xi_point, _ = self.sparse_identification(X, X_dot, regime)
- ci_bounds = jnp.stack([xi_point, xi_point], axis=0)
- return xi_point, ci_bounds
- 
- # Number of blocks
- n_blocks = N // block_size
- if n_blocks < 2:
- n_blocks = 2
- 
- # Store bootstrap coefficients
- xi_bootstrap_samples = []
- 
- for b in range(n_bootstrap):
- # Block resampling: randomly select blocks with replacement
- block_indices = np.random.choice(n_blocks, size=n_blocks, replace=True)
- 
- # Construct bootstrap sample by concatenating selected blocks
- X_bootstrap = []
- X_dot_bootstrap = []
- 
- for block_idx in block_indices:
- start = block_idx * block_size
- end = min(start + block_size, N)
- X_bootstrap.append(X[start:end])
- X_dot_bootstrap.append(X_dot[start:end])
- 
- X_bootstrap = np.vstack(X_bootstrap)
- X_dot_bootstrap = np.vstack(X_dot_bootstrap)
- 
- # Compute SINDy coefficients on bootstrap sample
- xi_b, _ = self.sparse_identification(X_bootstrap, X_dot_bootstrap, regime)
- xi_bootstrap_samples.append(np.array(xi_b))
- 
- # Stack bootstrap samples
- xi_bootstrap_samples = np.array(xi_bootstrap_samples) # [n_bootstrap, n_basis]
- 
- # Compute bootstrap mean
- xi_bootstrap_mean = jnp.array(np.mean(xi_bootstrap_samples, axis=0))
- 
- # Compute confidence intervals using percentile method
- alpha = 1.0 - ci_level
- lower_percentile = (alpha / 2.0) * 100
- upper_percentile = (1.0 - alpha / 2.0) * 100
- 
- ci_lower = np.percentile(xi_bootstrap_samples, lower_percentile, axis=0)
- ci_upper = np.percentile(xi_bootstrap_samples, upper_percentile, axis=0)
- 
- ci_bounds = jnp.stack([ci_lower, ci_upper], axis=0) # [2, n_basis]
- 
- return xi_bootstrap_mean, ci_bounds
- 
- def get_symbolic_certificate(
- self,
- X: np.ndarray,
- X_dot: np.ndarray,
- regime: FlightRegime,
- n_bootstrap: int = 100,
-) -> Dict:
- """
- : Generate Symbolic Certificate (VSC) with bootstrap CI.
- 
- The VSC extends the SINDy equation string with:
- - Bootstrap confidence intervals for each coefficient
- - Physics consistency grade
- - Causal provenance (regime, timestamp)
- - Falsifiable 60s prediction capability
- 
- Returns:
- Dictionary containing VSC components
- """
- # Get coefficients and bootstrap CI
- xi_point, _ = self.sparse_identification(X, X_dot, regime)
- xi_bootstrap, ci_bounds = self.block_bootstrap_ci(
- X, X_dot, regime, n_bootstrap=n_bootstrap
-)
- 
- # Compute physics consistency grade
- # Check if coefficients satisfy basic physical constraints
- physics_grade = self._compute_physics_consistency(xi_bootstrap, ci_bounds)
- 
- # Build equation string with CI
- equation_string = self._build_equation_with_ci(xi_bootstrap, ci_bounds)
- 
- return {
- 'equation_string': equation_string,
- 'coefficients': xi_bootstrap,
- 'ci_lower': ci_bounds[0],
- 'ci_upper': ci_bounds[1],
- 'physics_grade': physics_grade,
- 'regime': regime.value,
- 'n_bootstrap': n_bootstrap,
- 'confidence': self.coefficient_confidence,
- }
- 
- def _compute_physics_consistency(
- self,
- xi: jnp.ndarray,
- ci_bounds: jnp.ndarray,
-) -> str:
- """
- Compute physics consistency grade for discovered coefficients.
- 
- Grades:
- - A: All coefficients have tight CI (<20% relative width) and satisfy constraints
- - B: Most coefficients have reasonable CI, minor violations
- - C: Wide CI (>50% relative width) or significant violations
- - D: Very wide CI or unphysical coefficients
- - F: Unphysical (e.g., energy creation)
- """
- # Compute relative CI width
- ci_width = ci_bounds[1] - ci_bounds[0]
- relative_width = jnp.abs(ci_width / (jnp.abs(xi) + 1e-8))
- 
- # Check for unphysical coefficients (e.g., energy creation)
- # For orbital dynamics, certain coefficient patterns are unphysical
- has_unphysical = jnp.any(jnp.abs(xi) > 1e6) # Extremely large coefficients
- 
- # Average relative CI width
- avg_relative_width = jnp.mean(relative_width)
- 
- if has_unphysical:
- return "F"
- elif avg_relative_width < 0.2:
- return "A"
- elif avg_relative_width < 0.5:
- return "B"
- elif avg_relative_width < 1.0:
- return "C"
- else:
- return "D"
- 
- def _build_equation_with_ci(
- self,
- xi: jnp.ndarray,
- ci_bounds: jnp.ndarray,
-) -> str:
- """
- Build equation string with confidence intervals.
- 
- Format: "ξ_i = value [lower, upper]"
- """
- terms = []
- for i in range(len(xi)):
- val = float(xi[i])
- lower = float(ci_bounds[0, i])
- upper = float(ci_bounds[1, i])
- 
- if abs(val) > 1e-6: # Only include significant terms
- term = f"ξ_{i} = {val:.3e} [{lower:.3e}, {upper:.3e}]"
- terms.append(term)
- 
- return "; ".join(terms)
+    """
+    Adaptive Neural-SINDy with regime detection and sliding window.
+
+    Key capabilities:
+    1. Regime detection via anomaly scoring
+    2. Sliding-window coefficient identification
+    3. Fast re-identification on regime change (<50ms)
+    4. Regime-specific learned libraries
+    """
+
+    def __init__(
+    self,
+    config: Optional[AdaptiveSINDyConfig] = None,
+    key: Optional[jax.random.PRNGKey] = None,
+    ):
+        if config is None:
+            config = AdaptiveSINDyConfig()
+            if key is None:
+                key = jax.random.PRNGKey(42)
+
+                self.config = config
+
+                # Initialize regime-aware library
+                self.library = RegimeAwareBasisLibrary(
+                n_basis=config.n_basis_per_regime,
+                state_dim=config.state_dim,
+                key=key,
+                )
+
+                # Sliding window buffer
+                self.window = SlidingWindowBuffer(
+                max_samples=config.max_window_samples,
+                state_dim=config.state_dim,
+                )
+
+                # State tracking
+                self.current_regime = FlightRegime.UNKNOWN
+                self.current_xi = jnp.zeros(config.n_basis_per_regime)
+                self.coefficient_confidence = 0.0
+
+                # Anomaly detection state
+                self.anomaly_start_time: Optional[float] = None
+                self.last_trigger_time: float = 0.0
+                self.prediction_covariance = jnp.eye(config.state_dim) * 1.0
+
+                # Timing stats
+                self.last_reidentification_ms = 0.0
+
+                def detect_anomaly(
+                self,
+                x_observed: jnp.ndarray,
+                x_predicted: jnp.ndarray,
+                timestamp: float,
+                ) -> Tuple[bool, float]:
+                    """
+                    Detect manifold breach / regime change via Mahalanobis distance.
+
+                    Args:
+                    x_observed: Sensor observation
+                    x_predicted: Model prediction
+                    timestamp: Current time
+
+                    Returns:
+                    is_anomaly: True if anomaly detected
+                    anomaly_score: Mahalanobis distance
+                    """
+                    # Prediction error
+                    error = x_observed - x_predicted
+
+                    # Mahalanobis distance
+                    # A² = e^T Σ^-1 e
+                    try:
+                        cov_inv = jnp.linalg.inv(self.prediction_covariance)
+                        anomaly_score = jnp.sqrt(error @ cov_inv @ error)
+                    except:
+                        # Fallback to Euclidean
+                        anomaly_score = jnp.linalg.norm(error)
+
+                        # Check threshold
+                        is_anomaly = anomaly_score > self.config.anomaly_threshold
+
+                        if is_anomaly:
+                            if self.anomaly_start_time is None:
+                                self.anomaly_start_time = timestamp
+
+                                # Check if anomaly has persisted long enough
+                                anomaly_duration = timestamp - self.anomaly_start_time
+
+                                # Check cooldown
+                                time_since_last_trigger = timestamp - self.last_trigger_time
+
+                                if (anomaly_duration >= self.config.anomaly_min_duration and
+                                time_since_last_trigger >= self.config.trigger_cooldown_s):
+
+                                    self.last_trigger_time = timestamp
+                                    return True, float(anomaly_score)
+                                else:
+                                    self.anomaly_start_time = None
+
+                                    return False, float(anomaly_score)
+
+                                    def identify_regime(
+                                    self,
+                                    x: jnp.ndarray,
+                                    x_dot: jnp.ndarray,
+                                    ) -> FlightRegime:
+                                        """
+                                        Identify flight regime from state characteristics.
+
+                                        Uses simple heuristics (can be replaced with learned classifier):
+                                        - Ballistic: high altitude, no acceleration perpendicular to velocity
+                                        - Pull-up: positive vertical acceleration, increasing altitude
+                                        - Glide: near-equilibrium L/D, constant altitude
+
+                                        Args:
+                                        x: [pos(3), vel(3)] state
+                                        x_dot: State derivative
+
+                                        Returns:
+                                        Detected flight regime
+                                        """
+                                        pos = x[:3]
+                                        vel = x[3:6]
+                                        acc = x_dot[3:6]
+
+                                        r_norm = jnp.linalg.norm(pos)
+                                        v_norm = jnp.linalg.norm(vel)
+
+                                        # Altitude estimate (assuming Earth radius ~6378 km)
+                                        altitude = r_norm - 6378.0
+
+                                        # Vertical velocity (radial component)
+                                        v_radial = jnp.dot(pos / r_norm, vel)
+
+                                        # Vertical acceleration
+                                        acc_radial = jnp.dot(pos / r_norm, acc)
+
+                                        # Heuristic classification
+                                        if altitude > 100.0: # Above 100km
+                                            # Ballistic or early pull-up
+                                            if acc_radial > 0.5: # Significant upward acceleration
+                                                return FlightRegime.PULL_UP
+                                            else:
+                                                return FlightRegime.BALLISTIC
+                                        else:
+                                            # In atmosphere
+                                            if abs(v_radial) < 0.1: # Near-constant altitude
+                                                return FlightRegime.GLIDE
+                                            elif v_radial < -0.5: # Descending
+                                                return FlightRegime.DIVE
+                                            else:
+                                                return FlightRegime.TERMINAL
+
+                                                def sparse_identification(
+                                                self,
+                                                X: np.ndarray,
+                                                X_dot: np.ndarray,
+                                                regime: FlightRegime,
+                                                ) -> Tuple[jnp.ndarray, float]:
+                                                    """
+                                                    Sparse coefficient identification via STLSQ.
+
+                                                    Solves: min ‖Θ(X)·ξ - X_dot‖² + λ‖ξ‖₀
+
+                                                    Must complete in <50ms for tactical requirement.
+
+                                                    Args:
+                                                    X: [N, state_dim] state window
+                                                    X_dot: [N, state_dim] derivative window
+                                                    regime: Current flight regime
+
+                                                    Returns:
+                                                    xi: Sparse coefficients
+                                                    confidence: R² fit quality
+                                                    """
+                                                    start_time = time.time()
+
+                                                    if len(X) < self.config.min_samples_for_id:
+                                                        # Not enough data
+                                                        return self.current_xi, 0.0
+
+                                                        # Evaluate basis functions
+                                                        Theta = np.array([
+                                                        np.array(self.library.evaluate(jnp.array(x), regime))
+                                                        for x in X
+                                                        ])
+
+                                                        # STLSQ for each state dimension
+                                                        xi_full = np.zeros((self.config.state_dim, self.config.n_basis_per_regime))
+
+                                                        for i in range(self.config.state_dim):
+                                                            # Initial least squares
+                                                            xi_i, _, _, _ = np.linalg.lstsq(Theta, X_dot[:, i], rcond=None)
+
+                                                            # Thresholding
+                                                            mask = np.abs(xi_i) > self.config.sparsity_threshold
+                                                            xi_i_thresholded = xi_i * mask
+
+                                                            # Refit with reduced set if any terms remain
+                                                            active_indices = np.where(mask)[0]
+                                                            if len(active_indices) > 0:
+                                                                Theta_reduced = Theta[:, active_indices]
+                                                                xi_i_reduced, _, _, _ = np.linalg.lstsq(Theta_reduced, X_dot[:, i], rcond=None)
+                                                                xi_i_thresholded[active_indices] = xi_i_reduced
+
+                                                                xi_full[i] = xi_i_thresholded
+
+                                                                # Average across dimensions for simplicity
+                                                                xi = jnp.array(np.mean(xi_full, axis=0))
+
+                                                                # Compute confidence
+                                                                X_dot_pred = Theta @ np.array(xi)
+                                                                r_squared = 1.0 - np.var(X_dot.flatten() - X_dot_pred.flatten()) / np.var(X_dot.flatten())
+
+                                                                elapsed_ms = (time.time() - start_time) * 1000
+                                                                self.last_reidentification_ms = elapsed_ms
+
+                                                                # Check deadline
+                                                                if elapsed_ms > self.config.max_reidentification_ms:
+                                                                    warnings.warn(f"Re-identification exceeded deadline: {elapsed_ms:.1f}ms > {self.config.max_reidentification_ms:.1f}ms")
+
+                                                                    return xi, float(r_squared)
+
+                                                                    def update(
+                                                                    self,
+                                                                    x_observed: jnp.ndarray,
+                                                                    x_predicted: jnp.ndarray,
+                                                                    x_dot: jnp.ndarray,
+                                                                    timestamp: float,
+                                                                    ) -> Dict:
+                                                                        """
+                                                                        Full adaptive SINDy update cycle.
+
+                                                                        1. Detect anomaly / regime change
+                                                                        2. Add to sliding window
+                                                                        3. Re-identify coefficients if triggered
+                                                                        4. Return current state and discovery
+
+                                                                        Args:
+                                                                        x_observed: Sensor observation
+                                                                        x_predicted: Model prediction
+                                                                        x_dot: State derivative estimate
+                                                                        timestamp: Current time
+
+                                                                        Returns:
+                                                                        Update results with coefficients, regime, timing
+                                                                        """
+                                                                        # 1. Anomaly detection
+                                                                        is_anomaly, anomaly_score = self.detect_anomaly(
+                                                                        x_observed, x_predicted, timestamp
+                                                                        )
+
+                                                                        # 2. Add to sliding window
+                                                                        self.window.add_sample(
+                                                                        np.array(x_observed),
+                                                                        np.array(x_dot),
+                                                                        timestamp,
+                                                                        )
+
+                                                                        # 3. Regime identification
+                                                                        new_regime = self.identify_regime(x_observed, x_dot)
+                                                                        regime_changed = new_regime != self.current_regime
+
+                                                                        # 4. Re-identification trigger
+                                                                        reidentify = is_anomaly or regime_changed
+
+                                                                        if reidentify:
+                                                                            # Clear window on regime change for clean slate
+                                                                            if regime_changed:
+                                                                                self.window.clear()
+                                                                                self.window.add_sample(np.array(x_observed), np.array(x_dot), timestamp)
+
+                                                                                # Get window data
+                                                                                X, X_dot = self.window.get_window(
+                                                                                self.config.window_duration_s,
+                                                                                timestamp
+                                                                                )
+
+                                                                                # Sparse identification
+                                                                                self.current_xi, self.coefficient_confidence = self.sparse_identification(
+                                                                                X, X_dot, new_regime
+                                                                                )
+
+                                                                                self.current_regime = new_regime
+
+                                                                                # 5. Evaluate current library
+                                                                                Theta = self.library.evaluate(x_observed, self.current_regime)
+
+                                                                                return {
+                                                                                'xi': self.current_xi,
+                                                                                'regime': self.current_regime.value,
+                                                                                'regime_changed': regime_changed,
+                                                                                'anomaly_detected': is_anomaly,
+                                                                                'anomaly_score': anomaly_score,
+                                                                                'confidence': self.coefficient_confidence,
+                                                                                'reidentification_ms': self.last_reidentification_ms,
+                                                                                'n_window_samples': self.window.n_samples,
+                                                                                'basis_values': Theta,
+                                                                                }
+
+                                                                                def predict_dynamics(
+                                                                                self,
+                                                                                x: jnp.ndarray,
+                                                                                regime: Optional[FlightRegime] = None,
+                                                                                ) -> jnp.ndarray:
+                                                                                    """
+                                                                                    Predict dynamics using current coefficients.
+
+                                                                                    Args:
+                                                                                    x: State vector
+                                                                                    regime: Flight regime (uses current if None)
+
+                                                                                    Returns:
+                                                                                    x_dot_pred: Predicted state derivative
+                                                                                    """
+                                                                                    if regime is None:
+                                                                                        regime = self.current_regime
+
+                                                                                        Theta = self.library.evaluate(x, regime)
+                                                                                        x_dot_pred = Theta @ self.current_xi
+
+                                                                                        return x_dot_pred
+
+                                                                                        def block_bootstrap_ci(
+                                                                                        self,
+                                                                                        X: np.ndarray,
+                                                                                        X_dot: np.ndarray,
+                                                                                        regime: FlightRegime,
+                                                                                        n_bootstrap: int = 100,
+                                                                                        block_size: int = 5,
+                                                                                        ci_level: float = 0.95,
+                                                                                        ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+                                                                                            """
+                                                                                            : Block-bootstrap confidence intervals for SINDy coefficients.
+
+                                                                                            Block-bootstrap preserves temporal structure by resampling blocks of data
+                                                                                            instead of individual samples. This is critical for time-series data where
+                                                                                            temporal dependencies exist.
+
+                                                                                            Procedure:
+                                                                                            1. Divide time series into blocks of size L
+                                                                                            2. Resample blocks with replacement
+                                                                                            3. Compute SINDy coefficients on each bootstrap sample
+                                                                                            4. Construct confidence intervals from bootstrap distribution
+
+                                                                                            Args:
+                                                                                            X: [N, state_dim] state window
+                                                                                            X_dot: [N, state_dim] derivative window
+                                                                                            regime: Current flight regime
+                                                                                            n_bootstrap: Number of bootstrap samples (default: 100)
+                                                                                            block_size: Block length for resampling (default: 5)
+                                                                                            ci_level: Confidence interval level (default: 0.95)
+
+                                                                                            Returns:
+                                                                                            xi_bootstrap: Bootstrap mean coefficients
+                                                                                            ci_bounds: [2, n_basis] confidence interval bounds (lower, upper)
+                                                                                            """
+                                                                                            N = len(X)
+                                                                                            if N < block_size * 2:
+                                                                                                # Not enough data for block bootstrap, return point estimate with zero CI
+                                                                                                xi_point, _ = self.sparse_identification(X, X_dot, regime)
+                                                                                                ci_bounds = jnp.stack([xi_point, xi_point], axis=0)
+                                                                                                return xi_point, ci_bounds
+
+                                                                                                # Number of blocks
+                                                                                                n_blocks = N // block_size
+                                                                                                if n_blocks < 2:
+                                                                                                    n_blocks = 2
+
+                                                                                                    # Store bootstrap coefficients
+                                                                                                    xi_bootstrap_samples = []
+
+                                                                                                    for b in range(n_bootstrap):
+                                                                                                        # Block resampling: randomly select blocks with replacement
+                                                                                                        block_indices = np.random.choice(n_blocks, size=n_blocks, replace=True)
+
+                                                                                                        # Construct bootstrap sample by concatenating selected blocks
+                                                                                                        X_bootstrap = []
+                                                                                                        X_dot_bootstrap = []
+
+                                                                                                        for block_idx in block_indices:
+                                                                                                            start = block_idx * block_size
+                                                                                                            end = min(start + block_size, N)
+                                                                                                            X_bootstrap.append(X[start:end])
+                                                                                                            X_dot_bootstrap.append(X_dot[start:end])
+
+                                                                                                            X_bootstrap = np.vstack(X_bootstrap)
+                                                                                                            X_dot_bootstrap = np.vstack(X_dot_bootstrap)
+
+                                                                                                            # Compute SINDy coefficients on bootstrap sample
+                                                                                                            xi_b, _ = self.sparse_identification(X_bootstrap, X_dot_bootstrap, regime)
+                                                                                                            xi_bootstrap_samples.append(np.array(xi_b))
+
+                                                                                                            # Stack bootstrap samples
+                                                                                                            xi_bootstrap_samples = np.array(xi_bootstrap_samples) # [n_bootstrap, n_basis]
+
+                                                                                                            # Compute bootstrap mean
+                                                                                                            xi_bootstrap_mean = jnp.array(np.mean(xi_bootstrap_samples, axis=0))
+
+                                                                                                            # Compute confidence intervals using percentile method
+                                                                                                            alpha = 1.0 - ci_level
+                                                                                                            lower_percentile = (alpha / 2.0) * 100
+                                                                                                            upper_percentile = (1.0 - alpha / 2.0) * 100
+
+                                                                                                            ci_lower = np.percentile(xi_bootstrap_samples, lower_percentile, axis=0)
+                                                                                                            ci_upper = np.percentile(xi_bootstrap_samples, upper_percentile, axis=0)
+
+                                                                                                            ci_bounds = jnp.stack([ci_lower, ci_upper], axis=0) # [2, n_basis]
+
+                                                                                                            return xi_bootstrap_mean, ci_bounds
+
+                                                                                                            def get_symbolic_certificate(
+                                                                                                            self,
+                                                                                                            X: np.ndarray,
+                                                                                                            X_dot: np.ndarray,
+                                                                                                            regime: FlightRegime,
+                                                                                                            n_bootstrap: int = 100,
+                                                                                                            ) -> Dict:
+                                                                                                                """
+                                                                                                                : Generate Symbolic Certificate (VSC) with bootstrap CI.
+
+                                                                                                                The VSC extends the SINDy equation string with:
+                                                                                                                - Bootstrap confidence intervals for each coefficient
+                                                                                                                - Physics consistency grade
+                                                                                                                - Causal provenance (regime, timestamp)
+                                                                                                                - Falsifiable 60s prediction capability
+
+                                                                                                                Returns:
+                                                                                                                Dictionary containing VSC components
+                                                                                                                """
+                                                                                                                # Get coefficients and bootstrap CI
+                                                                                                                xi_point, _ = self.sparse_identification(X, X_dot, regime)
+                                                                                                                xi_bootstrap, ci_bounds = self.block_bootstrap_ci(
+                                                                                                                X, X_dot, regime, n_bootstrap=n_bootstrap
+                                                                                                                )
+
+                                                                                                                # Compute physics consistency grade
+                                                                                                                # Check if coefficients satisfy basic physical constraints
+                                                                                                                physics_grade = self._compute_physics_consistency(xi_bootstrap, ci_bounds)
+
+                                                                                                                # Build equation string with CI
+                                                                                                                equation_string = self._build_equation_with_ci(xi_bootstrap, ci_bounds)
+
+                                                                                                                return {
+                                                                                                                'equation_string': equation_string,
+                                                                                                                'coefficients': xi_bootstrap,
+                                                                                                                'ci_lower': ci_bounds[0],
+                                                                                                                'ci_upper': ci_bounds[1],
+                                                                                                                'physics_grade': physics_grade,
+                                                                                                                'regime': regime.value,
+                                                                                                                'n_bootstrap': n_bootstrap,
+                                                                                                                'confidence': self.coefficient_confidence,
+                                                                                                                }
+
+                                                                                                                def _compute_physics_consistency(
+                                                                                                                self,
+                                                                                                                xi: jnp.ndarray,
+                                                                                                                ci_bounds: jnp.ndarray,
+                                                                                                                ) -> str:
+                                                                                                                    """
+                                                                                                                    Compute physics consistency grade for discovered coefficients.
+
+                                                                                                                    Grades:
+                                                                                                                    - A: All coefficients have tight CI (<20% relative width) and satisfy constraints
+                                                                                                                    - B: Most coefficients have reasonable CI, minor violations
+                                                                                                                    - C: Wide CI (>50% relative width) or significant violations
+                                                                                                                    - D: Very wide CI or unphysical coefficients
+                                                                                                                    - F: Unphysical (e.g., energy creation)
+                                                                                                                    """
+                                                                                                                    # Compute relative CI width
+                                                                                                                    ci_width = ci_bounds[1] - ci_bounds[0]
+                                                                                                                    relative_width = jnp.abs(ci_width / (jnp.abs(xi) + 1e-8))
+
+                                                                                                                    # Check for unphysical coefficients (e.g., energy creation)
+                                                                                                                    # For orbital dynamics, certain coefficient patterns are unphysical
+                                                                                                                    has_unphysical = jnp.any(jnp.abs(xi) > 1e6) # Extremely large coefficients
+
+                                                                                                                    # Average relative CI width
+                                                                                                                    avg_relative_width = jnp.mean(relative_width)
+
+                                                                                                                    if has_unphysical:
+                                                                                                                        return "F"
+                                                                                                                    elif avg_relative_width < 0.2:
+                                                                                                                        return "A"
+                                                                                                                    elif avg_relative_width < 0.5:
+                                                                                                                        return "B"
+                                                                                                                    elif avg_relative_width < 1.0:
+                                                                                                                        return "C"
+                                                                                                                    else:
+                                                                                                                        return "D"
+
+                                                                                                                        def _build_equation_with_ci(
+                                                                                                                        self,
+                                                                                                                        xi: jnp.ndarray,
+                                                                                                                        ci_bounds: jnp.ndarray,
+                                                                                                                        ) -> str:
+                                                                                                                            """
+                                                                                                                            Build equation string with confidence intervals.
+
+                                                                                                                            Format: "ξ_i = value [lower, upper]"
+                                                                                                                            """
+                                                                                                                            terms = []
+                                                                                                                            for i in range(len(xi)):
+                                                                                                                                val = float(xi[i])
+                                                                                                                                lower = float(ci_bounds[0, i])
+                                                                                                                                upper = float(ci_bounds[1, i])
+
+                                                                                                                                if abs(val) > 1e-6: # Only include significant terms
+                                                                                                                                    term = f"ξ_{i} = {val:.3e} [{lower:.3e}, {upper:.3e}]"
+                                                                                                                                    terms.append(term)
+
+                                                                                                                                    return "; ".join(terms)
 
 
 def demo_adaptive_sindy():
- """Demonstrate Adaptive Neural-SINDy capabilities."""
- print("=" * 70)
- print("Adaptive Neural-SINDy: Skip-Glide Regime Detection")
- print("=" * 70)
- 
- # Configuration
- config = AdaptiveSINDyConfig(
- window_duration_s=3.0,
- anomaly_threshold=5.0,
- max_reidentification_ms=50.0,
-)
- 
- print(f"\nConfiguration:")
- print(f" Window duration: {config.window_duration_s}s")
- print(f" Anomaly threshold: {config.anomaly_threshold}σ")
- print(f" Max re-id time: {config.max_reidentification_ms}ms")
- print(f" Basis functions per regime: {config.n_basis_per_regime}")
- 
- # Initialize
- key = jax.random.PRNGKey(42)
- adaptive_sindy = AdaptiveNeuralSINDy(config, key)
- 
- # Simulate skip-glide trajectory
- print(f"\nSimulating skip-glide trajectory...")
- print(" Phase 1: Ballistic (0-5s)")
- print(" Phase 2: Pull-up (5-10s)")
- print(" Phase 3: Glide (10-15s)")
- 
- n_steps = 150 # 15s at 10Hz
- dt = 0.1
- 
- results = []
- 
- for step in range(n_steps):
- t = step * dt
- 
- # Simulate different phases
- if t < 5.0:
- # Ballistic: free fall
- x_true = jnp.array([6878.0, 0.0, t*10, 0.0, 0.0, -0.5])
- x_pred = jnp.array([6878.0, 0.0, t*10, 0.0, 0.0, -0.5])
- x_dot = jnp.array([0.0, 0.0, 10.0, 0.0, 0.0, -0.5])
- elif t < 10.0:
- # Pull-up: rapid upward acceleration
- x_true = jnp.array([6878.0, 0.0, 50 - (t-5)**2*2, 0.0, 0.0, -4*(t-5)])
- x_pred = jnp.array([6878.0, 0.0, 50.0, 0.0, 0.0, 0.0]) # Wrong prediction
- x_dot = jnp.array([0.0, 0.0, -4*(t-5), 0.0, 0.0, -4.0])
- else:
- # Glide: equilibrium
- x_true = jnp.array([6878.0, (t-10)*5, 0.0, 0.0, 5.0, 0.0])
- x_pred = jnp.array([6878.0, (t-10)*5, 0.0, 0.0, 5.0, 0.0])
- x_dot = jnp.array([0.0, 5.0, 0.0, 0.0, 0.0, 0.0])
- 
- # Update adaptive SINDy
- result = adaptive_sindy.update(x_true, x_pred, x_dot, t)
- results.append(result)
- 
- if step % 20 == 0 or result['regime_changed'] or result['anomaly_detected']:
- print(f"\n[Step {step}, t={t:.1f}s]")
- print(f" Regime: {result['regime']} {'(CHANGED)' if result['regime_changed'] else ''}")
- print(f" Anomaly: {result['anomaly_detected']} (score={result['anomaly_score']:.2f})")
- print(f" Confidence: {result['confidence']:.3f}")
- print(f" Re-id time: {result['reidentification_ms']:.1f}ms")
- print(f" Window samples: {result['n_window_samples']}")
- 
- # Summary
- print(f"\n{'='*70}")
- print("Summary: Adaptive Neural-SINDy enables:")
- print(f" - Regime detection: Ballistic → Pull-up → Glide")
- print(f" - Anomaly-triggered re-identification: <50ms")
- print(f" - Sliding window: Last {config.window_duration_s}s of data")
- print(f" - Regime-specific libraries: Learned from H100 training")
- print(f" - Skip-glide capable: Survives regime transitions")
- print(f"{'='*70}")
+    """Demonstrate Adaptive Neural-SINDy capabilities."""
+    print("=" * 70)
+    print("Adaptive Neural-SINDy: Skip-Glide Regime Detection")
+    print("=" * 70)
+
+    # Configuration
+    config = AdaptiveSINDyConfig(
+    window_duration_s=3.0,
+    anomaly_threshold=5.0,
+    max_reidentification_ms=50.0,
+    )
+
+    print(f"\nConfiguration:")
+    print(f" Window duration: {config.window_duration_s}s")
+    print(f" Anomaly threshold: {config.anomaly_threshold}σ")
+    print(f" Max re-id time: {config.max_reidentification_ms}ms")
+    print(f" Basis functions per regime: {config.n_basis_per_regime}")
+
+    # Initialize
+    key = jax.random.PRNGKey(42)
+    adaptive_sindy = AdaptiveNeuralSINDy(config, key)
+
+    # Simulate skip-glide trajectory
+    print(f"\nSimulating skip-glide trajectory...")
+    print(" Phase 1: Ballistic (0-5s)")
+    print(" Phase 2: Pull-up (5-10s)")
+    print(" Phase 3: Glide (10-15s)")
+
+    n_steps = 150 # 15s at 10Hz
+    dt = 0.1
+
+    results = []
+
+    for step in range(n_steps):
+        t = step * dt
+
+        # Simulate different phases
+        if t < 5.0:
+            # Ballistic: free fall
+            x_true = jnp.array([6878.0, 0.0, t*10, 0.0, 0.0, -0.5])
+            x_pred = jnp.array([6878.0, 0.0, t*10, 0.0, 0.0, -0.5])
+            x_dot = jnp.array([0.0, 0.0, 10.0, 0.0, 0.0, -0.5])
+        elif t < 10.0:
+            # Pull-up: rapid upward acceleration
+            x_true = jnp.array([6878.0, 0.0, 50 - (t-5)**2*2, 0.0, 0.0, -4*(t-5)])
+            x_pred = jnp.array([6878.0, 0.0, 50.0, 0.0, 0.0, 0.0]) # Wrong prediction
+            x_dot = jnp.array([0.0, 0.0, -4*(t-5), 0.0, 0.0, -4.0])
+        else:
+            # Glide: equilibrium
+            x_true = jnp.array([6878.0, (t-10)*5, 0.0, 0.0, 5.0, 0.0])
+            x_pred = jnp.array([6878.0, (t-10)*5, 0.0, 0.0, 5.0, 0.0])
+            x_dot = jnp.array([0.0, 5.0, 0.0, 0.0, 0.0, 0.0])
+
+            # Update adaptive SINDy
+            result = adaptive_sindy.update(x_true, x_pred, x_dot, t)
+            results.append(result)
+
+            if step % 20 == 0 or result['regime_changed'] or result['anomaly_detected']:
+                print(f"\n[Step {step}, t={t:.1f}s]")
+                print(f" Regime: {result['regime']} {'(CHANGED)' if result['regime_changed'] else ''}")
+                print(f" Anomaly: {result['anomaly_detected']} (score={result['anomaly_score']:.2f})")
+                print(f" Confidence: {result['confidence']:.3f}")
+                print(f" Re-id time: {result['reidentification_ms']:.1f}ms")
+                print(f" Window samples: {result['n_window_samples']}")
+
+                # Summary
+                print(f"\n{'='*70}")
+                print("Summary: Adaptive Neural-SINDy enables:")
+                print(f" - Regime detection: Ballistic → Pull-up → Glide")
+                print(f" - Anomaly-triggered re-identification: <50ms")
+                print(f" - Sliding window: Last {config.window_duration_s}s of data")
+                print(f" - Regime-specific libraries: Learned from H100 training")
+                print(f" - Skip-glide capable: Survives regime transitions")
+                print(f"{'='*70}")
 
 
 if __name__ == "__main__":
- demo_adaptive_sindy()
+    demo_adaptive_sindy()

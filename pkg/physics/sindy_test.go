@@ -228,3 +228,46 @@ func countActiveTerms(coeffs []float64, threshold float64) int {
 	}
 	return count
 }
+
+// TestSINDyBootstrapRandomness validates that bootstrap resampling uses
+// a proper random source rather than a deterministic arithmetic sequence.
+func TestSINDyBootstrapRandomness(t *testing.T) {
+	trajectory := generateSyntheticManeuver(TestMarsKinetic, 600, 1.0)
+	states := convertToSINDyStates(trajectory)
+
+	// Two SINDy instances with different random seeds should produce
+	// different bootstrap CI bounds when resampling the same data.
+	sindyA := NewSINDy()
+	sindyA.PolynomialDegree = 2
+	sindyA.UseTrigonometric = false
+	sindyA.SparsityThreshold = 0.01
+	sindyA.BootstrapResamples = 50 // reduced for speed
+
+	sindyB := NewSINDy()
+	sindyB.PolynomialDegree = 2
+	sindyB.UseTrigonometric = false
+	sindyB.SparsityThreshold = 0.01
+	sindyB.BootstrapResamples = 50
+
+	resultA, errA := sindyA.DiscoverManeuver(states, 1.0)
+	resultB, errB := sindyB.DiscoverManeuver(states, 1.0)
+	if errA != nil || errB != nil {
+		t.Fatalf("SINDy discovery failed: A=%v, B=%v", errA, errB)
+	}
+
+	if len(resultA.CILower) == 0 || len(resultB.CILower) == 0 {
+		t.Skip("Bootstrap CIs not produced (too few samples)")
+	}
+
+	different := false
+	for i := 0; i < len(resultA.CILower) && i < len(resultB.CILower); i++ {
+		if resultA.CILower[i] != resultB.CILower[i] || resultA.CIUpper[i] != resultB.CIUpper[i] {
+			different = true
+			break
+		}
+	}
+
+	if !different {
+		t.Error("Bootstrap CI bounds from two independent SINDy instances were identical — resampling may be deterministic")
+	}
+}

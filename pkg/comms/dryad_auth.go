@@ -3,27 +3,28 @@
 package comms
 
 import (
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"time"
 )
 
 const (
 	// DRYAD constants
-	AuthenticatorLength = 6    // Number of characters in authenticator
-	GridSize           = 25    // 5x5 grid
-	MaxAuthenticators  = 100   // Maximum authenticators per sheet
-	AuthTTL           = 24 * time.Hour
+	AuthenticatorLength = 6   // Number of characters in authenticator
+	GridSize            = 25  // 5x5 grid
+	MaxAuthenticators   = 100 // Maximum authenticators per sheet
+	AuthTTL             = 24 * time.Hour
 )
 
 // DRYADSheet represents a DRYAD authentication sheet
 type DRYADSheet struct {
-	SheetID       string
+	SheetID        string
 	Authenticators map[string]string // Authenticator -> Grid coordinates
-	ExpiryDate    time.Time
-	IsActive      bool
-	IssuedTo      string
-	IssuedBy      string
+	ExpiryDate     time.Time
+	IsActive       bool
+	IssuedTo       string
+	IssuedBy       string
 }
 
 // DRYADAuthenticator represents a single authenticator
@@ -36,9 +37,9 @@ type DRYADAuthenticator struct {
 
 // DRYADSystem manages DRYAD authentication
 type DRYADSystem struct {
-	currentSheet    *DRYADSheet
+	currentSheet       *DRYADSheet
 	usedAuthenticators map[string]*DRYADAuthenticator
-	authHistory    []AuthRecord
+	authHistory        []AuthRecord
 }
 
 // AuthRecord represents an authentication record
@@ -62,10 +63,10 @@ func NewDRYADSystem() *DRYADSystem {
 func (ds *DRYADSystem) GenerateSheet(issuedTo, issuedBy string) *DRYADSheet {
 	// Generate unique sheet ID
 	sheetID := fmt.Sprintf("DRYAD-%d", time.Now().Unix())
-	
+
 	// Generate authenticators
 	authenticators := make(map[string]string)
-	
+
 	// Use common DRYAD words (simplified)
 	words := []string{
 		"APPLE", "BRAVO", "CHARLIE", "DELTA", "ECHO",
@@ -74,26 +75,27 @@ func (ds *DRYADSystem) GenerateSheet(issuedTo, issuedBy string) *DRYADSheet {
 		"PAPA", "QUEBEC", "ROMEO", "SIERRA", "TANGO",
 		"UNIFORM", "VICTOR", "WHISKEY", "XRAY", "YANKEE", "ZULU",
 	}
-	
-	rand.Seed(time.Now().UnixNano())
-	
+
 	for i := 0; i < MaxAuthenticators; i++ {
-		word := words[rand.Intn(len(words))]
-		row := rand.Intn(5) // A-E
-		col := rand.Intn(5) + 1 // 1-5
+		wi, _ := rand.Int(rand.Reader, big.NewInt(int64(len(words))))
+		word := words[wi.Int64()]
+		ri, _ := rand.Int(rand.Reader, big.NewInt(5))
+		row := int(ri.Int64()) // A-E
+		ci, _ := rand.Int(rand.Reader, big.NewInt(5))
+		col := int(ci.Int64()) + 1 // 1-5
 		gridCoord := fmt.Sprintf("%c-%d", 'A'+row, col)
 		authenticators[word] = gridCoord
 	}
-	
+
 	sheet := &DRYADSheet{
-		SheetID:       sheetID,
+		SheetID:        sheetID,
 		Authenticators: authenticators,
-		ExpiryDate:    time.Now().Add(AuthTTL),
-		IsActive:      true,
-		IssuedTo:      issuedTo,
-		IssuedBy:      issuedBy,
+		ExpiryDate:     time.Now().Add(AuthTTL),
+		IsActive:       true,
+		IssuedTo:       issuedTo,
+		IssuedBy:       issuedBy,
 	}
-	
+
 	ds.currentSheet = sheet
 	return sheet
 }
@@ -103,7 +105,7 @@ func (ds *DRYADSystem) LoadSheet(sheet *DRYADSheet) error {
 	if time.Now().After(sheet.ExpiryDate) {
 		return fmt.Errorf("sheet expired on %s", sheet.ExpiryDate)
 	}
-	
+
 	ds.currentSheet = sheet
 	return nil
 }
@@ -113,15 +115,15 @@ func (ds *DRYADSystem) Authenticate(authenticator, gridCoord, identity string) (
 	if ds.currentSheet == nil {
 		return false, fmt.Errorf("no active DRYAD sheet")
 	}
-	
+
 	if !ds.currentSheet.IsActive {
 		return false, fmt.Errorf("DRYAD sheet not active")
 	}
-	
+
 	if time.Now().After(ds.currentSheet.ExpiryDate) {
 		return false, fmt.Errorf("DRYAD sheet expired")
 	}
-	
+
 	// Check if authenticator exists
 	expectedCoord, exists := ds.currentSheet.Authenticators[authenticator]
 	if !exists {
@@ -135,7 +137,7 @@ func (ds *DRYADSystem) Authenticate(authenticator, gridCoord, identity string) (
 		})
 		return false, fmt.Errorf("invalid authenticator")
 	}
-	
+
 	// Check if grid coordinate matches
 	if expectedCoord != gridCoord {
 		ds.authHistory = append(ds.authHistory, AuthRecord{
@@ -147,7 +149,7 @@ func (ds *DRYADSystem) Authenticate(authenticator, gridCoord, identity string) (
 		})
 		return false, fmt.Errorf("grid coordinate mismatch")
 	}
-	
+
 	// Check if already used
 	if used, exists := ds.usedAuthenticators[authenticator]; exists && used.Used {
 		ds.authHistory = append(ds.authHistory, AuthRecord{
@@ -159,7 +161,7 @@ func (ds *DRYADSystem) Authenticate(authenticator, gridCoord, identity string) (
 		})
 		return false, fmt.Errorf("authenticator already used")
 	}
-	
+
 	// Mark as used
 	ds.usedAuthenticators[authenticator] = &DRYADAuthenticator{
 		Word:      authenticator,
@@ -167,7 +169,7 @@ func (ds *DRYADSystem) Authenticate(authenticator, gridCoord, identity string) (
 		Used:      true,
 		UsedAt:    time.Now(),
 	}
-	
+
 	// Log successful authentication
 	ds.authHistory = append(ds.authHistory, AuthRecord{
 		Authenticator: authenticator,
@@ -176,7 +178,7 @@ func (ds *DRYADSystem) Authenticate(authenticator, gridCoord, identity string) (
 		UsedAt:        time.Now(),
 		IsValid:       true,
 	})
-	
+
 	return true, nil
 }
 
@@ -185,14 +187,14 @@ func (ds *DRYADSystem) GetAuthenticator() (string, error) {
 	if ds.currentSheet == nil {
 		return "", fmt.Errorf("no active DRYAD sheet")
 	}
-	
+
 	// Find unused authenticator
 	for word, coord := range ds.currentSheet.Authenticators {
 		if used, exists := ds.usedAuthenticators[word]; !exists || !used.Used {
 			return fmt.Sprintf("%s %s", word, coord), nil
 		}
 	}
-	
+
 	return "", fmt.Errorf("no unused authenticators available")
 }
 
@@ -233,14 +235,14 @@ func (ds *DRYADSystem) GetRemainingCount() int {
 func (ds *DRYADSystem) GetSheetStatus() *SheetStatus {
 	if ds.currentSheet == nil {
 		return &SheetStatus{
-			HasSheet:      false,
-			IsActive:      false,
-			IsExpired:     false,
-			UsedCount:     0,
+			HasSheet:       false,
+			IsActive:       false,
+			IsExpired:      false,
+			UsedCount:      0,
 			RemainingCount: 0,
 		}
 	}
-	
+
 	return &SheetStatus{
 		HasSheet:       true,
 		IsActive:       ds.currentSheet.IsActive,
@@ -269,7 +271,7 @@ func (ds *DRYADSystem) Challenge(identity string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	return fmt.Sprintf("AUTHENTICATE: %s", authenticator), nil
 }
 
@@ -281,7 +283,7 @@ func (ds *DRYADSystem) Verify(identity, response string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("invalid response format")
 	}
-	
+
 	return ds.Authenticate(word, gridCoord, identity)
 }
 
@@ -291,12 +293,12 @@ func (ds *DRYADSystem) TwoFactorAuth(identity, password, authenticator, gridCoor
 	if password == "" {
 		return false, fmt.Errorf("password required")
 	}
-	
+
 	// Second factor: DRYAD
 	dryadValid, err := ds.Authenticate(authenticator, gridCoord, identity)
 	if err != nil {
 		return false, err
 	}
-	
+
 	return dryadValid, nil
 }

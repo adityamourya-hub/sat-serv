@@ -12,9 +12,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
-	"ssis/pkg/catalog"
 	"ssis/pkg/config"
+
+	"github.com/spf13/cobra"
 )
 
 var catalogCmd = &cobra.Command{
@@ -40,11 +40,7 @@ var importCmd = &cobra.Command{
 		fmt.Printf("[ADITI] Database: %s\n", config.Cfg.Database.Path)
 		fmt.Printf("[ADITI] Hybrid Mode: %t\n", hybrid)
 
-		// Initialize converter
-		converter := catalog.NewTLEToHybridConverter()
-		_ = converter // Use converter in actual implementation
-
-		// TODO: Parse TLE file, convert, store in database
+		// TODO: Initialize converter and parse TLE file, convert, store in database
 		// 1. Open and parse TLE file
 		// 2. Batch convert to HamiltonianGatedState
 		// 3. Store in SQLite/PostGIS with Hessian hashes
