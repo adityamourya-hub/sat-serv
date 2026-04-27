@@ -120,11 +120,15 @@ func (p *PlasmaBridge) WriteSensorFrame(data []float32, meta FrameMetadata) erro
 		return nil // Don't block if Python not connected
 	}
 
-	// Serialize data with binary protocol
+	// Serialize data with binary protocol, using pooled buffer
 	buf := p.serializeFrame(data, meta, frameID)
 
 	// Write to socket
 	_, err := p.conn.Write(buf)
+
+	// Return buffer to pool for reuse
+	p.bufferPool.Put(buf[:0])
+
 	if err != nil {
 		p.lastError = err
 		return fmt.Errorf("socket write failed: %w", err)
@@ -136,15 +140,26 @@ func (p *PlasmaBridge) WriteSensorFrame(data []float32, meta FrameMetadata) erro
 	return nil
 }
 
-// serializeFrame converts frame data to binary protocol
+// serializeFrame converts frame data to binary protocol using a pooled buffer.
+// Metadata layout (after fixed fields):
+//   [4B width, 4B height, 4B channels, 4B azimuth, 4B elevation, 4B sensorID_len, N bytes sensorID]
+// Using a length-prefixed SensorID avoids silent truncation.
 func (p *PlasmaBridge) serializeFrame(data []float32, meta FrameMetadata, frameID string) []byte {
-	// Calculate total size
 	headerSize := 4 + 8 + 4 + 4 // magic + timestamp + data_len + meta_len
 	dataSize := len(data) * 4   // float32 = 4 bytes
-	metaSize := 256             // Fixed metadata buffer
+	// Fixed fields (20 bytes) + 4-byte length prefix + actual SensorID bytes
+	sensorIDBytes := []byte(meta.SensorID)
+	metaSize := 20 + 4 + len(sensorIDBytes)
 	totalSize := headerSize + dataSize + metaSize
 
-	buf := make([]byte, totalSize)
+	// Get pooled buffer and resize
+	raw := p.bufferPool.Get().([]byte)
+	if cap(raw) < totalSize {
+		raw = make([]byte, totalSize)
+	} else {
+		raw = raw[:totalSize]
+	}
+	buf := raw
 
 	// Write header
 	binary.LittleEndian.PutUint32(buf[0:4], ProtocolMagic)
@@ -164,7 +179,9 @@ func (p *PlasmaBridge) serializeFrame(data []float32, meta FrameMetadata, frameI
 	binary.LittleEndian.PutUint32(buf[metaOffset+8:metaOffset+12], uint32(meta.Channels))
 	binary.LittleEndian.PutUint32(buf[metaOffset+12:metaOffset+16], math.Float32bits(meta.Azimuth))
 	binary.LittleEndian.PutUint32(buf[metaOffset+16:metaOffset+20], math.Float32bits(meta.Elevation))
-	copy(buf[metaOffset+20:metaOffset+52], meta.SensorID)
+	// Length-prefixed SensorID: avoids silent truncation
+	binary.LittleEndian.PutUint32(buf[metaOffset+20:metaOffset+24], uint32(len(sensorIDBytes)))
+	copy(buf[metaOffset+24:], sensorIDBytes)
 
 	return buf
 }

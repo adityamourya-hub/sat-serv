@@ -282,7 +282,11 @@ func StartGRPCServer(port int, store *catalog.Store, signer *cryptography.Signer
 
 	var opts []grpc.ServerOption
 
-	// 1. Enforce TLS/mTLS if certificates provided
+	// 1. Enforce TLS/mTLS — fail-closed: mTLS requested but certs absent is a hard error.
+	if caFile != "" && (certFile == "" || keyFile == "") {
+		return fmt.Errorf("[SEC] FATAL: caFile provided (mTLS mode) but certFile/keyFile are missing — refusing insecure start")
+	}
+
 	if certFile != "" && keyFile != "" {
 		var tlsConfig tls.Config
 		tlsConfig.Certificates = make([]tls.Certificate, 1)
@@ -310,7 +314,12 @@ func StartGRPCServer(port int, store *catalog.Store, signer *cryptography.Signer
 		creds := credentials.NewTLS(&tlsConfig)
 		opts = append(opts, grpc.Creds(creds))
 	} else {
-		fmt.Printf(" [WRN] gRPC starting in INSECURE mode (no certs)\n")
+		// No certs at all — only permitted in explicit dev/test environments.
+		// Production deployments must set SSIS_ALLOW_INSECURE_GRPC=1 to proceed.
+		if os.Getenv("SSIS_ALLOW_INSECURE_GRPC") != "1" {
+			return fmt.Errorf("[SEC] FATAL: gRPC started without TLS certs and SSIS_ALLOW_INSECURE_GRPC is not set — refusing insecure start")
+		}
+		fmt.Printf(" [WRN] gRPC starting in INSECURE mode (SSIS_ALLOW_INSECURE_GRPC=1 override active)\n")
 	}
 
 	s := grpc.NewServer(opts...)
