@@ -61,62 +61,59 @@ models:
     description: FP16 quantized DPHNO for thermal throttling (Tier1)
     go_wrapper: DPHNOHamiltonianFP16Model
 
-  # Maneuver Detection
-  # WARNING: ONNX file does not exist - stub implementation only
-  # Go wrapper returns: fmt.Errorf("onnx runtime inference not yet bound")
+  # Maneuver Detection — TRAINED (P3, LSTM, 87.4% val acc)
   - name: maneuver_detector
     version: "2.1.0"
-    onnx_path: pkg/ml/onnx/maneuver_model.onnx
+    onnx_path: pkg/ml/models/maneuver_detector.onnx
     opset: 16
     input_schema:
-      - name: trajectory_window
-        shape: [1, 100, 6]
-        dtype: float32
-      - name: residuals
-        shape: [1, 100]
+      - name: maneuver_window
+        shape: [1, -1, 2]
         dtype: float32
     output_schema:
       - name: maneuver_probability
-        shape: [1, 4]
+        shape: [1, 1]
         dtype: float32
-      - name: delta_v
-        shape: [1]
+      - name: maneuver_type_logits
+        shape: [1, 2]
         dtype: float32
-    quantization: int8
+      - name: delta_v_estimate
+        shape: [1, 1]
+        dtype: float32
+      - name: confidence_score
+        shape: [1, 1]
+        dtype: float32
+    quantization: fp32
     tier: 1
-    description: HGV maneuver classification (ballistic, glide, impulsive, low-thrust) - STUB ONLY
+    description: PINN-accelerated learned residual analysis for delta-V discovery (maneuver detection)
     go_wrapper: ManeuverDetectorModel
-    stub_implementation: true
 
-  # Collision Risk
-  # WARNING: ONNX file does not exist - stub implementation only
-  # Go wrapper returns: fmt.Errorf("onnx runtime inference not yet bound")
+  # Collision Risk — TRAINED (P3, GNN surrogate, 25 epochs, loss 0.305)
   - name: collision_risk
     version: "1.5.0"
-    onnx_path: pkg/ml/onnx/collision_model.onnx
+    onnx_path: pkg/ml/models/collision_risk.onnx
     opset: 16
     input_schema:
-      - name: miss_distance
-        shape: [1]
+      - name: nodes
+        shape: [1, 10, 26]
         dtype: float32
-      - name: relative_velocity
-        shape: [1, 3]
+      - name: adj
+        shape: [1, 10, 10]
         dtype: float32
-      - name: hardbody_radius
-        shape: [1]
+      - name: iono
+        shape: [1, 16]
         dtype: float32
     output_schema:
-      - name: collision_probability
-        shape: [1]
+      - name: risk_alphas
+        shape: [1, 3]
         dtype: float32
-      - name: time_to_closest_approach
-        shape: [1]
+      - name: maneuver_logits
+        shape: [1, 3]
         dtype: float32
     quantization: fp32
     tier: 2
-    description: Collision probability estimation with uncertainty quantification - STUB ONLY
+    description: Collision probability estimation with evidential Dirichlet + maneuver classification
     go_wrapper: CollisionRiskModel
-    stub_implementation: true
 
   # Rapid Ranking
   # WARNING: ONNX file does not exist - stub implementation only
@@ -177,9 +174,29 @@ models:
     go_wrapper: ICNNHamiltonianModel
     stub_implementation: true
 
+  # NavIC Anomaly Detection — TRAINED (P3, BiLSTM-Attention, 100% val acc)
+  - name: navic_anomaly_detector
+    version: "1.0.0"
+    onnx_path: pkg/ml/models/navic_anomaly_detector.onnx
+    opset: 17
+    input_schema:
+      - name: residual_history
+        shape: [1, 60, 12]
+        dtype: float32
+    output_schema:
+      - name: class_logits
+        shape: [1, 3]
+        dtype: float32
+      - name: confidence
+        shape: [1, 1]
+        dtype: float32
+    quantization: fp32
+    tier: 1
+    description: NavIC spoofing/jamming detection via dual-frequency residual analysis
+    go_wrapper: NavICAnomalyDetectorModel
+
   # Blindspot Forecaster
   # WARNING: ONNX file does not exist - stub implementation only
-  # Go wrapper returns: fmt.Errorf("onnx blindspot inference not yet bound")
   - name: blindspot_forecaster
     version: "1.0.0"
     onnx_path: pkg/ml/onnx/blindspot_forecaster.onnx
