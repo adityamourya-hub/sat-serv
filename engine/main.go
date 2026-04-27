@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,6 +18,7 @@ import (
 	"ssis/pkg/octree"
 	"ssis/pkg/orbital"
 	"ssis/pkg/persistence"
+	"ssis/pkg/server"
 )
 
 type SatelliteEntry struct {
@@ -153,6 +155,17 @@ func run() error {
 		}
 		if _, err := engine.StartGRPCServer(":50051", engineRuntime, signer, common.NewAuditLog(), tlsConfig); err != nil {
 			fmt.Printf("gRPC server error: %v\n", err)
+		}
+	}()
+
+	// Start REST server (gin) on :8080
+	go func() {
+		restAddr := getEnvOrDefault("SSIS_REST_ADDR", ":8080")
+		restServer := server.NewServer(catalogStore.Store, signer, engineRuntime)
+		router := restServer.SetupRouter()
+		fmt.Printf("  -> REST API server starting on %s\n", restAddr)
+		if err := http.ListenAndServe(restAddr, router); err != nil {
+			fmt.Printf("REST server error: %v\n", err)
 		}
 	}()
 

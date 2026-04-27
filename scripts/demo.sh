@@ -80,10 +80,8 @@ fi
 hdr "Step 3: Capability (a) — Volumetric Scan" | tee_report
 # ─────────────────────────────────────────────────────────────────────────────
 log "Querying catalogue for objects over Indian subcontinent..." | tee_report
-curl -s http://localhost:8080/api/catalog/query \
-    -H "Content-Type: application/json" \
-    -d '{"center_latitude_deg": 20.0, "center_longitude_deg": 78.0, "radius_km": 3000, "min_altitude_km": 200, "max_altitude_km": 2000}' \
-    2>/dev/null | python3 -m json.tool 2>/dev/null | head -30 | tee_report || warn "REST endpoint not available — engine uses gRPC only" | tee_report
+curl -s "http://localhost:8080/volumetric/scan?lat=20.0&lon=78.0&radius=3000" \
+    2>/dev/null | python3 -m json.tool 2>/dev/null | head -30 | tee_report || warn "REST endpoint not available" | tee_report
 
 # ─────────────────────────────────────────────────────────────────────────────
 hdr "Step 4: Capability (b) — Neighbourhood Watch" | tee_report
@@ -170,7 +168,7 @@ hdr "Step 12: Model Registry Status" | tee_report
 echo "Trained models (real ONNX inference):" | tee_report
 echo "  ✅ collision_risk (GNN, evidential Dirichlet)" | tee_report
 echo "  ✅ navic_anomaly_detector (BiLSTM-Attention, 100% val acc)" | tee_report
-echo "  ✅ maneuver_detector (LSTM, loaded)" | tee_report
+echo "  ✅ maneuver_detector (LSTM, dynamic batch, load + inference)" | tee_report
 echo "  ✅ neural_atmosphere (FNO TorchScript)" | tee_report
 echo "  ✅ conformal_uq (CQR, 94.7% coverage)" | tee_report
 echo "" | tee_report

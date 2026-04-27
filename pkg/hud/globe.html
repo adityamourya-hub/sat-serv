@@ -4,74 +4,54 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SSIS — Sovereign Space Intelligence Substrate</title>
-<script src="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Cesium.js"></script>
-<link href="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e1a; color: #e0e6f0; overflow: hidden; }
-  #cesiumContainer { width: 100vw; height: 100vh; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI',system-ui,sans-serif; background:#0a0e1a; color:#e0e6f0; overflow:hidden; }
+  #canvas { width:100vw; height:100vh; display:block; }
 
-  /* HUD Overlay */
-  #hud { position: fixed; top: 0; left: 0; right: 0; z-index: 100; pointer-events: none; }
-  #topbar {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 12px 24px; background: linear-gradient(180deg, rgba(10,14,26,0.95) 0%, rgba(10,14,26,0.7) 100%);
-    border-bottom: 1px solid rgba(0,200,255,0.2);
-  }
-  #topbar h1 { font-size: 16px; font-weight: 600; letter-spacing: 2px; color: #00c8ff; }
-  #topbar .status { font-size: 12px; color: #4ade80; }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4ade80; margin-right: 6px; animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  #hud { position:fixed; top:0; left:0; right:0; z-index:100; pointer-events:none; }
+  #topbar { display:flex; justify-content:space-between; align-items:center;
+    padding:12px 24px; background:linear-gradient(180deg,rgba(10,14,26,0.95) 0%,rgba(10,14,26,0.7) 100%);
+    border-bottom:1px solid rgba(0,200,255,0.2); }
+  #topbar h1 { font-size:16px; font-weight:600; letter-spacing:2px; color:#00c8ff; }
+  #topbar .status { font-size:12px; color:#4ade80; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#4ade80; margin-right:6px; animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
 
-  /* Side Panel */
-  #panel {
-    position: fixed; top: 60px; right: 16px; width: 340px; z-index: 100;
-    background: rgba(10,14,26,0.92); border: 1px solid rgba(0,200,255,0.15);
-    border-radius: 8px; padding: 16px; pointer-events: auto; max-height: 80vh; overflow-y: auto;
-  }
-  #panel h2 { font-size: 13px; color: #00c8ff; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
-  .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
-  .stat .label { color: #8892a8; }
-  .stat .value { color: #e0e6f0; font-weight: 600; }
-  .stat .value.green { color: #4ade80; }
-  .stat .value.yellow { color: #facc15; }
-  .stat .value.red { color: #f87171; }
+  #panel { position:fixed; top:60px; right:16px; width:340px; z-index:100;
+    background:rgba(10,14,26,0.92); border:1px solid rgba(0,200,255,0.15);
+    border-radius:8px; padding:16px; pointer-events:auto; max-height:80vh; overflow-y:auto; }
+  #panel h2 { font-size:13px; color:#00c8ff; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }
+  .stat { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px; }
+  .stat .label { color:#8892a8; } .stat .value { color:#e0e6f0; font-weight:600; }
+  .stat .value.green { color:#4ade80; } .stat .value.yellow { color:#facc15; } .stat .value.red { color:#f87171; }
+  .alert-card { margin-top:8px; padding:10px; border-radius:6px; border-left:3px solid #f87171; background:rgba(248,113,113,0.08); }
+  .alert-card.warn { border-left-color:#facc15; background:rgba(250,204,21,0.06); }
+  .alert-card .title { font-size:12px; font-weight:600; color:#f87171; }
+  .alert-card.warn .title { color:#facc15; }
+  .alert-card .desc { font-size:11px; color:#8892a8; margin-top:4px; }
 
-  .alert-card {
-    margin-top: 8px; padding: 10px; border-radius: 6px;
-    border-left: 3px solid #f87171; background: rgba(248,113,113,0.08);
-  }
-  .alert-card.warn { border-left-color: #facc15; background: rgba(250,204,21,0.06); }
-  .alert-card .title { font-size: 12px; font-weight: 600; color: #f87171; }
-  .alert-card.warn .title { color: #facc15; }
-  .alert-card .desc { font-size: 11px; color: #8892a8; margin-top: 4px; }
+  #capbar { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:100;
+    display:flex; gap:8px; pointer-events:auto; flex-wrap:wrap; justify-content:center; }
+  .cap { padding:6px 14px; border-radius:20px; font-size:11px; font-weight:600;
+    background:rgba(0,200,255,0.1); border:1px solid rgba(0,200,255,0.3); color:#00c8ff; white-space:nowrap; }
+  .cap.active { background:rgba(0,200,255,0.25); border-color:#00c8ff; }
 
-  /* Bottom Capabilities Bar */
-  #capbar {
-    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 100;
-    display: flex; gap: 8px; pointer-events: auto;
-  }
-  .cap {
-    padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 600;
-    background: rgba(0,200,255,0.1); border: 1px solid rgba(0,200,255,0.3); color: #00c8ff;
-    cursor: default; white-space: nowrap;
-  }
-  .cap.active { background: rgba(0,200,255,0.25); border-color: #00c8ff; }
+  #legend { position:fixed; bottom:60px; left:16px; z-index:100;
+    background:rgba(10,14,26,0.9); border:1px solid rgba(0,200,255,0.15); border-radius:6px; padding:12px; font-size:11px; }
+  .legend-item { display:flex; align-items:center; gap:8px; margin:4px 0; }
+  .legend-dot { width:10px; height:10px; border-radius:50%; }
 
-  /* Legend */
-  #legend {
-    position: fixed; bottom: 60px; left: 16px; z-index: 100;
-    background: rgba(10,14,26,0.9); border: 1px solid rgba(0,200,255,0.15);
-    border-radius: 6px; padding: 12px; font-size: 11px;
-  }
-  .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
-  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  #fallback { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200;
+    background:rgba(10,14,26,0.95); border:1px solid rgba(0,200,255,0.3); border-radius:8px; padding:24px;
+    display:none; text-align:center; }
+  #fallback h3 { color:#00c8ff; margin-bottom:8px; }
+  #fallback p { color:#8892a8; font-size:13px; }
 </style>
 </head>
 <body>
-<div id="cesiumContainer"></div>
+<canvas id="canvas"></canvas>
 
-<!-- HUD -->
 <div id="hud">
   <div id="topbar">
     <h1>SSIS — SOVEREIGN SPACE INTELLIGENCE SUBSTRATE</h1>
@@ -79,7 +59,6 @@
   </div>
 </div>
 
-<!-- Side Panel -->
 <div id="panel">
   <h2>System Status</h2>
   <div class="stat"><span class="label">Engine</span><span class="value green">ONLINE</span></div>
@@ -111,7 +90,6 @@
   <div class="stat"><span class="label">Andaman AOR</span><span class="value green">CLEAR</span></div>
 </div>
 
-<!-- Legend -->
 <div id="legend">
   <div style="font-weight:600; margin-bottom:6px; color:#00c8ff;">Legend</div>
   <div class="legend-item"><div class="legend-dot" style="background:#4ade80;"></div>Indian Assets</div>
@@ -122,7 +100,6 @@
   <div class="legend-item"><div class="legend-dot" style="background:rgba(0,200,255,0.2); border:1px solid rgba(0,200,255,0.4);"></div>Sovereign Volume</div>
 </div>
 
-<!-- Capabilities Bar -->
 <div id="capbar">
   <div class="cap active">(a) Volumetric Scan</div>
   <div class="cap active">(b) Neighbourhood Watch</div>
@@ -135,117 +112,429 @@
   <div class="cap active">(i) Rapid Processing</div>
 </div>
 
+<div id="fallback">
+  <h3>WebGL Not Available</h3>
+  <p>Your browser or environment does not support WebGL.<br>
+  SSIS engine backend is operational — this is a display-only limitation.</p>
+</div>
+
 <script>
-// Use ion default access token (public imagery)
-Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2ZjA1NTlhYi04MmVlLTRhNjMtOWI5NC04YWE2MDFiYjdmMjEiLCJpZCI6MjU5LCJpYXQiOjE3MjIxNzk4NDF9.placeholder';
+/* ── Self-Contained WebGL Globe — Zero External Dependencies ── */
 
-const viewer = new Cesium.Viewer('cesiumContainer', {
-  baseLayerPicker: false,
-  geocoder: false,
-  homeButton: false,
-  sceneModePicker: false,
-  navigationHelpButton: false,
-  animation: false,
-  timeline: false,
-  fullscreenButton: false,
-  selectionIndicator: false,
-  infoBox: false,
-  baseLayer: Cesium.ImageryLayer.fromProviderAsync(
-    Cesium.TileMapServiceImageryProvider.fromUrl(Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII"))
-  ),
-  skyAtmosphere: new Cesium.SkyAtmosphere(),
-  requestRenderMode: false,
-});
+const canvas = document.getElementById('canvas');
+const gl = canvas.getContext('webgl', { antialias:true, alpha:false });
+if (!gl) { document.getElementById('fallback').style.display='block'; }
 
-// Dark atmosphere
-viewer.scene.globe.enableLighting = true;
-viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0a0e1a');
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', resize);
+resize();
 
-// Camera: View India from space
-viewer.camera.setView({
-  destination: Cesium.Cartesian3.fromDegrees(78.0, 20.0, 12000000),
-  orientation: { heading: 0, pitch: -Math.PI/2, roll: 0 }
-});
+/* ── Shaders ── */
+const vsGlobe = `
+attribute vec3 aPos;
+attribute vec2 aTex;
+varying vec2 vTex;
+varying vec3 vNorm;
+uniform mat4 uMVP;
+void main(){
+  gl_Position = uMVP * vec4(aPos,1.0);
+  vTex = aTex;
+  vNorm = normalize(aPos);
+}`;
 
-// ──── Synthetic Satellite Data ────
-const MU = 398600.4418;
-function keplerToCart(a, e, i, omega, w, M, t) {
-  const n = Math.sqrt(MU / (a*a*a));
-  const Mt = M + n * t;
+const fsGlobe = `
+precision mediump float;
+varying vec2 vTex;
+varying vec3 vNorm;
+uniform sampler2D uTex;
+uniform vec3 uSun;
+void main(){
+  vec4 col = texture2D(uTex, vTex);
+  float lit = max(dot(vNorm, normalize(uSun)), 0.15);
+  gl_FragColor = vec4(col.rgb * lit, 1.0);
+}`;
+
+const vsPoint = `
+attribute vec3 aPos;
+attribute float aSize;
+attribute vec3 aCol;
+uniform mat4 uMVP;
+varying vec3 vCol;
+void main(){
+  gl_Position = uMVP * vec4(aPos,1.0);
+  gl_PointSize = aSize;
+  vCol = aCol;
+}`;
+
+const fsPoint = `
+precision mediump float;
+varying vec3 vCol;
+void main(){
+  float d = length(gl_PointCoord - vec2(0.5));
+  if(d > 0.5) discard;
+  float alpha = 1.0 - smoothstep(0.3,0.5,d);
+  gl_FragColor = vec4(vCol, alpha);
+}`;
+
+const vsLine = `
+attribute vec3 aPos;
+uniform mat4 uMVP;
+void main(){ gl_Position = uMVP * vec4(aPos,1.0); }`;
+
+const fsLine = `
+precision mediump float;
+uniform vec3 uCol;
+uniform float uAlpha;
+void main(){ gl_FragColor = vec4(uCol, uAlpha); }`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+  return s;
+}
+function prog(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  return p;
+}
+
+const pGlobe = prog(vsGlobe, fsGlobe);
+const pPoint = prog(vsPoint, fsPoint);
+const pLine  = prog(vsLine,  fsLine);
+
+/* ── Procedural Earth Texture ── */
+function makeEarthTex() {
+  const size = 512;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size/2;
+  const x = c.getContext('2d');
+  // Ocean
+  x.fillStyle = '#0a2a4a'; x.fillRect(0,0,size,size/2);
+  // Continents (simplified shapes for demo)
+  function blob(cx,cy,r,g,b,a){
+    x.fillStyle = `rgba(${r},${g},${b},${a})`;
+    x.beginPath();
+    for(let i=0;i<20;i++){
+      const ang = i/20*Math.PI*2;
+      const rad = (Math.random()*0.5+0.5)*40;
+      const px = cx + Math.cos(ang)*rad;
+      const py = cy + Math.sin(ang)*rad*0.7;
+      if(i===0) x.moveTo(px,py); else x.lineTo(px,py);
+    }
+    x.closePath(); x.fill();
+  }
+  // India
+  blob(size*0.65, size*0.38, 34, 139, 34, 0.9);
+  blob(size*0.63, size*0.35, 34, 139, 34, 0.7);
+  // Asia
+  blob(size*0.72, size*0.30, 34, 100, 34, 0.8);
+  blob(size*0.80, size*0.25, 34, 100, 34, 0.7);
+  // Africa
+  blob(size*0.52, size*0.42, 34, 120, 34, 0.8);
+  blob(size*0.50, size*0.50, 34, 120, 34, 0.7);
+  // Europe
+  blob(size*0.48, size*0.22, 34, 100, 34, 0.7);
+  // Americas
+  blob(size*0.18, size*0.32, 34, 100, 34, 0.8);
+  blob(size*0.22, size*0.48, 34, 100, 34, 0.7);
+  // Australia
+  blob(size*0.85, size*0.55, 34, 120, 34, 0.7);
+
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  return tex;
+}
+
+/* ── Sphere Geometry ── */
+function sphere(r, seg) {
+  const pos=[], tex=[], ind=[];
+  for(let lat=0; lat<=seg; lat++){
+    const theta = lat/seg * Math.PI;
+    const sinT = Math.sin(theta), cosT = Math.cos(theta);
+    for(let lon=0; lon<=seg; lon++){
+      const phi = lon/seg * 2*Math.PI;
+      const sinP = Math.sin(phi), cosP = Math.cos(phi);
+      pos.push(r*sinT*cosP, r*cosT, r*sinT*sinP);
+      tex.push(1-lon/seg, lat/seg);
+    }
+  }
+  for(let lat=0; lat<seg; lat++){
+    for(let lon=0; lon<seg; lon++){
+      const a = lat*(seg+1)+lon, b=a+1, c=a+seg+1, d=c+1;
+      ind.push(a,c,b, b,c,d);
+    }
+  }
+  return {pos:new Float32Array(pos), tex:new Float32Array(tex), ind:new Uint16Array(ind)};
+}
+
+const EARTH_R = 1.0;
+const globeGeo = sphere(EARTH_R, 64);
+
+function buf(data, type, attr) {
+  const b = gl.createBuffer();
+  gl.bindBuffer(type, b);
+  gl.bufferData(type, data, gl.STATIC_DRAW);
+  return b;
+}
+
+const bPos = buf(globeGeo.pos, gl.ARRAY_BUFFER);
+const bTex = buf(globeGeo.tex, gl.ARRAY_BUFFER);
+const bInd = buf(globeGeo.ind, gl.ELEMENT_ARRAY_BUFFER);
+const earthTex = makeEarthTex();
+
+/* ── Satellite Data ── */
+const RE = 6371, MU = 398600.4418;
+function kepler(a, e, i, omega, w, M0, t) {
+  const n = Math.sqrt(MU/(a*a*a));
+  const Mt = M0 + n*t;
   let E = Mt;
-  for (let k=0; k<10; k++) E = Mt + e * Math.sin(E);
+  for(let k=0; k<10; k++) E = Mt + e*Math.sin(E);
   const cosE = Math.cos(E), sinE = Math.sin(E);
-  const r = a * (1 - e * cosE);
-  const xo = a * (cosE - e), yo = a * Math.sqrt(1-e*e) * sinE;
+  const r = a*(1-e*cosE);
+  const xo = a*(cosE-e), yo = a*Math.sqrt(1-e*e)*sinE;
   const ci=Math.cos(i*Math.PI/180), si=Math.sin(i*Math.PI/180);
   const co=Math.cos(omega*Math.PI/180), so=Math.sin(omega*Math.PI/180);
   const cw=Math.cos(w*Math.PI/180), sw=Math.sin(w*Math.PI/180);
-  const px = co*cw-so*sw*ci, qx = -co*sw-so*cw*ci;
-  const py = so*cw+co*sw*ci, qy = -so*sw+co*cw*ci;
-  const pz = sw*si, qz = cw*si;
-  return { x: px*xo+qx*yo, y: py*xo+qy*yo, z: pz*xo+qz*yo };
+  const px=co*cw-so*sw*ci, qx=-co*sw-so*cw*ci;
+  const py=so*cw+co*sw*ci, qy=-so*sw+co*cw*ci;
+  const pz=sw*si, qz=cw*si;
+  return {
+    x:(px*xo+qx*yo)/RE,
+    y:(py*xo+qy*yo)/RE,
+    z:(pz*xo+qz*yo)/RE
+  };
 }
 
-// Generate LEO constellation
-const satellites = [];
-const RE = 6371;
-for (let plane=0; plane<12; plane++) {
-  for (let sat=0; sat<30; sat++) {
-    const a = RE + 400 + Math.random()*1600;
-    const inc = 20 + Math.random()*80;
-    const raan = plane*30 + Math.random()*5;
-    const w = Math.random()*360;
-    const M = sat*12 + Math.random()*5;
-    const type = Math.random() < 0.08 ? 'indian' : Math.random() < 0.05 ? 'risk' : Math.random() < 0.04 ? 'maneuver' : 'tracked';
-    satellites.push({ a, e: 0.001+Math.random()*0.01, i: inc, omega: raan, w, M: M*Math.PI/180, type, id: 25544+plane*30+sat });
+const sats = [];
+for(let p=0; p<12; p++){
+  for(let s=0; s<30; s++){
+    const a = RE+400+Math.random()*1600;
+    const t = Math.random()<0.08 ? 'indian' : Math.random()<0.05 ? 'risk' : Math.random()<0.04 ? 'maneuver' : 'tracked';
+    sats.push({
+      a, e:0.001+Math.random()*0.01, i:20+Math.random()*80,
+      omega:p*30+Math.random()*5, w:Math.random()*360,
+      M0:(s*12+Math.random()*5)*Math.PI/180, type:t,
+      phase: Math.random()*Math.PI*2
+    });
   }
 }
+document.getElementById('catCount').textContent = sats.length;
 
-document.getElementById('catCount').textContent = satellites.length;
-
-const colors = {
-  indian: Cesium.Color.fromCssColorString('#4ade80'),
-  tracked: Cesium.Color.fromCssColorString('#60a5fa').withAlpha(0.6),
-  risk: Cesium.Color.fromCssColorString('#f87171'),
-  maneuver: Cesium.Color.fromCssColorString('#facc15'),
+const COLORS = {
+  indian:   [0.29, 0.87, 0.50],
+  tracked:  [0.37, 0.65, 0.98],
+  risk:     [0.97, 0.44, 0.44],
+  maneuver: [0.98, 0.80, 0.08],
+  anomaly:  [0.75, 0.52, 0.99]
 };
-const sizes = { indian: 8, tracked: 4, risk: 10, maneuver: 8 };
+const SIZES = { indian:6, tracked:3, risk:8, maneuver:5, anomaly:5 };
 
-// Add satellites as point primitives
-satellites.forEach(s => {
-  const pos = keplerToCart(s.a, s.e, s.i, s.omega, s.w, s.M, 0);
-  viewer.entities.add({
-    position: new Cesium.Cartesian3(pos.x*1000, pos.y*1000, pos.z*1000),
-    point: { pixelSize: sizes[s.type], color: colors[s.type], outlineWidth: 0 },
+/* ── Conjunction Corridor (line segments) ── */
+const corridor = [];
+const corridorWaypoints = [
+  [75,25,0.08], [78,22,0.075], [81,19,0.072], [84,16,0.069]
+];
+function ll2xyz(lat, lon, alt) {
+  const cl = Math.cos(lat*Math.PI/180), sl = Math.sin(lat*Math.PI/180);
+  const co = Math.cos(lon*Math.PI/180), so = Math.sin(lon*Math.PI/180);
+  const r = EARTH_R + alt;
+  return [r*cl*co, r*sl, r*cl*so];
+}
+for(let i=0;i<corridorWaypoints.length-1;i++){
+  const a = ll2xyz(...corridorWaypoints[i]);
+  const b = ll2xyz(...corridorWaypoints[i+1]);
+  corridor.push(...a, ...b);
+}
+const bCorridor = buf(new Float32Array(corridor), gl.ARRAY_BUFFER);
+
+/* ── Sovereign Volume (wireframe box around India) ── */
+const volPts = [];
+function addLine(a,b){ volPts.push(...a,...b); }
+const v1=ll2xyz(37,68,0.03), v2=ll2xyz(37,97,0.03), v3=ll2xyz(8,97,0.03), v4=ll2xyz(8,68,0.03);
+const v5=ll2xyz(37,68,0.35), v6=ll2xyz(37,97,0.35), v7=ll2xyz(8,97,0.35), v8=ll2xyz(8,68,0.35);
+addLine(v1,v2); addLine(v2,v3); addLine(v3,v4); addLine(v4,v1);
+addLine(v5,v6); addLine(v6,v7); addLine(v7,v8); addLine(v8,v5);
+addLine(v1,v5); addLine(v2,v6); addLine(v3,v7); addLine(v4,v8);
+const bVolume = buf(new Float32Array(volPts), gl.ARRAY_BUFFER);
+
+/* ── Math ── */
+function mat4() { return new Float32Array(16); }
+function identity(m) {
+  m[0]=1; m[1]=0; m[2]=0; m[3]=0;
+  m[4]=0; m[5]=1; m[6]=0; m[7]=0;
+  m[8]=0; m[9]=0; m[10]=1; m[11]=0;
+  m[12]=0; m[13]=0; m[14]=0; m[15]=1;
+  return m;
+}
+function perspective(m, fovy, aspect, near, far) {
+  const f = 1.0 / Math.tan(fovy/2);
+  m[0]=f/aspect; m[1]=0; m[2]=0; m[3]=0;
+  m[4]=0; m[5]=f; m[6]=0; m[7]=0;
+  m[8]=0; m[9]=0; m[10]=(far+near)/(near-far); m[11]=-1;
+  m[12]=0; m[13]=0; m[14]=(2*far*near)/(near-far); m[15]=0;
+  return m;
+}
+function multiply(out, a, b) {
+  for(let i=0;i<4;i++)for(let j=0;j<4;j++){
+    out[i*4+j] = a[i]*b[j] + a[i+4]*b[j+4] + a[i+8]*b[j+8] + a[i+12]*b[j+12];
+  }
+  return out;
+}
+function rotateY(m, angle) {
+  const c=Math.cos(angle), s=Math.sin(angle);
+  const r = mat4();
+  r[0]=c; r[2]=s; r[5]=1; r[8]=-s; r[10]=c; r[15]=1;
+  const tmp = mat4();
+  multiply(tmp, m, r);
+  for(let i=0;i<16;i++) m[i]=tmp[i];
+  return m;
+}
+function rotateX(m, angle) {
+  const c=Math.cos(angle), s=Math.sin(angle);
+  const r = mat4();
+  r[0]=1; r[5]=c; r[6]=-s; r[9]=s; r[10]=c; r[15]=1;
+  const tmp = mat4();
+  multiply(tmp, m, r);
+  for(let i=0;i<16;i++) m[i]=tmp[i];
+  return m;
+}
+function translate(m, x,y,z) {
+  m[12]+=x; m[13]+=y; m[14]+=z;
+  return m;
+}
+
+/* ── Camera ── */
+let camDist = 4.5, camLat = 20, camLon = 78, autoRotate = true;
+let mouseDown = false, lastMX = 0, lastMY = 0;
+canvas.addEventListener('mousedown', e=>{ mouseDown=true; lastMX=e.clientX; lastMY=e.clientY; autoRotate=false; });
+window.addEventListener('mouseup', ()=>mouseDown=false);
+window.addEventListener('mousemove', e=>{
+  if(!mouseDown) return;
+  camLon += (e.clientX-lastMX)*0.3;
+  camLat -= (e.clientY-lastMY)*0.3;
+  camLat = Math.max(-85, Math.min(85, camLat));
+  lastMX=e.clientX; lastMY=e.clientY;
+});
+canvas.addEventListener('wheel', e=>{
+  camDist *= (1 + e.deltaY*0.001);
+  camDist = Math.max(1.5, Math.min(15, camDist));
+  e.preventDefault();
+});
+
+/* ── Render ── */
+function drawGlobe(mvp) {
+  gl.useProgram(pGlobe);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bPos);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bTex);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bInd);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, earthTex);
+  gl.uniform1i(gl.getUniformLocation(pGlobe, 'uTex'), 0);
+  gl.uniformMatrix4fv(gl.getUniformLocation(pGlobe, 'uMVP'), false, mvp);
+  // Sun from above India
+  gl.uniform3f(gl.getUniformLocation(pGlobe, 'uSun'), 0.3, 0.7, 0.6);
+  gl.enable(gl.DEPTH_TEST);
+  gl.drawElements(gl.TRIANGLES, globeGeo.ind.length, gl.UNSIGNED_SHORT, 0);
+}
+
+function drawSats(mvp, t) {
+  const pos=[], size=[], col=[];
+  sats.forEach(s => {
+    const p = kepler(s.a, s.e, s.i, s.omega, s.w, s.M0, t);
+    pos.push(p.x, p.y, p.z);
+    size.push(SIZES[s.type] * (canvas.width/1600));
+    col.push(...COLORS[s.type]);
   });
-});
+  gl.useProgram(pPoint);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf(new Float32Array(pos), gl.ARRAY_BUFFER));
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf(new Float32Array(size), gl.ARRAY_BUFFER));
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf(new Float32Array(col), gl.ARRAY_BUFFER));
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
+  gl.uniformMatrix4fv(gl.getUniformLocation(pPoint, 'uMVP'), false, mvp);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  gl.drawArrays(gl.POINTS, 0, sats.length);
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+}
 
-// ──── Sovereign Volume (India GEO belt) ────
-viewer.entities.add({
-  rectangle: {
-    coordinates: Cesium.Rectangle.fromDegrees(68, 8, 97, 37),
-    height: 200000, extrudedHeight: 2000000,
-    material: Cesium.Color.fromCssColorString('#00c8ff').withAlpha(0.04),
-    outline: true, outlineColor: Cesium.Color.fromCssColorString('#00c8ff').withAlpha(0.15),
-  }
-});
+function drawLines(mvp, b, count, color, alpha) {
+  gl.useProgram(pLine);
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.uniformMatrix4fv(gl.getUniformLocation(pLine, 'uMVP'), false, mvp);
+  gl.uniform3fv(gl.getUniformLocation(pLine, 'uCol'), color);
+  gl.uniform1f(gl.getUniformLocation(pLine, 'uAlpha'), alpha);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  gl.drawArrays(gl.LINES, 0, count);
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+}
 
-// ──── Conjunction corridor ────
-viewer.entities.add({
-  polyline: {
-    positions: Cesium.Cartesian3.fromDegreesArrayHeights([
-      75, 25, 500000, 78, 22, 480000, 81, 19, 460000, 84, 16, 440000
-    ]),
-    width: 3,
-    material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.3, color: Cesium.Color.fromCssColorString('#f87171') }),
-  }
-});
+let startT = performance.now();
+function frame() {
+  const now = (performance.now() - startT) / 1000;
+  if(autoRotate) camLon += 0.05;
 
-// Clock
+  const aspect = canvas.width / canvas.height;
+  const proj = mat4();
+  perspective(proj, 45*Math.PI/180, aspect, 0.1, 100);
+
+  const view = identity(mat4());
+  const cl = Math.cos(camLat*Math.PI/180), sl = Math.sin(camLat*Math.PI/180);
+  const co = Math.cos(camLon*Math.PI/180), so = Math.sin(camLon*Math.PI/180);
+  translate(view, 0, 0, -camDist);
+  rotateY(view, -co); rotateX(view, -sl);
+
+  const mvp = mat4();
+  multiply(mvp, proj, view);
+
+  gl.clearColor(0.04, 0.05, 0.10, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+
+  drawGlobe(mvp);
+  drawSats(mvp, now);
+  drawLines(mvp, bCorridor, corridor.length/3, [0.97,0.44,0.44], 0.9);
+  drawLines(mvp, bVolume, volPts.length/3, [0.0,0.78,1.0], 0.3);
+
+  requestAnimationFrame(frame);
+}
+
+/* ── Clock ── */
 setInterval(() => {
-  document.getElementById('clock').textContent = new Date().toISOString().replace('T',' ').slice(0,19) + ' UTC';
+  document.getElementById('clock').textContent =
+    new Date().toISOString().replace('T',' ').slice(0,19) + ' UTC';
 }, 1000);
-document.getElementById('clock').textContent = new Date().toISOString().replace('T',' ').slice(0,19) + ' UTC';
+document.getElementById('clock').textContent =
+  new Date().toISOString().replace('T',' ').slice(0,19) + ' UTC';
+
+if(gl) requestAnimationFrame(frame);
 </script>
 </body>
 </html>

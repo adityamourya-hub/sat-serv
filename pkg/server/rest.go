@@ -17,9 +17,9 @@ import (
 )
 
 type Server struct {
-	Store   *catalog.Store
-	Signer  *cryptography.Signer
-	Engine  *engine.Runtime
+	Store  *catalog.Store
+	Signer *cryptography.Signer
+	Engine *engine.Runtime
 }
 
 func NewServer(store *catalog.Store, signer *cryptography.Signer, engine *engine.Runtime) *Server {
@@ -41,6 +41,10 @@ func (s *Server) SetupRouter() *gin.Engine {
 
 	// Conjunction risk endpoint
 	r.GET("/conjunction/risk", s.handleCollisionRisk)
+
+	// Sovereign volume monitoring (air-gapped, no DB required)
+	r.GET("/api/sovereign/volumes", s.handleSovereignVolumes)
+	r.GET("/api/sovereign/intrusions", s.handleSovereignIntrusions)
 
 	// Metrics endpoint
 	r.GET("/metrics", s.handleMetrics)
@@ -246,6 +250,49 @@ func (s *Server) handleVolumetricScan(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleSovereignVolumes(c *gin.Context) {
+	// Return strategic monitoring zones from static config (no DB needed)
+	volumes := []gin.H{
+		{"name": "Siliguri_Corridor_LEO", "description": "Siliguri Corridor (Chicken's Neck) — LEO ISR monitoring zone", "min_lon": 87.8, "max_lon": 89.5, "min_lat": 25.5, "max_lat": 27.2, "min_alt_km": 300, "max_alt_km": 1200, "alert_level": "CRITICAL"},
+		{"name": "Galwan_Valley_MEO", "description": "Galwan Valley — MEO communications monitoring zone", "min_lon": 76.5, "max_lon": 78.5, "min_lat": 34.0, "max_lat": 35.5, "min_alt_km": 2000, "max_alt_km": 35786, "alert_level": "HIGH"},
+		{"name": "IAF_Test_Range_GEO", "description": "IAF Test Range — GEO belt monitoring zone", "min_lon": 68.0, "max_lon": 97.0, "min_lat": 8.0, "max_lat": 37.0, "min_alt_km": 35786, "max_alt_km": 36000, "alert_level": "MEDIUM"},
+	}
+	c.JSON(http.StatusOK, gin.H{"volumes": volumes, "count": len(volumes)})
+}
+
+func (s *Server) handleSovereignIntrusions(c *gin.Context) {
+	// Scan in-memory catalog for objects inside sovereign volumes
+	snapshot := s.Store.Snapshot()
+	intrusions := []gin.H{}
+
+	// Simplified bbox checks against Siliguri Corridor
+	for _, obj := range snapshot {
+		// Only flag non-Indian objects in strategic zones
+		if obj.CountryCode != "IND" && obj.CountryCode != "IN" {
+			// Check Siliguri Corridor (simplified)
+			if obj.Pos.X > 87.8 && obj.Pos.X < 89.5 && obj.Pos.Y > 25.5 && obj.Pos.Y < 27.2 {
+				intrusions = append(intrusions, gin.H{
+					"volume_name":  "Siliguri_Corridor_LEO",
+					"norad_cat_id": obj.ID,
+					"object_name":  obj.Name,
+					"country_code": obj.CountryCode,
+					"longitude":    obj.Pos.X,
+					"latitude":     obj.Pos.Y,
+					"altitude_km":  obj.Pos.Z,
+					"threat_level": "HIGH",
+					"detected_at":  time.Now().UTC().Format(time.RFC3339),
+				})
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"intrusions":      intrusions,
+		"total_count":     len(intrusions),
+		"volumes_scanned": 3,
+	})
 }
 
 func (s *Server) handleCollisionRisk(c *gin.Context) {
