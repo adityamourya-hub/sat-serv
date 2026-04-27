@@ -36,15 +36,15 @@ class TestSymplecticity:
  
  @pytest.fixture
  def phs_model(self):
- """Initialize PHS model for testing."""
- model = PyTorchPHS(
- state_dim=6,
- control_dim=3,
- use_neural_atmosphere=False, # Disable atmosphere for Keplerian test
- hidden_dim=64,
-)
- model.eval()
- return model
+     """Initialize PHS model for testing."""
+     model = PyTorchPHS(
+         state_dim=6,
+         control_dim=3,
+         use_neural_atmosphere=False, # Disable atmosphere for Keplerian test
+         hidden_dim=64,
+     )
+     model.eval()
+     return model
  
  @pytest.fixture
  def keplerian_initial_state(self):

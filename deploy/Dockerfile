@@ -24,7 +24,8 @@ COPY . .
 
 # Build the sovereign engine
 # CGO_ENABLED=1 is required for ONNX Runtime bindings
-RUN CGO_ENABLED=1 GOOS=linux go build -o ssis_engine ./engine/main.go
+# -tags onnx compiles real ONNX inference (not MockInferrer stubs)
+RUN CGO_ENABLED=1 GOOS=linux go build -tags onnx -o ssis_engine ./engine/main.go
 
 # Stage 2: Runtime
 FROM debian:bookworm-slim

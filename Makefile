@@ -10,15 +10,15 @@ GOFLAGS ?= -trimpath
 LDFLAGS ?= -s -w -buildid=
 CGO_ENABLED ?= 0
 
-.PHONY: all fmt test-focused test-all build build-static sbom package clean
+.PHONY: all fmt test-focused test-all build build-onnx build-static sbom package clean
 
-all: fmt test-focused build-static
+all: fmt test-focused build-onnx
 
 fmt:
 	$(GO) fmt ./...
 
 test-focused:
-	$(GO) test ./pkg/ml/data ./pkg/ml/onnx ./pkg/spatial ./pkg/catalog ./engine/pkg/assistant
+	$(GO) test ./pkg/spatial ./pkg/catalog
 
 test-all:
 	$(GO) test ./...
@@ -27,9 +27,15 @@ verify-pc:
 	@echo "Running Gobra formal verification on pkg/collision..."
 	gobra -i pkg/collision/collision.go pkg/verification/pc_formal.go
 
+# Build with real ONNX inference (requires libonnxruntime + CGO)
+# Without -tags onnx, all models compile as MockInferrer stubs
+build-onnx:
+	mkdir -p $(OUT_DIR)
+	CGO_ENABLED=1 $(GO) build $(GOFLAGS) -tags onnx -ldflags "$(LDFLAGS)" -o $(BIN) $(PKG)
+
 build:
 	mkdir -p $(OUT_DIR)
-	CGO_ENABLED=1 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BIN) $(PKG)
+	CGO_ENABLED=1 $(GO) build $(GOFLAGS) -tags onnx -ldflags "$(LDFLAGS)" -o $(BIN) $(PKG)
 
 build-static:
 	mkdir -p $(OUT_DIR)
@@ -37,7 +43,7 @@ build-static:
 		echo "Built static-compatible binary with CGO_ENABLED=$(CGO_ENABLED)"; \
 	else \
 		echo "WARNING: static build unavailable (likely ONNX CGO requirement); falling back to reproducible CGO build"; \
-		CGO_ENABLED=1 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BIN) $(PKG); \
+		CGO_ENABLED=1 $(GO) build $(GOFLAGS) -tags onnx -ldflags "$(LDFLAGS)" -o $(BIN) $(PKG); \
 	fi
 
 sbom:
