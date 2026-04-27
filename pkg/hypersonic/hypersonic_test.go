@@ -10,7 +10,7 @@ import (
 
 func TestHypersonicFilterTracking(t *testing.T) {
 	// SKIPPED: Test needs refactoring for HGVState API changes
-	t.Skip("Test needs refactoring for HGVState API changes")
+	t.Fatal("NOT IMPLEMENTED: Test needs refactoring for HGVState API changes")
 }
 
 func TestImpactPrediction(t *testing.T) {

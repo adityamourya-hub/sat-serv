@@ -43,7 +43,7 @@ func TestDPHNOAgainstNASA42(t *testing.T) {
 
 	// TODO: Enable when DPHNO is implemented
 	// This test is a placeholder showing the validation structure
-	t.Skip("DPHNO not yet implemented - see ai/model_arch.md for architecture")
+	t.Fatal("DPHNO not yet implemented - must pass before merge")
 
 	// Connect to NASA 42
 	config := nasa42.DefaultIPCConfig()
@@ -165,7 +165,7 @@ func BenchmarkDPHNOValidation(b *testing.B) {
 // TestValidationMetrics tests the metrics aggregation
 func TestValidationMetrics(t *testing.T) {
 	// This will be implemented when ValidationRunner is integrated
-	t.Skip("ValidationRunner integration pending")
+	t.Fatal("ValidationRunner integration pending - must pass before merge")
 }
 
 // TestDecisionGates tests the criteria for NASA 42 removal
@@ -177,7 +177,7 @@ func TestDecisionGates(t *testing.T) {
 	// 4. Operational: 30 days continuous validation without drift
 
 	// TODO: Implement when DPHNO validation data is available
-	t.Skip("Decision gate implementation pending DPHNO validation data")
+	t.Fatal("Decision gate implementation pending DPHNO validation data - must pass before merge")
 }
 
 // Helper function to create physics.State from [6]float64

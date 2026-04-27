@@ -101,110 +101,110 @@ run_name: Optional[str] = None,
 config_overrides: Optional[Dict] = None,
 resume: bool = False
 ) -> "SovereignLogger":
-    """
-    Initialize W&B Mission Control for the H100 Foundation run.
+                """
+                Initialize W&B Mission Control for the H100 Foundation run.
 
-    Args:
-    run_name: Custom run name (auto-generated if None)
-    config_overrides: Override default config values
-    resume: Whether to resume a previous run
+                Args:
+                run_name: Custom run name (auto-generated if None)
+                config_overrides: Override default config values
+                resume: Whether to resume a previous run
 
-    Returns:
-    logger: SovereignLogger instance ready for metric logging
+                Returns:
+                logger: SovereignLogger instance ready for metric logging
 
-    Example:
-    >>> logger = init_sovereign_mission_control()
-    >>> for epoch in range(1000):
-    ... train_loss = train_step()
-    ... logger.log_epoch(epoch, train_loss, model, val_data)
-    """
-    # Build config
-    config = SOVEREIGN_CONFIG.copy()
-    if config_overrides:
-        config.update(config_overrides)
+                Example:
+                >>> logger = init_sovereign_mission_control()
+                >>> for epoch in range(1000):
+                ... train_loss = train_step()
+                ... logger.log_epoch(epoch, train_loss, model, val_data)
+                """
+                # Build config
+                config = SOVEREIGN_CONFIG.copy()
+                if config_overrides:
+                                config.update(config_overrides)
 
-        # Generate run name
-        if run_name is None:
-            timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-            run_name = f"{config['name_prefix']}-{timestamp}"
+                                # Generate run name
+                                if run_name is None:
+                                                timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+                                                run_name = f"{config['name_prefix']}-{timestamp}"
 
-            # Initialize W&B
-            wandb.init(
-            project=config["project"],
-            entity=config.get("entity"),
-            name=run_name,
-            config=config,
-            tags=config["tags"],
-            resume=resume,
-            save_code=True, # Track code changes
-            notes=f"Sovereign training run for May 4th audit. Lie-Group PHS on H100 cluster.",
-            )
+                                                # Initialize W&B
+                                                wandb.init(
+                                                project=config["project"],
+                                                entity=config.get("entity"),
+                                                name=run_name,
+                                                config=config,
+                                                tags=config["tags"],
+                                                resume=resume,
+                                                save_code=True, # Track code changes
+                                                notes=f"Sovereign training run for May 4th audit. Lie-Group PHS on H100 cluster.",
+                                                )
 
-            # Define custom metrics with summaries
-            _define_physics_metrics()
+                                                # Define custom metrics with summaries
+                                                _define_physics_metrics()
 
-            # Create logger
-            logger = SovereignLogger(config)
+                                                # Create logger
+                                                logger = SovereignLogger(config)
 
-            print(f"🚀 W&B Mission Control initialized")
-            print(f" Project: {config['project']}")
-            print(f" Run: {run_name}")
-            print(f" Dashboard: {wandb.run.url}")
+                                                print(f"🚀 W&B Mission Control initialized")
+                                                print(f" Project: {config['project']}")
+                                                print(f" Run: {run_name}")
+                                                print(f" Dashboard: {wandb.run.url}")
 
-            return logger
+                                                return logger
 
 
 def _define_physics_metrics():
-    """
-    Define custom metric axes for physics-specific monitoring.
+                """
+                Define custom metric axes for physics-specific monitoring.
 
-    These metrics track topological integrity, not just loss.
-    """
-    # Hamiltonian Energy Stability (most critical)
-    # Minimize drift - if this spikes, integrator is fighting H surface
-    wandb.define_metric("physics/energy_drift", summary="min")
-    wandb.define_metric("physics/energy_drift_normalized", summary="min")
-    wandb.define_metric("physics/hamiltonian_mean", summary="mean")
+                These metrics track topological integrity, not just loss.
+                """
+                # Hamiltonian Energy Stability (most critical)
+                # Minimize drift - if this spikes, integrator is fighting H surface
+                wandb.define_metric("physics/energy_drift", summary="min")
+                wandb.define_metric("physics/energy_drift_normalized", summary="min")
+                wandb.define_metric("physics/hamiltonian_mean", summary="mean")
 
-    # Manifold Orthogonality (geometric integrity)
-    # Track SO(3) and S² constraint violations
-    wandb.define_metric("physics/manifold_ortho_error", summary="min")
-    wandb.define_metric("physics/so3_determinant_deviation", summary="min")
-    wandb.define_metric("physics/s2_radial_drift", summary="min")
-    wandb.define_metric("physics/casimir_c1_drift", summary="min") # ||q||² - 1
-    wandb.define_metric("physics/casimir_c2_drift", summary="min") # q·p
+                # Manifold Orthogonality (geometric integrity)
+                # Track SO(3) and S² constraint violations
+                wandb.define_metric("physics/manifold_ortho_error", summary="min")
+                wandb.define_metric("physics/so3_determinant_deviation", summary="min")
+                wandb.define_metric("physics/s2_radial_drift", summary="min")
+                wandb.define_metric("physics/casimir_c1_drift", summary="min") # ||q||² - 1
+                wandb.define_metric("physics/casimir_c2_drift", summary="min") # q·p
 
-    # Symplectic Structure Preservation
-    wandb.define_metric("physics/symplectic_residual_norm", summary="min")
-    wandb.define_metric("physics/jacobian_symplectic_error", summary="min")
+                # Symplectic Structure Preservation
+                wandb.define_metric("physics/symplectic_residual_norm", summary="min")
+                wandb.define_metric("physics/jacobian_symplectic_error", summary="min")
 
-    # SINDy Sparsity (explainability)
-    # High sparsity = interpretable control laws
-    wandb.define_metric("sindy/sparsity_ratio", summary="max")
-    wandb.define_metric("sindy/nonzero_coefficients", summary="min")
-    wandb.define_metric("sindy/sparsity_loss", summary="min")
+                # SINDy Sparsity (explainability)
+                # High sparsity = interpretable control laws
+                wandb.define_metric("sindy/sparsity_ratio", summary="max")
+                wandb.define_metric("sindy/nonzero_coefficients", summary="min")
+                wandb.define_metric("sindy/sparsity_loss", summary="min")
 
-    # SupCon/Latent Metrics (regime separation)
-    wandb.define_metric("latent/supcon_loss", summary="min")
-    wandb.define_metric("latent/contrastive_accuracy", summary="max")
-    wandb.define_metric("latent/regime_entropy", summary="min")
+                # SupCon/Latent Metrics (regime separation)
+                wandb.define_metric("latent/supcon_loss", summary="min")
+                wandb.define_metric("latent/contrastive_accuracy", summary="max")
+                wandb.define_metric("latent/regime_entropy", summary="min")
 
-    # Validation Accuracy (end-to-end tracking)
-    wandb.define_metric("val/l2_residual_meters", summary="min")
-    wandb.define_metric("val/max_error_meters", summary="min")
-    wandb.define_metric("val/rmse_trajectory", summary="min")
+                # Validation Accuracy (end-to-end tracking)
+                wandb.define_metric("val/l2_residual_meters", summary="min")
+                wandb.define_metric("val/max_error_meters", summary="min")
+                wandb.define_metric("val/rmse_trajectory", summary="min")
 
-    # Training Dynamics
-    wandb.define_metric("train/loss_total", summary="min")
-    wandb.define_metric("train/loss_mse", summary="min")
-    wandb.define_metric("train/loss_physics", summary="min")
-    wandb.define_metric("train/learning_rate", summary="last")
-    wandb.define_metric("train/gradient_norm", summary="max")
+                # Training Dynamics
+                wandb.define_metric("train/loss_total", summary="min")
+                wandb.define_metric("train/loss_mse", summary="min")
+                wandb.define_metric("train/loss_physics", summary="min")
+                wandb.define_metric("train/learning_rate", summary="last")
+                wandb.define_metric("train/gradient_norm", summary="max")
 
-    # Hardware/Performance
-    wandb.define_metric("perf/gpu_memory_gb", summary="max")
-    wandb.define_metric("perf/throughput_samples_per_sec", summary="mean")
-    wandb.define_metric("perf/step_time_ms", summary="mean")
+                # Hardware/Performance
+                wandb.define_metric("perf/gpu_memory_gb", summary="max")
+                wandb.define_metric("perf/throughput_samples_per_sec", summary="mean")
+                wandb.define_metric("perf/step_time_ms", summary="mean")
 
 
 # ============================================================================
@@ -212,259 +212,259 @@ def _define_physics_metrics():
 # ============================================================================
 
 class SovereignLogger:
-    """
-    Physics-aware logger for the sovereign training run.
+                """
+                Physics-aware logger for the sovereign training run.
 
-    Tracks topological integrity metrics alongside standard loss.
-    """
+                Tracks topological integrity metrics alongside standard loss.
+                """
 
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
-        self.step = 0
-        self.epoch = 0
-        self.best_metrics = {
-        "energy_drift": float("inf"),
-        "manifold_error": float("inf"),
-        "val_residual": float("inf"),
-        }
+                def __init__(self, config: Dict[str, Any]):
+                                self.config = config
+                                self.step = 0
+                                self.epoch = 0
+                                self.best_metrics = {
+                                "energy_drift": float("inf"),
+                                "manifold_error": float("inf"),
+                                "val_residual": float("inf"),
+                                }
 
-        def log_epoch(
-        self,
-        epoch: int,
-        train_loss: float,
-        model: torch.nn.Module,
-        val_data: Optional[torch.Tensor] = None,
-        optimizer: Optional[torch.optim.Optimizer] = None
-        ):
-            """
-            Log complete metrics for an epoch.
-
-            Args:
-            epoch: Current epoch number
-            train_loss: Training loss value
-            model: The PHS model being trained
-            val_data: Validation trajectory data
-            optimizer: Optimizer for learning rate tracking
-            """
-            self.epoch = epoch
-
-            metrics = {
-            "train/loss_total": train_loss,
-            "epoch": epoch,
-            }
-
-            # Log optimizer state
-            if optimizer:
-                metrics["train/learning_rate"] = optimizer.param_groups[0]["lr"]
-
-                # Log physics metrics from model
-                physics_metrics = self._compute_physics_metrics(model, val_data)
-                metrics.update(physics_metrics)
-
-                # Log validation metrics
-                if val_data is not None:
-                    val_metrics = self._compute_validation_metrics(model, val_data)
-                    metrics.update(val_metrics)
-
-                    # Track best metrics
-                    if val_metrics.get("val/l2_residual_meters", float("inf")) < self.best_metrics["val_residual"]:
-                        self.best_metrics["val_residual"] = val_metrics["val/l2_residual_meters"]
-                        wandb.run.summary["best_val_residual_m"] = self.best_metrics["val_residual"]
-
-                        # Log all metrics
-                        wandb.log(metrics, step=epoch)
-
-                        # Periodic detailed logging
-                        if epoch % 100 == 0:
-                            self._log_detailed_status(metrics)
-
-                            def log_physics_step(self, step: int, model: torch.nn.Module, state: torch.Tensor):
-                                """
-                                Log physics metrics during a single integration step.
-
-                                For high-frequency monitoring (every 100 steps).
-                                """
-                                self.step = step
-
-                                if step % 100 != 0:
-                                    return
-
-                                    metrics = self._compute_physics_metrics(model, state.unsqueeze(0))
-                                    metrics["step"] = step
-
-                                    wandb.log(metrics, commit=False)
-
-                                    def log_sindy_sparsity(self, epoch: int, coefficient_matrix: torch.Tensor):
-                                        """
-                                        Log SINDy sparsity metrics for explainability tracking.
-
-                                        Args:
-                                        epoch: Current epoch
-                                        coefficient_matrix: Xi matrix of discovered coefficients
-                                        """
-                                        # Count non-zero coefficients
-                                        total_params = coefficient_matrix.numel()
-                                        nonzero_params = torch.count_nonzero(torch.abs(coefficient_matrix) > 1e-6).item()
-                                        sparsity_ratio = 1.0 - (nonzero_params / total_params)
-
-                                        metrics = {
-                                        "sindy/sparsity_ratio": sparsity_ratio,
-                                        "sindy/nonzero_coefficients": nonzero_params,
-                                        "sindy/total_coefficients": total_params,
-                                        "epoch": epoch,
-                                        }
-
-                                        # Alert if sparsity target reached
-                                        if sparsity_ratio > self.config["sindy_sparsity_target"]:
-                                            metrics["sindy/target_reached"] = True
-                                            wandb.run.summary["sindy_final_sparsity"] = sparsity_ratio
-
-                                            wandb.log(metrics, step=epoch)
-
-                                            def log_manifold_integrity(self, epoch: int, report: Dict):
+                                def log_epoch(
+                                self,
+                                epoch: int,
+                                train_loss: float,
+                                model: torch.nn.Module,
+                                val_data: Optional[torch.Tensor] = None,
+                                optimizer: Optional[torch.optim.Optimizer] = None
+                                ):
                                                 """
-                                                Log manifold integrity check results.
+                                                Log complete metrics for an epoch.
 
                                                 Args:
-                                                epoch: Current epoch
-                                                report: Output from check_manifold.py
+                                                epoch: Current epoch number
+                                                train_loss: Training loss value
+                                                model: The PHS model being trained
+                                                val_data: Validation trajectory data
+                                                optimizer: Optimizer for learning rate tracking
                                                 """
+                                                self.epoch = epoch
+
                                                 metrics = {
-                                                "physics/manifold_ortho_error": report.get("max_so3_ortho_error", 0),
-                                                "physics/s2_radial_drift": report.get("max_s2_drift", 0),
-                                                "physics/so3_determinant_deviation": report.get("max_determinant_deviation", 0),
-                                                "physics/manifold_grade": report.get("grade", "F"),
+                                                "train/loss_total": train_loss,
                                                 "epoch": epoch,
                                                 }
 
-                                                wandb.log(metrics, step=epoch)
+                                                # Log optimizer state
+                                                if optimizer:
+                                                                metrics["train/learning_rate"] = optimizer.param_groups[0]["lr"]
 
-                                                # Alert on manifold failure
-                                                if report.get("verdict") == "FAIL":
-                                                    wandb.alert(
-                                                    title="Manifold Integrity Failure",
-                                                    text=f"Epoch {epoch}: Manifold constraints violated! "
-                                                    f"Ortho error: {report.get('max_so3_ortho_error', 0):.2e}",
-                                                    level=wandb.AlertLevel.ERROR
-                                                    )
+                                                                # Log physics metrics from model
+                                                                physics_metrics = self._compute_physics_metrics(model, val_data)
+                                                                metrics.update(physics_metrics)
 
-                                                    def finalize(self, final_model_path: str, certificate_hash: str):
-                                                        """
-                                                        Finalize the run with summary statistics and certificate hash.
+                                                                # Log validation metrics
+                                                                if val_data is not None:
+                                                                                val_metrics = self._compute_validation_metrics(model, val_data)
+                                                                                metrics.update(val_metrics)
 
-                                                        Args:
-                                                        final_model_path: Path to final trained model
-                                                        certificate_hash: SHA-256 hash for Symbolic Certificate
-                                                        """
-                                                        # Compute run hash
-                                                        run_data = {
-                                                        "config": self.config,
-                                                        "best_metrics": self.best_metrics,
-                                                        "final_epoch": self.epoch,
-                                                        "timestamp": datetime.utcnow().isoformat(),
-                                                        }
-                                                        run_hash = hashlib.sha256(json.dumps(run_data, sort_keys=True).encode()).hexdigest()[:16]
+                                                                                # Track best metrics
+                                                                                if val_metrics.get("val/l2_residual_meters", float("inf")) < self.best_metrics["val_residual"]:
+                                                                                                self.best_metrics["val_residual"] = val_metrics["val/l2_residual_meters"]
+                                                                                                wandb.run.summary["best_val_residual_m"] = self.best_metrics["val_residual"]
 
-                                                        # Update summary
-                                                        wandb.run.summary["run_hash"] = run_hash
-                                                        wandb.run.summary["certificate_hash"] = certificate_hash
-                                                        wandb.run.summary["final_model_path"] = final_model_path
-                                                        wandb.run.summary["status"] = "COMPLETE"
+                                                                                                # Log all metrics
+                                                                                                wandb.log(metrics, step=epoch)
 
-                                                        # Log final artifacts
-                                                        wandb.save(final_model_path)
+                                                                                                # Periodic detailed logging
+                                                                                                if epoch % 100 == 0:
+                                                                                                                self._log_detailed_status(metrics)
 
-                                                        print(f"\n✅ W&B Mission Control finalized")
-                                                        print(f" Run Hash: {run_hash}")
-                                                        print(f" Certificate Hash: {certificate_hash}")
-                                                        print(f" Dashboard: {wandb.run.url}")
+                                                                                                                def log_physics_step(self, step: int, model: torch.nn.Module, state: torch.Tensor):
+                                                                                                                                """
+                                                                                                                                Log physics metrics during a single integration step.
 
-                                                        wandb.finish()
+                                                                                                                                For high-frequency monitoring (every 100 steps).
+                                                                                                                                """
+                                                                                                                                self.step = step
 
-                                                        def _compute_physics_metrics(
-                                                        self,
-                                                        model: torch.nn.Module,
-                                                        state: Optional[torch.Tensor]
-                                                        ) -> Dict[str, float]:
-                                                            """
-                                                            Compute physics-specific metrics from model state.
-                                                            """
-                                                            metrics = {}
+                                                                                                                                if step % 100 != 0:
+                                                                                                                                                return
 
-                                                            if state is None or not hasattr(model, 'get_physics_metrics'):
-                                                                return metrics
+                                                                                                                                                metrics = self._compute_physics_metrics(model, state.unsqueeze(0))
+                                                                                                                                                metrics["step"] = step
 
-                                                                try:
-                                                                    # Get physics diagnostics from model
-                                                                    with torch.no_grad():
-                                                                        physics = model.get_physics_metrics(state)
+                                                                                                                                                wandb.log(metrics, commit=False)
 
-                                                                        metrics["physics/hamiltonian_mean"] = physics.get("hamiltonian_mean", 0)
-                                                                        metrics["physics/dissipation_min_eigenvalue"] = physics.get("dissipation_min_eigenvalue", 0)
-                                                                        metrics["physics/j_skew_error"] = physics.get("j_skew_error", 0)
+                                                                                                                                                def log_sindy_sparsity(self, epoch: int, coefficient_matrix: torch.Tensor):
+                                                                                                                                                                """
+                                                                                                                                                                Log SINDy sparsity metrics for explainability tracking.
 
-                                                                except Exception as e:
-                                                                    # Fail silently - don't crash training
-                                                                    pass
+                                                                                                                                                                Args:
+                                                                                                                                                                epoch: Current epoch
+                                                                                                                                                                coefficient_matrix: Xi matrix of discovered coefficients
+                                                                                                                                                                """
+                                                                                                                                                                # Count non-zero coefficients
+                                                                                                                                                                total_params = coefficient_matrix.numel()
+                                                                                                                                                                nonzero_params = torch.count_nonzero(torch.abs(coefficient_matrix) > 1e-6).item()
+                                                                                                                                                                sparsity_ratio = 1.0 - (nonzero_params / total_params)
 
-                                                                    return metrics
+                                                                                                                                                                metrics = {
+                                                                                                                                                                "sindy/sparsity_ratio": sparsity_ratio,
+                                                                                                                                                                "sindy/nonzero_coefficients": nonzero_params,
+                                                                                                                                                                "sindy/total_coefficients": total_params,
+                                                                                                                                                                "epoch": epoch,
+                                                                                                                                                                }
 
-                                                                    def _compute_validation_metrics(
-                                                                    self,
-                                                                    model: torch.nn.Module,
-                                                                    val_data: torch.Tensor
-                                                                    ) -> Dict[str, float]:
-                                                                        """
-                                                                        Compute validation tracking accuracy.
-                                                                        """
-                                                                        metrics = {}
+                                                                                                                                                                # Alert if sparsity target reached
+                                                                                                                                                                if sparsity_ratio > self.config["sindy_sparsity_target"]:
+                                                                                                                                                                                metrics["sindy/target_reached"] = True
+                                                                                                                                                                                wandb.run.summary["sindy_final_sparsity"] = sparsity_ratio
 
-                                                                        try:
-                                                                            with torch.no_grad():
-                                                                                # Predict trajectory
-                                                                                pred = model(val_data[:, 0]) # Simplified
+                                                                                                                                                                                wandb.log(metrics, step=epoch)
 
-                                                                                # L2 error in meters
-                                                                                error = torch.norm(val_data - pred, dim=-1)
-                                                                                metrics["val/l2_residual_meters"] = error.mean().item()
-                                                                                metrics["val/max_error_meters"] = error.max().item()
+                                                                                                                                                                                def log_manifold_integrity(self, epoch: int, report: Dict):
+                                                                                                                                                                                                """
+                                                                                                                                                                                                Log manifold integrity check results.
 
-                                                                        except Exception as e:
-                                                                            pass
+                                                                                                                                                                                                Args:
+                                                                                                                                                                                                epoch: Current epoch
+                                                                                                                                                                                                report: Output from check_manifold.py
+                                                                                                                                                                                                """
+                                                                                                                                                                                                metrics = {
+                                                                                                                                                                                                "physics/manifold_ortho_error": report.get("max_so3_ortho_error", 0),
+                                                                                                                                                                                                "physics/s2_radial_drift": report.get("max_s2_drift", 0),
+                                                                                                                                                                                                "physics/so3_determinant_deviation": report.get("max_determinant_deviation", 0),
+                                                                                                                                                                                                "physics/manifold_grade": report.get("grade", "F"),
+                                                                                                                                                                                                "epoch": epoch,
+                                                                                                                                                                                                }
 
-                                                                            return metrics
+                                                                                                                                                                                                wandb.log(metrics, step=epoch)
 
-                                                                            def _log_detailed_status(self, metrics: Dict):
-                                                                                """Print detailed status to console."""
-                                                                                print(f"\n{'='*70}")
-                                                                                print(f"Epoch {self.epoch} - Physics Health Report")
-                                                                                print(f"{'='*70}")
+                                                                                                                                                                                                # Alert on manifold failure
+                                                                                                                                                                                                if report.get("verdict") == "FAIL":
+                                                                                                                                                                                                                wandb.alert(
+                                                                                                                                                                                                                title="Manifold Integrity Failure",
+                                                                                                                                                                                                                text=f"Epoch {epoch}: Manifold constraints violated! "
+                                                                                                                                                                                                                f"Ortho error: {report.get('max_so3_ortho_error', 0):.2e}",
+                                                                                                                                                                                                                level=wandb.AlertLevel.ERROR
+                                                                                                                                                                                                                )
 
-                                                                                if "physics/energy_drift" in metrics:
-                                                                                    drift = metrics["physics/energy_drift"]
-                                                                                    target = self.config["target_energy_drift"]
-                                                                                    status = "✅" if drift < target else "⚠️"
-                                                                                    print(f"{status} Energy Drift: {drift:.2e} (target: {target:.0e})")
+                                                                                                                                                                                                                def finalize(self, final_model_path: str, certificate_hash: str):
+                                                                                                                                                                                                                                """
+                                                                                                                                                                                                                                Finalize the run with summary statistics and certificate hash.
 
-                                                                                    if "physics/manifold_ortho_error" in metrics:
-                                                                                        ortho = metrics["physics/manifold_ortho_error"]
-                                                                                        target = self.config["manifold_tolerance"]
-                                                                                        status = "✅" if ortho < target else "⚠️"
-                                                                                        print(f"{status} Manifold Error: {ortho:.2e} (target: {target:.0e})")
+                                                                                                                                                                                                                                Args:
+                                                                                                                                                                                                                                final_model_path: Path to final trained model
+                                                                                                                                                                                                                                certificate_hash: SHA-256 hash for Symbolic Certificate
+                                                                                                                                                                                                                                """
+                                                                                                                                                                                                                                # Compute run hash
+                                                                                                                                                                                                                                run_data = {
+                                                                                                                                                                                                                                "config": self.config,
+                                                                                                                                                                                                                                "best_metrics": self.best_metrics,
+                                                                                                                                                                                                                                "final_epoch": self.epoch,
+                                                                                                                                                                                                                                "timestamp": datetime.utcnow().isoformat(),
+                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                run_hash = hashlib.sha256(json.dumps(run_data, sort_keys=True).encode()).hexdigest()[:16]
 
-                                                                                        if "val/l2_residual_meters" in metrics:
-                                                                                            residual = metrics["val/l2_residual_meters"]
-                                                                                            target = self.config["target_l2_residual_m"]
-                                                                                            status = "✅" if residual < target else "⚠️"
-                                                                                            print(f"{status} Val Residual: {residual:.2f}m (target: {target:.0f}m)")
+                                                                                                                                                                                                                                # Update summary
+                                                                                                                                                                                                                                wandb.run.summary["run_hash"] = run_hash
+                                                                                                                                                                                                                                wandb.run.summary["certificate_hash"] = certificate_hash
+                                                                                                                                                                                                                                wandb.run.summary["final_model_path"] = final_model_path
+                                                                                                                                                                                                                                wandb.run.summary["status"] = "COMPLETE"
 
-                                                                                            if "sindy/sparsity_ratio" in metrics:
-                                                                                                sparsity = metrics["sindy/sparsity_ratio"]
-                                                                                                target = self.config["sindy_sparsity_target"]
-                                                                                                status = "✅" if sparsity > target else "⚠️"
-                                                                                                print(f"{status} SINDy Sparsity: {sparsity*100:.1f}% (target: {target*100:.0f}%)")
+                                                                                                                                                                                                                                # Log final artifacts
+                                                                                                                                                                                                                                wandb.save(final_model_path)
 
-                                                                                                print(f"{'='*70}\n")
+                                                                                                                                                                                                                                print(f"\n✅ W&B Mission Control finalized")
+                                                                                                                                                                                                                                print(f" Run Hash: {run_hash}")
+                                                                                                                                                                                                                                print(f" Certificate Hash: {certificate_hash}")
+                                                                                                                                                                                                                                print(f" Dashboard: {wandb.run.url}")
+
+                                                                                                                                                                                                                                wandb.finish()
+
+                                                                                                                                                                                                                                def _compute_physics_metrics(
+                                                                                                                                                                                                                                self,
+                                                                                                                                                                                                                                model: torch.nn.Module,
+                                                                                                                                                                                                                                state: Optional[torch.Tensor]
+                                                                                                                                                                                                                                ) -> Dict[str, float]:
+                                                                                                                                                                                                                                                """
+                                                                                                                                                                                                                                                Compute physics-specific metrics from model state.
+                                                                                                                                                                                                                                                """
+                                                                                                                                                                                                                                                metrics = {}
+
+                                                                                                                                                                                                                                                if state is None or not hasattr(model, 'get_physics_metrics'):
+                                                                                                                                                                                                                                                                return metrics
+
+                                                                                                                                                                                                                                                                try:
+                                                                                                                                                                                                                                                                                # Get physics diagnostics from model
+                                                                                                                                                                                                                                                                                with torch.no_grad():
+                                                                                                                                                                                                                                                                                                physics = model.get_physics_metrics(state)
+
+                                                                                                                                                                                                                                                                                                metrics["physics/hamiltonian_mean"] = physics.get("hamiltonian_mean", 0)
+                                                                                                                                                                                                                                                                                                metrics["physics/dissipation_min_eigenvalue"] = physics.get("dissipation_min_eigenvalue", 0)
+                                                                                                                                                                                                                                                                                                metrics["physics/j_skew_error"] = physics.get("j_skew_error", 0)
+
+                                                                                                                                                                                                                                                                except Exception as e:
+                                                                                                                                                                                                                                                                                # Fail silently - don't crash training
+                                                                                                                                                                                                                                                                                pass
+
+                                                                                                                                                                                                                                                                                return metrics
+
+                                                                                                                                                                                                                                                                                def _compute_validation_metrics(
+                                                                                                                                                                                                                                                                                self,
+                                                                                                                                                                                                                                                                                model: torch.nn.Module,
+                                                                                                                                                                                                                                                                                val_data: torch.Tensor
+                                                                                                                                                                                                                                                                                ) -> Dict[str, float]:
+                                                                                                                                                                                                                                                                                                """
+                                                                                                                                                                                                                                                                                                Compute validation tracking accuracy.
+                                                                                                                                                                                                                                                                                                """
+                                                                                                                                                                                                                                                                                                metrics = {}
+
+                                                                                                                                                                                                                                                                                                try:
+                                                                                                                                                                                                                                                                                                                with torch.no_grad():
+                                                                                                                                                                                                                                                                                                                                # Predict trajectory
+                                                                                                                                                                                                                                                                                                                                pred = model(val_data[:, 0]) # Simplified
+
+                                                                                                                                                                                                                                                                                                                                # L2 error in meters
+                                                                                                                                                                                                                                                                                                                                error = torch.norm(val_data - pred, dim=-1)
+                                                                                                                                                                                                                                                                                                                                metrics["val/l2_residual_meters"] = error.mean().item()
+                                                                                                                                                                                                                                                                                                                                metrics["val/max_error_meters"] = error.max().item()
+
+                                                                                                                                                                                                                                                                                                except Exception as e:
+                                                                                                                                                                                                                                                                                                                pass
+
+                                                                                                                                                                                                                                                                                                                return metrics
+
+                                                                                                                                                                                                                                                                                                                def _log_detailed_status(self, metrics: Dict):
+                                                                                                                                                                                                                                                                                                                                """Print detailed status to console."""
+                                                                                                                                                                                                                                                                                                                                print(f"\n{'='*70}")
+                                                                                                                                                                                                                                                                                                                                print(f"Epoch {self.epoch} - Physics Health Report")
+                                                                                                                                                                                                                                                                                                                                print(f"{'='*70}")
+
+                                                                                                                                                                                                                                                                                                                                if "physics/energy_drift" in metrics:
+                                                                                                                                                                                                                                                                                                                                                drift = metrics["physics/energy_drift"]
+                                                                                                                                                                                                                                                                                                                                                target = self.config["target_energy_drift"]
+                                                                                                                                                                                                                                                                                                                                                status = "✅" if drift < target else "⚠️"
+                                                                                                                                                                                                                                                                                                                                                print(f"{status} Energy Drift: {drift:.2e} (target: {target:.0e})")
+
+                                                                                                                                                                                                                                                                                                                                                if "physics/manifold_ortho_error" in metrics:
+                                                                                                                                                                                                                                                                                                                                                                ortho = metrics["physics/manifold_ortho_error"]
+                                                                                                                                                                                                                                                                                                                                                                target = self.config["manifold_tolerance"]
+                                                                                                                                                                                                                                                                                                                                                                status = "✅" if ortho < target else "⚠️"
+                                                                                                                                                                                                                                                                                                                                                                print(f"{status} Manifold Error: {ortho:.2e} (target: {target:.0e})")
+
+                                                                                                                                                                                                                                                                                                                                                                if "val/l2_residual_meters" in metrics:
+                                                                                                                                                                                                                                                                                                                                                                                residual = metrics["val/l2_residual_meters"]
+                                                                                                                                                                                                                                                                                                                                                                                target = self.config["target_l2_residual_m"]
+                                                                                                                                                                                                                                                                                                                                                                                status = "✅" if residual < target else "⚠️"
+                                                                                                                                                                                                                                                                                                                                                                                print(f"{status} Val Residual: {residual:.2f}m (target: {target:.0f}m)")
+
+                                                                                                                                                                                                                                                                                                                                                                                if "sindy/sparsity_ratio" in metrics:
+                                                                                                                                                                                                                                                                                                                                                                                                sparsity = metrics["sindy/sparsity_ratio"]
+                                                                                                                                                                                                                                                                                                                                                                                                target = self.config["sindy_sparsity_target"]
+                                                                                                                                                                                                                                                                                                                                                                                                status = "✅" if sparsity > target else "⚠️"
+                                                                                                                                                                                                                                                                                                                                                                                                print(f"{status} SINDy Sparsity: {sparsity*100:.1f}% (target: {target*100:.0f}%)")
+
+                                                                                                                                                                                                                                                                                                                                                                                                print(f"{'='*70}\n")
 
 
 # ============================================================================
@@ -472,23 +472,23 @@ class SovereignLogger:
 # ============================================================================
 
 def get_certificate_hash(run_id: str) -> str:
-    """
-    Generate a cryptographic hash linking W&B run to Symbolic Certificate.
+                """
+                Generate a cryptographic hash linking W&B run to Symbolic Certificate.
 
-    This hash is embedded in certificate.Provenance for audit trail.
-    """
-    data = {
-    "run_id": run_id,
-    "project": SOVEREIGN_CONFIG["project"],
-    "timestamp": datetime.utcnow().isoformat(),
-    }
-    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()[:32]
+                This hash is embedded in certificate.Provenance for audit trail.
+                """
+                data = {
+                "run_id": run_id,
+                "project": SOVEREIGN_CONFIG["project"],
+                "timestamp": datetime.utcnow().isoformat(),
+                }
+                return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()[:32]
 
 
 def resume_run(run_id: str) -> SovereignLogger:
-    """Resume a previous W&B run."""
-    wandb.init(project=SOVEREIGN_CONFIG["project"], id=run_id, resume="must")
-    return SovereignLogger(SOVEREIGN_CONFIG)
+                """Resume a previous W&B run."""
+                wandb.init(project=SOVEREIGN_CONFIG["project"], id=run_id, resume="must")
+                return SovereignLogger(SOVEREIGN_CONFIG)
 
 
 # ============================================================================
@@ -496,46 +496,46 @@ def resume_run(run_id: str) -> SovereignLogger:
 # ============================================================================
 
 def example_usage():
-    """
-    Example of using the sovereign logger in a training loop.
-    """
-    # Initialize
-    logger = init_sovereign_mission_control(
-    run_name="H100-Test-Dry-Run",
-    config_overrides={"h100_nodes": 1, "dt": 0.01}
-    )
+                """
+                Example of using the sovereign logger in a training loop.
+                """
+                # Initialize
+                logger = init_sovereign_mission_control(
+                run_name="H100-Test-Dry-Run",
+                config_overrides={"h100_nodes": 1, "dt": 0.01}
+                )
 
-    # Mock model and data
-    import torch.nn as nn
-    class MockPHS(nn.Module):
-        def get_physics_metrics(self, state):
-            return {
-            "hamiltonian_mean": -0.5,
-            "dissipation_min_eigenvalue": 1e-6,
-            "j_skew_error": 1e-12,
-            }
+                # Mock model and data
+                import torch.nn as nn
+                class MockPHS(nn.Module):
+                                def get_physics_metrics(self, state):
+                                                return {
+                                                "hamiltonian_mean": -0.5,
+                                                "dissipation_min_eigenvalue": 1e-6,
+                                                "j_skew_error": 1e-12,
+                                                }
 
-            model = MockPHS()
-            val_data = torch.randn(100, 6)
-            optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+                                                model = MockPHS()
+                                                val_data = torch.randn(100, 6)
+                                                optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-            # Training loop
-            for epoch in range(10):
-                train_loss = 0.1 / (epoch + 1) # Mock decreasing loss
+                                                # Training loop
+                                                for epoch in range(10):
+                                                                train_loss = 0.1 / (epoch + 1) # Mock decreasing loss
 
-                # Log epoch
-                logger.log_epoch(epoch, train_loss, model, val_data, optimizer)
+                                                                # Log epoch
+                                                                logger.log_epoch(epoch, train_loss, model, val_data, optimizer)
 
-                # Log SINDy sparsity periodically
-                if epoch % 5 == 0:
-                    xi_matrix = torch.randn(10, 10)
-                    xi_matrix[torch.rand(10, 10) > 0.9] = 0 # 90% sparsity
-                    logger.log_sindy_sparsity(epoch, xi_matrix)
+                                                                # Log SINDy sparsity periodically
+                                                                if epoch % 5 == 0:
+                                                                                xi_matrix = torch.randn(10, 10)
+                                                                                xi_matrix[torch.rand(10, 10) > 0.9] = 0 # 90% sparsity
+                                                                                logger.log_sindy_sparsity(epoch, xi_matrix)
 
-                    # Finalize
-                    certificate_hash = get_certificate_hash(wandb.run.id)
-                    logger.finalize("models/sovereign_phv_v1.pt", certificate_hash)
+                                                                                # Finalize
+                                                                                certificate_hash = get_certificate_hash(wandb.run.id)
+                                                                                logger.finalize("models/sovereign_phv_v1.pt", certificate_hash)
 
 
 if __name__ == "__main__":
-    example_usage()
+                example_usage()

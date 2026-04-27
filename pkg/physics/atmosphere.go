@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"os"
@@ -28,6 +29,11 @@ var defaultSpaceWeather = SpaceWeatherFeed{
 	F107:  150.0,
 	F107A: 150.0,
 	Ap:    15.0,
+}
+
+func init() {
+	// Log warning for hardcoded defaults at package initialization
+	log.Print("WARNING: Using default space weather (F10.7=150, Ap=15). Call SpaceWeatherClient.FetchLatest() for real-time data.")
 }
 
 // currentSpaceWeather holds the latest space weather data

@@ -53,7 +53,7 @@ func TestITUFilingDatabase_AddAndGet(t *testing.T) {
 }
 
 func TestITUFilingDatabase_FindInterferences(t *testing.T) {
-	t.Skip("Test logic failure - FindInterferences implementation may need review")
+	t.Fatal("FindInterferences implementation broken — must pass before merge")
 	db := NewITUFilingDatabase()
 
 	// Add two filings with overlapping frequency at nearby slots

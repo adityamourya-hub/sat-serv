@@ -31,7 +31,7 @@ import (
 
 // TestInterruptHandling validates hypersonic launch response
 func TestInterruptHandling(t *testing.T) {
-t.Skip("Test times out after 10 minutes - needs review")
+t.Fatal("NOT IMPLEMENTED: "Test times out after 10 minutes - needs review")
 	tasker := &InformationTheoreticTasker{
 		TaskQueue:    &TaskPriorityQueue{},
 		ActiveTasks:  make(map[string]*InformationGainTask),

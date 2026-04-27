@@ -256,7 +256,7 @@ func TestSINDyBootstrapRandomness(t *testing.T) {
 	}
 
 	if len(resultA.CILower) == 0 || len(resultB.CILower) == 0 {
-		t.Skip("Bootstrap CIs not produced (too few samples)")
+		t.Fatal("NOT IMPLEMENTED: "Bootstrap CIs not produced (too few samples)")
 	}
 
 	different := false

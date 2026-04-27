@@ -204,6 +204,9 @@ func (s *SlidingSINDy) Update(state [6]float64, timestamp float64) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Count every update (regardless of stride control)
+	s.UpdateCount++
+
 	// 1. Maintain FIFO Buffer
 	s.Buffer = append(s.Buffer, state)
 	s.Timestamps = append(s.Timestamps, timestamp)
@@ -250,7 +253,6 @@ func (s *SlidingSINDy) Update(state [6]float64, timestamp float64) string {
 	}
 
 	s.LastCoeffs = result.Coefficients
-	s.UpdateCount++
 
 	return currentIntent
 }

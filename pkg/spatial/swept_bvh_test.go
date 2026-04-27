@@ -121,7 +121,7 @@ func TestSweptAABBManeuverExpansion(t *testing.T) {
 
 // TestSweptAABBIntersections tests swept volume intersection detection
 func TestSweptAABBIntersections(t *testing.T) {
-t.Skip("Swept AABB intersection test needs review - intersection logic may have changed")
+t.Fatal("NOT IMPLEMENTED: "Swept AABB intersection test needs review - intersection logic may have changed")
 	a := NewSweptAABB([3]float64{0, 0, 0}, [3]float64{10, 0, 0}, 60.0)
 	b := NewSweptAABB([3]float64{5, 0, 0}, [3]float64{15, 0, 0}, 60.0)
 	c := NewSweptAABB([3]float64{100, 0, 0}, [3]float64{110, 0, 0}, 60.0)
@@ -209,7 +209,7 @@ func (m *MockManeuverDetector) GetManeuverProbability(objectID int) float64 {
 
 // TestUpdateWithManeuverDetection tests the maneuver-aware update
 func TestUpdateWithManeuverDetection(t *testing.T) {
-t.Skip("Maneuver detection test needs review - detection logic may have changed")
+t.Fatal("NOT IMPLEMENTED: "Maneuver detection test needs review - detection logic may have changed")
 	lbvh := NewLazyBVH(60.0)
 
 	// Create leaf nodes

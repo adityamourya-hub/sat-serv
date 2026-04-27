@@ -8,7 +8,7 @@ import (
 
 // TestManifoldJumpScenario performs the complete end-to-end audit
 func TestManifoldJumpScenario(t *testing.T) {
-	t.Skip("Integration test requires undefined types (catalog.TLE, spatial.Conjunction, catalog.Object, orbital.CR3BPStateSTM) - skipping")
+	t.Fatal("Integration test requires undefined types (catalog.TLE, spatial.Conjunction, catalog.Object, orbital.CR3BPStateSTM) — must pass before merge")
 }
 
 // Minimal stub functions to satisfy compilation
@@ -26,42 +26,42 @@ type TaskingResult struct {
 }
 
 func verifyIngestionLayer(t *testing.T, tle interface{}) physics.State {
-	t.Skip("Helper function skipped - catalog.TLE undefined")
+	t.Fatal("NOT IMPLEMENTED: "Helper function skipped - catalog.TLE undefined")
 	return physics.State{}
 }
 
 func verifyScalingLayer(t *testing.T, state physics.State) physics.State {
-	t.Skip("Helper function skipped due to API changes")
+	t.Fatal("NOT IMPLEMENTED: "Helper function skipped due to API changes")
 	return state
 }
 
 func verifyScreeningLayer(t *testing.T, state physics.State) interface{} {
-	t.Skip("Helper function skipped - spatial.Conjunction undefined")
+	t.Fatal("NOT IMPLEMENTED: "Helper function skipped - spatial.Conjunction undefined")
 	return nil
 }
 
 func verifyCislunarLayer(t *testing.T, state physics.State) CislunarResult {
-	t.Skip("Helper function skipped - orbital.NewCR3BPModel undefined")
+	t.Fatal("NOT IMPLEMENTED: "Helper function skipped - orbital.NewCR3BPModel undefined")
 	return CislunarResult{}
 }
 
 func verifyAnalyticsLayer(t *testing.T, cr3bp CislunarResult, conjunctions interface{}) float64 {
-	t.Skip("Helper function skipped - spatial.Conjunction undefined")
+	t.Fatal("NOT IMPLEMENTED: "Helper function skipped - spatial.Conjunction undefined")
 	return 0
 }
 
 func verifyValidationLayer(t *testing.T, state physics.State) float64 {
-	t.Skip("Helper function skipped - NASA 42 IPC API changed")
+	t.Fatal("NOT IMPLEMENTED: "Helper function skipped - NASA 42 IPC API changed")
 	return 0
 }
 
 func verifyTaskingLayer(t *testing.T, state physics.State, cr3bp CislunarResult) TaskingResult {
-	t.Skip("Helper function skipped - sensors API changed")
+	t.Fatal("NOT IMPLEMENTED: "Helper function skipped - sensors API changed")
 	return TaskingResult{}
 }
 
 func verifyManifoldJumpConditions(t *testing.T, cr3bp CislunarResult, conjunctions interface{}, tasking TaskingResult) {
-	t.Skip("Helper function skipped - spatial.Conjunction undefined")
+	t.Fatal("NOT IMPLEMENTED: "Helper function skipped - spatial.Conjunction undefined")
 }
 
 func createManifoldThreatTLE() interface{} {

@@ -45,6 +45,6 @@ func TestStabilityOracleValidation(t *testing.T) {
 	// 4. ATMOSPHERIC ORACLE GATE
 	t.Run("Atmospheric_Density_Profile", func(t *testing.T) {
 		// SKIPPED: AtmosphericDensity function location TBD
-		t.Skip("AtmosphericDensity function location TBD")
+		t.Fatal("NOT IMPLEMENTED: "AtmosphericDensity function location TBD")
 	})
 }

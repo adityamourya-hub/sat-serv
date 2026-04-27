@@ -1,3 +1,4 @@
+// STUB: This file is a build stub. All functions return "not yet implemented" until the real backend is bound.
 // Package onnx provides Axiom-Zero ONNX model integration for SSIS.
 // This is the stub implementation for when ONNX runtime is not available.
 //

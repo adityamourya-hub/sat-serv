@@ -1,5 +1,0 @@
-numpy>=1.26
-torch>=2.3
-onnx>=1.16
-gymnasium>=0.29
-stable-baselines3>=2.3

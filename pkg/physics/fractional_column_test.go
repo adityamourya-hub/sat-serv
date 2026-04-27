@@ -358,7 +358,7 @@ func TestFractionalColumn(t *testing.T) {
 
 // TestFractionalOrders runs sweep over fractional derivative orders
 func TestFractionalOrders(t *testing.T) {
-	t.Skip("Fractional orders test has accuracy issues - needs numerical review")
+	t.Fatal("NOT IMPLEMENTED: "Fractional orders test has accuracy issues - needs numerical review")
 	alphas := []float64{0.5, 0.6, 0.7, 0.8, 0.9}
 
 	for _, alpha := range alphas {

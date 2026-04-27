@@ -29,389 +29,389 @@ import equinox as eqx
 
 
 class PhysicsConstraint:
- """Base class for physics constraints."""
- 
- def __init__(self, name: str, constraint_fn: Callable, tolerance: float = 1e-6):
- self.name = name
- self.constraint_fn = constraint_fn
- self.tolerance = tolerance
- 
- def evaluate(self, **kwargs) -> float:
- """Evaluate constraint violation."""
- return self.constraint_fn(**kwargs)
- 
- def is_satisfied(self, value: float) -> bool:
- """Check if constraint is satisfied within tolerance."""
- return abs(value) < self.tolerance
+    """Base class for physics constraints."""
+
+    def __init__(self, name: str, constraint_fn: Callable, tolerance: float = 1e-6):
+        self.name = name
+        self.constraint_fn = constraint_fn
+        self.tolerance = tolerance
+
+    def evaluate(self, **kwargs) -> float:
+        """Evaluate constraint violation."""
+        return self.constraint_fn(**kwargs)
+
+    def is_satisfied(self, value: float) -> bool:
+        """Check if constraint is satisfied within tolerance."""
+        return abs(value) < self.tolerance
 
 
 class EnergyConservationConstraint(PhysicsConstraint):
- """
- Energy conservation constraint: Var[H(trajectory)] = 0
- 
- For conservative orbits, Hamiltonian should be constant.
- """
- 
- def __init__(self, tolerance: float = 1e-8):
- super().__init__("energy_conservation", self._compute, tolerance)
- 
- @staticmethod
- def _compute(H_values: jnp.ndarray, H_0: float) -> float:
- """
- Compute relative energy variance.
- 
- Args:
- H_values: [T] Hamiltonian values over trajectory
- H_0: Initial Hamiltonian value
- 
- Returns:
- c: Relative variance Var[H] / H_0²
- """
- var_H = jnp.var(H_values)
- return var_H / (H_0 ** 2 + 1e-10)
+    """
+    Energy conservation constraint: Var[H(trajectory)] = 0
+
+    For conservative orbits, Hamiltonian should be constant.
+    """
+
+    def __init__(self, tolerance: float = 1e-8):
+        super().__init__("energy_conservation", self._compute, tolerance)
+
+    @staticmethod
+    def _compute(H_values: jnp.ndarray, H_0: float) -> float:
+        """
+        Compute relative energy variance.
+
+        Args:
+            H_values: [T] Hamiltonian values over trajectory
+            H_0: Initial Hamiltonian value
+
+        Returns:
+            c: Relative variance Var[H] / H_0²
+        """
+        var_H = jnp.var(H_values)
+        return var_H / (H_0 ** 2 + 1e-10)
 
 
 class AngularMomentumConstraint(PhysicsConstraint):
- """
- Angular momentum conservation: Var[‖r × v‖] = 0
- 
- For central force motion, specific angular momentum is constant.
- """
- 
- def __init__(self, tolerance: float = 1e-8):
- super().__init__("angular_momentum", self._compute, tolerance)
- 
- @staticmethod
- def _compute(q_traj: jnp.ndarray, p_traj: jnp.ndarray, L_0: jnp.ndarray) -> float:
- """
- Compute relative angular momentum variance.
- 
- Args:
- q_traj: [T, 3] position trajectory
- p_traj: [T, 3] momentum trajectory
- L_0: [3] initial angular momentum vector
- 
- Returns:
- c: Relative variance Var[L] / ‖L_0‖²
- """
- # Compute angular momentum for each timestep
- L_values = vmap(lambda q, p: jnp.cross(q, p))(q_traj, p_traj)
- 
- # Variance of angular momentum magnitude
- L_magnitudes = jnp.linalg.norm(L_values, axis=1)
- var_L = jnp.var(L_magnitudes)
- 
- L_0_norm_sq = jnp.sum(L_0 ** 2)
- return var_L / (L_0_norm_sq + 1e-10)
+    """
+    Angular momentum conservation: Var[‖r × v‖] = 0
+
+    For central force motion, specific angular momentum is constant.
+    """
+
+    def __init__(self, tolerance: float = 1e-8):
+        super().__init__("angular_momentum", self._compute, tolerance)
+
+    @staticmethod
+    def _compute(q_traj: jnp.ndarray, p_traj: jnp.ndarray, L_0: jnp.ndarray) -> float:
+        """
+        Compute relative angular momentum variance.
+
+        Args:
+            q_traj: [T, 3] position trajectory
+            p_traj: [T, 3] momentum trajectory
+            L_0: [3] initial angular momentum vector
+
+        Returns:
+            c: Relative variance Var[L] / ‖L_0‖²
+        """
+        # Compute angular momentum for each timestep
+        L_values = vmap(lambda q, p: jnp.cross(q, p))(q_traj, p_traj)
+
+        # Variance of angular momentum magnitude
+        L_magnitudes = jnp.linalg.norm(L_values, axis=1)
+        var_L = jnp.var(L_magnitudes)
+
+        L_0_norm_sq = jnp.sum(L_0 ** 2)
+        return var_L / (L_0_norm_sq + 1e-10)
 
 
 class NoEnergyCreationConstraint(PhysicsConstraint):
- """
- No energy creation constraint: dH/dt ≤ 0 (for dissipative systems)
- 
- Ensures the model cannot hallucinate energy gain.
- """
- 
- def __init__(self, tolerance: float = 1e-10):
- super().__init__("no_energy_creation", self._compute, tolerance)
- 
- @staticmethod
- def _compute(dH_dt_values: jnp.ndarray) -> float:
- """
- Compute violation of dH/dt ≤ 0.
- 
- Returns:
- c: Mean of positive dH/dt values (violation amount)
- """
- # Penalize only positive dH/dt (energy creation)
- violations = jax.nn.relu(dH_dt_values)
- return jnp.mean(violations)
+    """
+    No energy creation constraint: dH/dt ≤ 0 (for dissipative systems)
+
+    Ensures the model cannot hallucinate energy gain.
+    """
+
+    def __init__(self, tolerance: float = 1e-10):
+        super().__init__("no_energy_creation", self._compute, tolerance)
+
+    @staticmethod
+    def _compute(dH_dt_values: jnp.ndarray) -> float:
+        """
+        Compute violation of dH/dt ≤ 0.
+
+        Returns:
+            c: Mean of positive dH/dt values (violation amount)
+        """
+        # Penalize only positive dH/dt (energy creation)
+        violations = jax.nn.relu(dH_dt_values)
+        return jnp.mean(violations)
 
 
 class HydrostaticEquilibriumConstraint(PhysicsConstraint):
- """
- Hydrostatic equilibrium: ∂p/∂h = -ρg
- 
- For atmosphere neural operator.
- """
- 
- def __init__(self, tolerance: float = 1e-6):
- super().__init__("hydrostatic_equilibrium", self._compute, tolerance)
- 
- @staticmethod
- def _compute(altitude: jnp.ndarray, pressure: jnp.ndarray, density: jnp.ndarray, g: jnp.ndarray) -> float:
- """
- Compute hydrostatic residual: ‖∂p/∂h + ρg‖²
- 
- Args:
- altitude: [N] altitude grid (km)
- pressure: [N] pressure values (Pa)
- density: [N] density values (kg/m³)
- g: [N] gravity values (m/s²)
- 
- Returns:
- c: Integrated squared residual
- """
- # Compute ∂p/∂h numerically
- dP_dh = jnp.gradient(pressure, altitude * 1000) # Convert km to m
- 
- # Hydrostatic target
- target = -density * g
- 
- # Squared residual
- residual_sq = jnp.mean((dP_dh - target) ** 2)
- 
- return residual_sq
+    """
+    Hydrostatic equilibrium: ∂p/∂h = -ρg
+
+    For atmosphere neural operator.
+    """
+
+    def __init__(self, tolerance: float = 1e-6):
+        super().__init__("hydrostatic_equilibrium", self._compute, tolerance)
+
+    @staticmethod
+    def _compute(altitude: jnp.ndarray, pressure: jnp.ndarray, density: jnp.ndarray, g: jnp.ndarray) -> float:
+        """
+        Compute hydrostatic residual: ‖∂p/∂h + ρg‖²
+
+        Args:
+            altitude: [N] altitude grid (km)
+            pressure: [N] pressure values (Pa)
+            density: [N] density values (kg/m³)
+            g: [N] gravity values (m/s²)
+
+        Returns:
+            c: Integrated squared residual
+        """
+        # Compute ∂p/∂h numerically
+        dP_dh = jnp.gradient(pressure, altitude * 1000)  # Convert km to m
+
+        # Hydrostatic target
+        target = -density * g
+
+        # Squared residual
+        residual_sq = jnp.mean((dP_dh - target) ** 2)
+
+        return residual_sq
 
 
 class AugmentedLagrangian:
- """
- Augmented Lagrangian constraint manager with dual ascent.
- 
- Maintains dual variables μ and penalty parameter ρ for each constraint.
- Updates after each epoch: μ_{k+1} = μ_k + ρ · c(θ_k)
- """
- 
- def __init__(
- self,
- constraints: List[PhysicsConstraint],
- rho_init: float = 1.0,
- rho_max: float = 1000.0,
- rho_scale: float = 10.0,
- adaptive: bool = True,
-):
- """
- Initialize Augmented Lagrangian.
- 
- Args:
- constraints: List of PhysicsConstraint objects
- rho_init: Initial penalty parameter
- rho_max: Maximum penalty parameter
- rho_scale: Factor to increase ρ when constraint violated
- adaptive: Whether to adaptively adjust ρ
- """
- self.constraints = constraints
- self.n_constraints = len(constraints)
- 
- # Dual variables (initialized to zero)
- self.mu = jnp.zeros(self.n_constraints)
- 
- # Penalty parameters
- self.rho = rho_init
- self.rho_init = rho_init
- self.rho_max = rho_max
- self.rho_scale = rho_scale
- self.adaptive = adaptive
- 
- # History for monitoring
- self.constraint_history = []
- self.mu_history = []
- self.rho_history = []
- 
- def compute_loss(
- self,
- loss_obs: float,
- constraint_values: jnp.ndarray,
-) -> Tuple[float, Dict]:
- """
- Compute Augmented Lagrangian loss.
- 
- L = L_obs + μᵀc + (ρ/2)‖c‖²
- 
- Args:
- loss_obs: Observation loss (MSE)
- constraint_values: [n_constraints] constraint violations c(θ)
- 
- Returns:
- loss_total: Total loss
- components: Dict with loss components
- """
- # Lagrangian term: μᵀc
- lagrangian_term = jnp.dot(self.mu, constraint_values)
- 
- # Penalty term: (ρ/2)‖c‖²
- penalty_term = (self.rho / 2.0) * jnp.sum(constraint_values ** 2)
- 
- # Total loss
- loss_total = loss_obs + lagrangian_term + penalty_term
- 
- components = {
- 'loss_total': float(loss_total),
- 'loss_obs': float(loss_obs),
- 'loss_lagrangian': float(lagrangian_term),
- 'loss_penalty': float(penalty_term),
- 'constraint_values': constraint_values,
- 'mu': self.mu.copy(),
- 'rho': self.rho,
- }
- 
- return loss_total, components
- 
- def dual_ascent_update(self, constraint_values: jnp.ndarray):
- """
- Update dual variables via dual ascent.
- 
- μ_{k+1} = μ_k + ρ · c(θ_k)
- 
- If any constraint violated (|c| > 0.01):
- ρ ← min(rho_scale · ρ, ρ_max)
- """
- # Update dual variables
- self.mu = self.mu + self.rho * constraint_values
- 
- # Adaptive penalty adjustment
- if self.adaptive:
- max_violation = jnp.max(jnp.abs(constraint_values))
- if max_violation > 0.01:
- self.rho = min(self.rho * self.rho_scale, self.rho_max)
- 
- # Record history
- self.constraint_history.append(constraint_values.copy())
- self.mu_history.append(self.mu.copy())
- self.rho_history.append(self.rho)
- 
- def reset(self):
- """Reset dual variables and penalty parameter."""
- self.mu = jnp.zeros(self.n_constraints)
- self.rho = self.rho_init
- self.constraint_history = []
- self.mu_history = []
- self.rho_history = []
- 
- def get_status(self) -> Dict:
- """Get current status of all constraints."""
- return {
- 'mu': self.mu,
- 'rho': self.rho,
- 'n_constraints': self.n_constraints,
- 'constraint_names': [c.name for c in self.constraints],
- }
+    """
+    Augmented Lagrangian constraint manager with dual ascent.
+
+    Maintains dual variables μ and penalty parameter ρ for each constraint.
+    Updates after each epoch: μ_{k+1} = μ_k + ρ · c(θ_k)
+    """
+
+    def __init__(
+        self,
+        constraints: List[PhysicsConstraint],
+        rho_init: float = 1.0,
+        rho_max: float = 1000.0,
+        rho_scale: float = 10.0,
+        adaptive: bool = True,
+    ):
+        """
+        Initialize Augmented Lagrangian.
+
+        Args:
+            constraints: List of PhysicsConstraint objects
+            rho_init: Initial penalty parameter
+            rho_max: Maximum penalty parameter
+            rho_scale: Factor to increase ρ when constraint violated
+            adaptive: Whether to adaptively adjust ρ
+        """
+        self.constraints = constraints
+        self.n_constraints = len(constraints)
+
+        # Dual variables (initialized to zero)
+        self.mu = jnp.zeros(self.n_constraints)
+
+        # Penalty parameters
+        self.rho = rho_init
+        self.rho_init = rho_init
+        self.rho_max = rho_max
+        self.rho_scale = rho_scale
+        self.adaptive = adaptive
+
+        # History for monitoring
+        self.constraint_history = []
+        self.mu_history = []
+        self.rho_history = []
+
+    def compute_loss(
+        self,
+        loss_obs: float,
+        constraint_values: jnp.ndarray,
+    ) -> Tuple[float, Dict]:
+        """
+        Compute Augmented Lagrangian loss.
+
+        L = L_obs + μᵀc + (ρ/2)‖c‖²
+
+        Args:
+            loss_obs: Observation loss (MSE)
+            constraint_values: [n_constraints] constraint violations c(θ)
+
+        Returns:
+            loss_total: Total loss
+            components: Dict with loss components
+        """
+        # Lagrangian term: μᵀc
+        lagrangian_term = jnp.dot(self.mu, constraint_values)
+
+        # Penalty term: (ρ/2)‖c‖²
+        penalty_term = (self.rho / 2.0) * jnp.sum(constraint_values ** 2)
+
+        # Total loss
+        loss_total = loss_obs + lagrangian_term + penalty_term
+
+        components = {
+            'loss_total': float(loss_total),
+            'loss_obs': float(loss_obs),
+            'loss_lagrangian': float(lagrangian_term),
+            'loss_penalty': float(penalty_term),
+            'constraint_values': constraint_values,
+            'mu': self.mu.copy(),
+            'rho': self.rho,
+        }
+
+        return loss_total, components
+
+    def dual_ascent_update(self, constraint_values: jnp.ndarray):
+        """
+        Update dual variables via dual ascent.
+
+        μ_{k+1} = μ_k + ρ · c(θ_k)
+
+        If any constraint violated (|c| > 0.01):
+            ρ ← min(rho_scale · ρ, ρ_max)
+        """
+        # Update dual variables
+        self.mu = self.mu + self.rho * constraint_values
+
+        # Adaptive penalty adjustment
+        if self.adaptive:
+            max_violation = jnp.max(jnp.abs(constraint_values))
+            if max_violation > 0.01:
+                self.rho = min(self.rho * self.rho_scale, self.rho_max)
+
+        # Record history
+        self.constraint_history.append(constraint_values.copy())
+        self.mu_history.append(self.mu.copy())
+        self.rho_history.append(self.rho)
+
+    def reset(self):
+        """Reset dual variables and penalty parameter."""
+        self.mu = jnp.zeros(self.n_constraints)
+        self.rho = self.rho_init
+        self.constraint_history = []
+        self.mu_history = []
+        self.rho_history = []
+
+    def get_status(self) -> Dict:
+        """Get current status of all constraints."""
+        return {
+            'mu': self.mu,
+            'rho': self.rho,
+            'n_constraints': self.n_constraints,
+            'constraint_names': [c.name for c in self.constraints],
+        }
 
 
 class SymplecticAugmentedLagrangianLoss(eqx.Module):
- """
- Equinox-compatible Augmented Lagrangian loss module.
- 
- For use in JIT-compiled JAX training loops.
- """
- 
- mu: jnp.ndarray # Dual variables (not learned parameters)
- rho: float # Penalty parameter
- lambda_symp: float # Symplectic Jacobian penalty weight
- 
- def __init__(
- self,
- n_constraints: int = 2,
- rho_init: float = 1.0,
- lambda_symp_init: float = 1e-5,
-):
- self.mu = jnp.zeros(n_constraints)
- self.rho = rho_init
- self.lambda_symp = lambda_symp_init
- 
- def __call__(
- self,
- loss_obs: float,
- c_energy: float,
- c_momentum: float,
-) -> Tuple[float, Dict]:
- """
- Compute loss with energy and momentum constraints.
- 
- Args:
- loss_obs: Observation MSE
- c_energy: Energy conservation violation
- c_momentum: Angular momentum conservation violation
- 
- Returns:
- loss_total: Combined loss
- metrics: Component breakdown
- """
- constraints = jnp.array([c_energy, c_momentum])
- 
- # Augmented Lagrangian
- lagrangian = jnp.dot(self.mu, constraints)
- penalty = (self.rho / 2.0) * jnp.sum(constraints ** 2)
- 
- loss_total = loss_obs + lagrangian + penalty
- 
- metrics = {
- 'loss_total': loss_total,
- 'loss_obs': loss_obs,
- 'loss_lagrangian': lagrangian,
- 'loss_penalty': penalty,
- 'c_energy': c_energy,
- 'c_momentum': c_momentum,
- }
- 
- return loss_total, metrics
- 
- def dual_ascent_update(self, c_energy: float, c_momentum: float):
- """Update dual variables after epoch."""
- constraints = jnp.array([c_energy, c_momentum])
- self.mu = self.mu + self.rho * constraints
- 
- # Adaptive penalty
- max_violation = jnp.max(jnp.abs(constraints))
- if max_violation > 0.01:
- self.rho = min(self.rho * 10.0, 1000.0)
- 
- return self
+    """
+    Equinox-compatible Augmented Lagrangian loss module.
+
+    For use in JIT-compiled JAX training loops.
+    """
+
+    mu: jnp.ndarray  # Dual variables (not learned parameters)
+    rho: float  # Penalty parameter
+    lambda_symp: float  # Symplectic Jacobian penalty weight
+
+    def __init__(
+        self,
+        n_constraints: int = 2,
+        rho_init: float = 1.0,
+        lambda_symp_init: float = 1e-5,
+    ):
+        self.mu = jnp.zeros(n_constraints)
+        self.rho = rho_init
+        self.lambda_symp = lambda_symp_init
+
+    def __call__(
+        self,
+        loss_obs: float,
+        c_energy: float,
+        c_momentum: float,
+    ) -> Tuple[float, Dict]:
+        """
+        Compute loss with energy and momentum constraints.
+
+        Args:
+            loss_obs: Observation MSE
+            c_energy: Energy conservation violation
+            c_momentum: Angular momentum conservation violation
+
+        Returns:
+            loss_total: Combined loss
+            metrics: Component breakdown
+        """
+        constraints = jnp.array([c_energy, c_momentum])
+
+        # Augmented Lagrangian
+        lagrangian = jnp.dot(self.mu, constraints)
+        penalty = (self.rho / 2.0) * jnp.sum(constraints ** 2)
+
+        loss_total = loss_obs + lagrangian + penalty
+
+        metrics = {
+            'loss_total': loss_total,
+            'loss_obs': loss_obs,
+            'loss_lagrangian': lagrangian,
+            'loss_penalty': penalty,
+            'c_energy': c_energy,
+            'c_momentum': c_momentum,
+        }
+
+        return loss_total, metrics
+
+    def dual_ascent_update(self, c_energy: float, c_momentum: float):
+        """Update dual variables after epoch."""
+        constraints = jnp.array([c_energy, c_momentum])
+        self.mu = self.mu + self.rho * constraints
+
+        # Adaptive penalty
+        max_violation = jnp.max(jnp.abs(constraints))
+        if max_violation > 0.01:
+            self.rho = min(self.rho * 10.0, 1000.0)
+
+        return self
 
 
 def create_default_constraints() -> List[PhysicsConstraint]:
- """
- Create default constraints for orbital dynamics training.
- 
- Returns:
- List of PhysicsConstraint objects
- """
- return [
- EnergyConservationConstraint(tolerance=1e-8),
- AngularMomentumConstraint(tolerance=1e-8),
- ]
+    """
+    Create default constraints for orbital dynamics training.
+
+    Returns:
+        List of PhysicsConstraint objects
+    """
+    return [
+        EnergyConservationConstraint(tolerance=1e-8),
+        AngularMomentumConstraint(tolerance=1e-8),
+    ]
 
 
 def test_augmented_lagrangian():
- """Test Augmented Lagrangian implementation."""
- print("=" * 70)
- print("Augmented Lagrangian Test")
- print("=" * 70)
- 
- # Create constraints
- constraints = create_default_constraints()
- 
- # Initialize Augmented Lagrangian
- al = AugmentedLagrangian(constraints, rho_init=1.0)
- 
- print(f"\nInitialized with {al.n_constraints} constraints")
- print(f"Initial mu: {al.mu}")
- print(f"Initial rho: {al.rho}")
- 
- # Simulate training iterations
- for i in range(5):
- # Simulated constraint values (decreasing over time)
- c_energy = 0.1 / (i + 1)
- c_momentum = 0.05 / (i + 1)
- 
- # Compute loss
- loss_obs = 0.01
- constraint_values = jnp.array([c_energy, c_momentum])
- loss_total, components = al.compute_loss(loss_obs, constraint_values)
- 
- print(f"\nIteration {i+1}:")
- print(f" Loss: {loss_total:.6f}")
- print(f" Constraints: energy={c_energy:.6f}, momentum={c_momentum:.6f}")
- print(f" Mu: {al.mu}")
- 
- # Dual ascent update
- al.dual_ascent_update(constraint_values)
- print(f" Rho: {al.rho}")
- 
- print("\n" + "=" * 70)
- print("Test complete - constraints should converge to zero")
- print("=" * 70)
+    """Test Augmented Lagrangian implementation."""
+    print("=" * 70)
+    print("Augmented Lagrangian Test")
+    print("=" * 70)
+
+    # Create constraints
+    constraints = create_default_constraints()
+
+    # Initialize Augmented Lagrangian
+    al = AugmentedLagrangian(constraints, rho_init=1.0)
+
+    print(f"\nInitialized with {al.n_constraints} constraints")
+    print(f"Initial mu: {al.mu}")
+    print(f"Initial rho: {al.rho}")
+
+    # Simulate training iterations
+    for i in range(5):
+        # Simulated constraint values (decreasing over time)
+        c_energy = 0.1 / (i + 1)
+        c_momentum = 0.05 / (i + 1)
+
+        # Compute loss
+        loss_obs = 0.01
+        constraint_values = jnp.array([c_energy, c_momentum])
+        loss_total, components = al.compute_loss(loss_obs, constraint_values)
+
+        print(f"\nIteration {i+1}:")
+        print(f" Loss: {loss_total:.6f}")
+        print(f" Constraints: energy={c_energy:.6f}, momentum={c_momentum:.6f}")
+        print(f" Mu: {al.mu}")
+
+        # Dual ascent update
+        al.dual_ascent_update(constraint_values)
+        print(f" Rho: {al.rho}")
+
+    print("\n" + "=" * 70)
+    print("Test complete - constraints should converge to zero")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
- test_augmented_lagrangian()
+    test_augmented_lagrangian()

@@ -21,325 +21,325 @@ import math
 
 
 class ConvNeXtBlock(nn.Module):
- """
- ConvNeXt block for spectral feature extraction
- 
- AMOS 2025: Efficient architecture for spectral line detection
- - Depthwise convolution for spatial invariance
- - LayerNorm for stability
- - GELU activation
- """
- def __init__(self, dim: int, drop_path: float = 0.0):
- super().__init__()
- self.dwconv = nn.Conv1d(dim, dim, kernel_size=7, padding=3, groups=dim)
- self.norm = nn.LayerNorm(dim)
- self.pwconv1 = nn.Linear(dim, 4 * dim)
- self.act = nn.GELU()
- self.pwconv2 = nn.Linear(4 * dim, dim)
- self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+                """
+                ConvNeXt block for spectral feature extraction
 
- def forward(self, x: torch.Tensor) -> torch.Tensor:
- # x: (B, C, L) where L is spectral bins
- residual = x
- x = self.dwconv(x)
- x = x.permute(0, 2, 1) # (B, L, C)
- x = self.norm(x)
- x = self.pwconv1(x)
- x = self.act(x)
- x = self.pwconv2(x)
- x = x.permute(0, 2, 1) # (B, C, L)
- x = self.drop_path(x)
- x = x + residual
- return x
+                AMOS 2025: Efficient architecture for spectral line detection
+                - Depthwise convolution for spatial invariance
+                - LayerNorm for stability
+                - GELU activation
+                """
+                def __init__(self, dim: int, drop_path: float = 0.0):
+                                super().__init__()
+                                self.dwconv = nn.Conv1d(dim, dim, kernel_size=7, padding=3, groups=dim)
+                                self.norm = nn.LayerNorm(dim)
+                                self.pwconv1 = nn.Linear(dim, 4 * dim)
+                                self.act = nn.GELU()
+                                self.pwconv2 = nn.Linear(4 * dim, dim)
+                                self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+
+                                def forward(self, x: torch.Tensor) -> torch.Tensor:
+                                                # x: (B, C, L) where L is spectral bins
+                                                residual = x
+                                                x = self.dwconv(x)
+                                                x = x.permute(0, 2, 1) # (B, L, C)
+                                                x = self.norm(x)
+                                                x = self.pwconv1(x)
+                                                x = self.act(x)
+                                                x = self.pwconv2(x)
+                                                x = x.permute(0, 2, 1) # (B, C, L)
+                                                x = self.drop_path(x)
+                                                x = x + residual
+                                                return x
 
 
 class DropPath(nn.Module):
- """Drop paths (Stochastic Depth) per sample."""
- def __init__(self, drop_prob: float = 0.0):
- super().__init__()
- self.drop_prob = drop_prob
+                """Drop paths (Stochastic Depth) per sample."""
+                def __init__(self, drop_prob: float = 0.0):
+                                super().__init__()
+                                self.drop_prob = drop_prob
 
- def forward(self, x: torch.Tensor) -> torch.Tensor:
- if self.drop_prob == 0.0 or not self.training:
- return x
- keep_prob = 1 - self.drop_prob
- shape = (x.shape[0],) + (1,) * (x.ndim - 1)
- random_tensor = keep_prob + torch.rand(shape, dtype=x.dtype, device=x.device)
- random_tensor.floor_()
- return x.div(keep_prob) * random_tensor
+                                def forward(self, x: torch.Tensor) -> torch.Tensor:
+                                                if self.drop_prob == 0.0 or not self.training:
+                                                                return x
+                                                                keep_prob = 1 - self.drop_prob
+                                                                shape = (x.shape[0],) + (1,) * (x.ndim - 1)
+                                                                random_tensor = keep_prob + torch.rand(shape, dtype=x.dtype, device=x.device)
+                                                                random_tensor.floor_()
+                                                                return x.div(keep_prob) * random_tensor
 
 
 class MultiScaleSpectralAttention(nn.Module):
- """
- Multi-scale attention for unresolved spectral line detection
- 
- AMOS 2025: Captures both narrow lines and broad continuum features
- - Multiple kernel sizes for different spectral scales
- - Attention weights for adaptive feature fusion
- """
- def __init__(self, dim: int):
- super().__init__()
- self.kernels = [3, 5, 7, 11] # Different spectral scales
- self.convs = nn.ModuleList([
- nn.Conv1d(dim, dim, kernel_size=k, padding=k//2, groups=dim)
- for k in self.kernels
- ])
- self.attention = nn.Sequential(
- nn.Linear(dim * len(self.kernels), dim),
- nn.GELU(),
- nn.Linear(dim, len(self.kernels)),
- nn.Softmax(dim=-1)
-)
+                """
+                Multi-scale attention for unresolved spectral line detection
 
- def forward(self, x: torch.Tensor) -> torch.Tensor:
- # x: (B, C, L)
- multi_scale = [conv(x) for conv in self.convs]
- 
- # Concatenate along channel dimension
- concat = torch.cat(multi_scale, dim=1) # (B, C*k, L)
- 
- # Compute attention weights
- pool = concat.mean(dim=2) # (B, C*k)
- attn = self.attention(pool) # (B, k)
- 
- # Apply attention
- weighted = torch.stack(multi_scale, dim=1) * attn.unsqueeze(2).unsqueeze(3)
- output = weighted.sum(dim=1)
- 
- return output
+                AMOS 2025: Captures both narrow lines and broad continuum features
+                - Multiple kernel sizes for different spectral scales
+                - Attention weights for adaptive feature fusion
+                """
+                def __init__(self, dim: int):
+                                super().__init__()
+                                self.kernels = [3, 5, 7, 11] # Different spectral scales
+                                self.convs = nn.ModuleList([
+                                nn.Conv1d(dim, dim, kernel_size=k, padding=k//2, groups=dim)
+                                for k in self.kernels
+                                ])
+                                self.attention = nn.Sequential(
+                                nn.Linear(dim * len(self.kernels), dim),
+                                nn.GELU(),
+                                nn.Linear(dim, len(self.kernels)),
+                                nn.Softmax(dim=-1)
+                                )
+
+                                def forward(self, x: torch.Tensor) -> torch.Tensor:
+                                                # x: (B, C, L)
+                                                multi_scale = [conv(x) for conv in self.convs]
+
+                                                # Concatenate along channel dimension
+                                                concat = torch.cat(multi_scale, dim=1) # (B, C*k, L)
+
+                                                # Compute attention weights
+                                                pool = concat.mean(dim=2) # (B, C*k)
+                                                attn = self.attention(pool) # (B, k)
+
+                                                # Apply attention
+                                                weighted = torch.stack(multi_scale, dim=1) * attn.unsqueeze(2).unsqueeze(3)
+                                                output = weighted.sum(dim=1)
+
+                                                return output
 
 
 class UnresolvedSpectralHead(nn.Module):
- """
- Unresolved Spectral Deep Learning Head for Narrow-FOV Sensor 1
- 
- AMOS 2025 Landon et al.: ConvNeXt-style architecture for spectral detection
- 
- Architecture:
- - Input: Raw spectral bins (e.g., 256 bins from DMD spectroscopy)
- - Backbone: ConvNeXt blocks with multi-scale attention
- - Output: Spectral residuals + material ID confidence
- 
- Integration:
- - Fuses with MGE ratio matching (Slingshot AMOS)
- - Provides spectral residuals for GATv2 node features
- - Detects HGV plasma signatures (OI, N2, CN lines)
- """
- def __init__(
- self,
- spectral_bins: int = 256,
- hidden_dim: int = 96,
- num_blocks: int = 4,
- num_classes: int = 10, # Material classes (HGV, debris, etc.)
- wavelength_min: float = 400.0, # nm
- wavelength_max: float = 1000.0, # nm
-):
- super().__init__()
- self.spectral_bins = spectral_bins
- self.wavelength_min = wavelength_min
- self.wavelength_max = wavelength_max
- 
- # Stem: 1D convolution for initial feature extraction
- self.stem = nn.Sequential(
- nn.Conv1d(1, hidden_dim, kernel_size=4, stride=4),
- nn.LayerNorm(hidden_dim),
- nn.GELU()
-)
- 
- # Backbone: ConvNeXt blocks with multi-scale attention
- self.blocks = nn.ModuleList([
- ConvNeXtBlock(hidden_dim, drop_path=0.1)
- for _ in range(num_blocks)
- ])
- 
- # Multi-scale attention for unresolved lines
- self.attention = MultiScaleSpectralAttention(hidden_dim)
- 
- # Head: Material classification + spectral residuals
- self.classifier = nn.Sequential(
- nn.AdaptiveAvgPool1d(1),
- nn.Flatten(),
- nn.Linear(hidden_dim, hidden_dim // 2),
- nn.GELU(),
- nn.Linear(hidden_dim // 2, num_classes)
-)
- 
- # Spectral residual output (for GATv2)
- self.residual_head = nn.Sequential(
- nn.Linear(hidden_dim, hidden_dim // 2),
- nn.GELU(),
- nn.Linear(hidden_dim // 2, 32) # 32-dim residual feature
-)
- 
- # Wavelength encoding (for physical consistency)
- self.wavelength_embedding = self._create_wavelength_embedding()
+                """
+                Unresolved Spectral Deep Learning Head for Narrow-FOV Sensor 1
 
- def _create_wavelength_embedding(self) -> torch.Tensor:
- """Create wavelength position encoding for spectral bins"""
- wavelengths = torch.linspace(self.wavelength_min, self.wavelength_max, self.spectral_bins)
- # Normalize to [0, 1]
- wavelengths = (wavelengths - self.wavelength_min) / (self.wavelength_max - self.wavelength_min)
- return wavelengths.unsqueeze(0) # (1, L)
+                AMOS 2025 Landon et al.: ConvNeXt-style architecture for spectral detection
 
- def forward(self, spectrum: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
- """
- Forward pass
- 
- Args:
- spectrum: (B, L) raw spectral intensity
- 
- Returns:
- material_logits: (B, num_classes) material classification logits
- spectral_residuals: (B, 32) residual features for GATv2
- attention_weights: (B, L) attention for interpretability
- """
- # Add channel dimension
- x = spectrum.unsqueeze(1) # (B, 1, L)
- 
- # Stem
- x = self.stem(x)
- 
- # Backbone blocks
- for block in self.blocks:
- x = block(x)
- 
- # Multi-scale attention
- x = self.attention(x)
- 
- # Material classification
- material_logits = self.classifier(x)
- 
- # Spectral residuals (for GATv2)
- pooled = x.mean(dim=2) # (B, C)
- spectral_residuals = self.residual_head(pooled)
- 
- # Attention weights (for interpretability)
- attention_weights = x.mean(dim=1) # (B, L)
- 
- return material_logits, spectral_residuals, attention_weights
+                Architecture:
+                - Input: Raw spectral bins (e.g., 256 bins from DMD spectroscopy)
+                - Backbone: ConvNeXt blocks with multi-scale attention
+                - Output: Spectral residuals + material ID confidence
 
- def get_hgv_confidence(self, spectrum: torch.Tensor) -> float:
- """
- Get HGV plasma detection confidence
- 
- : Detects HGV-specific spectral signatures
- - OI 777nm line (atomic oxygen)
- - N2 337nm (molecular nitrogen)
- - CN violet system (cyanogen)
- 
- Returns:
- Confidence score [0, 1]
- """
- material_logits, _, _ = self.forward(spectrum)
- probs = F.softmax(material_logits, dim=-1)
- 
- # Assume class 0 is HGV
- hgv_confidence = probs[0, 0].item()
- 
- return hgv_confidence
+                Integration:
+                - Fuses with MGE ratio matching (Slingshot AMOS)
+                - Provides spectral residuals for GATv2 node features
+                - Detects HGV plasma signatures (OI, N2, CN lines)
+                """
+                def __init__(
+                self,
+                spectral_bins: int = 256,
+                hidden_dim: int = 96,
+                num_blocks: int = 4,
+                num_classes: int = 10, # Material classes (HGV, debris, etc.)
+                wavelength_min: float = 400.0, # nm
+                wavelength_max: float = 1000.0, # nm
+                ):
+                                super().__init__()
+                                self.spectral_bins = spectral_bins
+                                self.wavelength_min = wavelength_min
+                                self.wavelength_max = wavelength_max
+
+                                # Stem: 1D convolution for initial feature extraction
+                                self.stem = nn.Sequential(
+                                nn.Conv1d(1, hidden_dim, kernel_size=4, stride=4),
+                                nn.LayerNorm(hidden_dim),
+                                nn.GELU()
+                                )
+
+                                # Backbone: ConvNeXt blocks with multi-scale attention
+                                self.blocks = nn.ModuleList([
+                                ConvNeXtBlock(hidden_dim, drop_path=0.1)
+                                for _ in range(num_blocks)
+                                ])
+
+                                # Multi-scale attention for unresolved lines
+                                self.attention = MultiScaleSpectralAttention(hidden_dim)
+
+                                # Head: Material classification + spectral residuals
+                                self.classifier = nn.Sequential(
+                                nn.AdaptiveAvgPool1d(1),
+                                nn.Flatten(),
+                                nn.Linear(hidden_dim, hidden_dim // 2),
+                                nn.GELU(),
+                                nn.Linear(hidden_dim // 2, num_classes)
+                                )
+
+                                # Spectral residual output (for GATv2)
+                                self.residual_head = nn.Sequential(
+                                nn.Linear(hidden_dim, hidden_dim // 2),
+                                nn.GELU(),
+                                nn.Linear(hidden_dim // 2, 32) # 32-dim residual feature
+                                )
+
+                                # Wavelength encoding (for physical consistency)
+                                self.wavelength_embedding = self._create_wavelength_embedding()
+
+                                def _create_wavelength_embedding(self) -> torch.Tensor:
+                                                """Create wavelength position encoding for spectral bins"""
+                                                wavelengths = torch.linspace(self.wavelength_min, self.wavelength_max, self.spectral_bins)
+                                                # Normalize to [0, 1]
+                                                wavelengths = (wavelengths - self.wavelength_min) / (self.wavelength_max - self.wavelength_min)
+                                                return wavelengths.unsqueeze(0) # (1, L)
+
+                                                def forward(self, spectrum: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+                                                                """
+                                                                Forward pass
+
+                                                                Args:
+                                                                spectrum: (B, L) raw spectral intensity
+
+                                                                Returns:
+                                                                material_logits: (B, num_classes) material classification logits
+                                                                spectral_residuals: (B, 32) residual features for GATv2
+                                                                attention_weights: (B, L) attention for interpretability
+                                                                """
+                                                                # Add channel dimension
+                                                                x = spectrum.unsqueeze(1) # (B, 1, L)
+
+                                                                # Stem
+                                                                x = self.stem(x)
+
+                                                                # Backbone blocks
+                                                                for block in self.blocks:
+                                                                                x = block(x)
+
+                                                                                # Multi-scale attention
+                                                                                x = self.attention(x)
+
+                                                                                # Material classification
+                                                                                material_logits = self.classifier(x)
+
+                                                                                # Spectral residuals (for GATv2)
+                                                                                pooled = x.mean(dim=2) # (B, C)
+                                                                                spectral_residuals = self.residual_head(pooled)
+
+                                                                                # Attention weights (for interpretability)
+                                                                                attention_weights = x.mean(dim=1) # (B, L)
+
+                                                                                return material_logits, spectral_residuals, attention_weights
+
+                                                                                def get_hgv_confidence(self, spectrum: torch.Tensor) -> float:
+                                                                                                """
+                                                                                                Get HGV plasma detection confidence
+
+                                                                                                : Detects HGV-specific spectral signatures
+                                                                                                - OI 777nm line (atomic oxygen)
+                                                                                                - N2 337nm (molecular nitrogen)
+                                                                                                - CN violet system (cyanogen)
+
+                                                                                                Returns:
+                                                                                                Confidence score [0, 1]
+                                                                                                """
+                                                                                                material_logits, _, _ = self.forward(spectrum)
+                                                                                                probs = F.softmax(material_logits, dim=-1)
+
+                                                                                                # Assume class 0 is HGV
+                                                                                                hgv_confidence = probs[0, 0].item()
+
+                                                                                                return hgv_confidence
 
 
 class SpectralMGEFusion(nn.Module):
- """
- Fuses spectral detection with MGE ratio matching (Slingshot AMOS)
- 
- : Multi-modal fusion for enhanced threat identification
- - Spectral: Unresolved line detection (ConvNeXt)
- - MGE: Architectural fingerprinting (ratio + components)
- - Photometric: Light curve features (Slingshot)
- """
- def __init__(
- self,
- spectral_dim: int = 32,
- mge_dim: int = 16,
- photometric_dim: int = 8,
- hidden_dim: int = 64,
-):
- super().__init__()
- 
- # Fusion layers
- self.fusion = nn.Sequential(
- nn.Linear(spectral_dim + mge_dim + photometric_dim, hidden_dim),
- nn.GELU(),
- nn.Linear(hidden_dim, hidden_dim // 2),
- nn.GELU(),
- nn.Linear(hidden_dim // 2, 1),
- nn.Sigmoid()
-)
- 
- def forward(
- self,
- spectral_features: torch.Tensor,
- mge_features: torch.Tensor,
- photometric_features: torch.Tensor
-) -> torch.Tensor:
- """
- Fuse multi-modal features for threat confidence
- 
- Args:
- spectral_features: (B, 32) from UnresolvedSpectralHead
- mge_features: (B, 16) from MGE library
- photometric_features: (B, 8) from Slingshot
- 
- Returns:
- threat_confidence: (B, 1) fused threat score
- """
- # Concatenate features
- combined = torch.cat([spectral_features, mge_features, photometric_features], dim=-1)
- 
- # Fusion
- threat_confidence = self.fusion(combined)
- 
- return threat_confidence
+                """
+                Fuses spectral detection with MGE ratio matching (Slingshot AMOS)
+
+                : Multi-modal fusion for enhanced threat identification
+                - Spectral: Unresolved line detection (ConvNeXt)
+                - MGE: Architectural fingerprinting (ratio + components)
+                - Photometric: Light curve features (Slingshot)
+                """
+                def __init__(
+                self,
+                spectral_dim: int = 32,
+                mge_dim: int = 16,
+                photometric_dim: int = 8,
+                hidden_dim: int = 64,
+                ):
+                                super().__init__()
+
+                                # Fusion layers
+                                self.fusion = nn.Sequential(
+                                nn.Linear(spectral_dim + mge_dim + photometric_dim, hidden_dim),
+                                nn.GELU(),
+                                nn.Linear(hidden_dim, hidden_dim // 2),
+                                nn.GELU(),
+                                nn.Linear(hidden_dim // 2, 1),
+                                nn.Sigmoid()
+                                )
+
+                                def forward(
+                                self,
+                                spectral_features: torch.Tensor,
+                                mge_features: torch.Tensor,
+                                photometric_features: torch.Tensor
+                                ) -> torch.Tensor:
+                                                """
+                                                Fuse multi-modal features for threat confidence
+
+                                                Args:
+                                                spectral_features: (B, 32) from UnresolvedSpectralHead
+                                                mge_features: (B, 16) from MGE library
+                                                photometric_features: (B, 8) from Slingshot
+
+                                                Returns:
+                                                threat_confidence: (B, 1) fused threat score
+                                                """
+                                                # Concatenate features
+                                                combined = torch.cat([spectral_features, mge_features, photometric_features], dim=-1)
+
+                                                # Fusion
+                                                threat_confidence = self.fusion(combined)
+
+                                                return threat_confidence
 
 
 # =============================================================================
 # Example Usage and Testing
 # =============================================================================
 if __name__ == "__main__":
- print("=== : Unresolved Spectral DL Head ===")
- 
- # Create spectral head
- spectral_head = UnresolvedSpectralHead(
- spectral_bins=256,
- hidden_dim=96,
- num_blocks=4,
- num_classes=10
-)
- 
- # Create fusion module
- fusion = SpectralMGEFusion()
- 
- # Simulate spectral data (256 bins)
- batch_size = 4
- spectrum = torch.randn(batch_size, 256)
- 
- # Forward pass
- material_logits, spectral_residuals, attention = spectral_head(spectrum)
- 
- print(f"\nSpectral Head Output:")
- print(f" Material Logits: {material_logits.shape}")
- print(f" Spectral Residuals: {spectral_residuals.shape}")
- print(f" Attention Weights: {attention.shape}")
- 
- # Get HGV confidence
- hgv_conf = spectral_head.get_hgv_confidence(spectrum[:1])
- print(f" HGV Confidence: {hgv_conf:.4f}")
- 
- # Simulate MGE and photometric features
- mge_features = torch.randn(batch_size, 16)
- photometric_features = torch.randn(batch_size, 8)
- 
- # Fusion
- threat_confidence = fusion(spectral_residuals, mge_features, photometric_features)
- 
- print(f"\nFusion Output:")
- print(f" Threat Confidence: {threat_confidence.shape}")
- print(f" Sample Scores: {threat_confidence.squeeze().tolist()}")
- 
- print("\n=== Ready for Narrow-FOV Sensor 1 Integration ===")
- print("Features:")
- print(" - ConvNeXt backbone for efficient spectral extraction")
- print(" - Multi-scale attention for unresolved line detection")
- print(" - MGE + Photometric fusion (Slingshot AMOS)")
- print(" - 32-dim spectral residuals for GATv2 node features")
+                print("=== : Unresolved Spectral DL Head ===")
+
+                # Create spectral head
+                spectral_head = UnresolvedSpectralHead(
+                spectral_bins=256,
+                hidden_dim=96,
+                num_blocks=4,
+                num_classes=10
+                )
+
+                # Create fusion module
+                fusion = SpectralMGEFusion()
+
+                # Simulate spectral data (256 bins)
+                batch_size = 4
+                spectrum = torch.randn(batch_size, 256)
+
+                # Forward pass
+                material_logits, spectral_residuals, attention = spectral_head(spectrum)
+
+                print(f"\nSpectral Head Output:")
+                print(f" Material Logits: {material_logits.shape}")
+                print(f" Spectral Residuals: {spectral_residuals.shape}")
+                print(f" Attention Weights: {attention.shape}")
+
+                # Get HGV confidence
+                hgv_conf = spectral_head.get_hgv_confidence(spectrum[:1])
+                print(f" HGV Confidence: {hgv_conf:.4f}")
+
+                # Simulate MGE and photometric features
+                mge_features = torch.randn(batch_size, 16)
+                photometric_features = torch.randn(batch_size, 8)
+
+                # Fusion
+                threat_confidence = fusion(spectral_residuals, mge_features, photometric_features)
+
+                print(f"\nFusion Output:")
+                print(f" Threat Confidence: {threat_confidence.shape}")
+                print(f" Sample Scores: {threat_confidence.squeeze().tolist()}")
+
+                print("\n=== Ready for Narrow-FOV Sensor 1 Integration ===")
+                print("Features:")
+                print(" - ConvNeXt backbone for efficient spectral extraction")
+                print(" - Multi-scale attention for unresolved line detection")
+                print(" - MGE + Photometric fusion (Slingshot AMOS)")
+                print(" - 32-dim spectral residuals for GATv2 node features")

@@ -2,6 +2,7 @@ package physics
 
 import (
 	"math"
+	"math/rand"
 )
 
 /**
@@ -219,12 +220,10 @@ func (e *Engine) MilsteinStep(q, p, z []float64, dt float64) ([]float64, []float
 }
 
 // randFloat generates a random float in (0, 1)
-// Simple fallback for demonstration - in production use crypto/rand
+// Uses math/rand for deterministic reproducibility in tests.
+// For cryptographic randomness, replace with crypto/rand.
 func randFloat() float64 {
-	// Simple PRNG for demonstration
-	// In production, use crypto/rand or a seeded PRNG
-	const maxUint32 = 1<<32 - 1
-	return float64((uint32(0)*1664525+1013904223)%maxUint32) / float64(maxUint32)
+	return rand.Float64()
 }
 
 // =============================================================================

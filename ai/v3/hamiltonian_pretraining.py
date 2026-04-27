@@ -1,32 +1,32 @@
 """
 hamiltonian_pretraining.py - Hamiltonian Pre-training Module
 
-Implements "Hamiltonian Pre-training"—where the model first learns to 
-conserve energy on a synthetic Keplerian manifold BEFORE it ever sees the 
+Implements "Hamiltonian Pre-training"—where the model first learns to
+conserve energy on a synthetic Keplerian manifold BEFORE it ever sees the
 "noisy" IAF sensor data.
 
 This is the "Physics-First" curriculum:
- Phase 0: Learn conservation laws on pure Hamiltonian dynamics
- Phase 1: Introduce dissipation (drag, radiation pressure)
- Phase 2: Add control inputs (maneuvers, thrust)
- Phase 3: Train on noisy real-world sensor data
+Phase 0: Learn conservation laws on pure Hamiltonian dynamics
+Phase 1: Introduce dissipation (drag, radiation pressure)
+Phase 2: Add control inputs (maneuvers, thrust)
+Phase 3: Train on noisy real-world sensor data
 
 Mathematical Foundation:
- By pre-training on exact Keplerian orbits, the model learns the 
- fundamental structure of phase space before dealing with noise.
- This prevents the optimizer from "cheating" by violating physics
- to fit noisy data.
+By pre-training on exact Keplerian orbits, the model learns the
+fundamental structure of phase space before dealing with noise.
+This prevents the optimizer from "cheating" by violating physics
+to fit noisy data.
 
 Curriculum:
- Epoch 0-1000: Pure Keplerian (μ=1, canonical units)
- Epoch 1000-2000: Add J2 perturbation (oblateness)
- Epoch 2000-3000: Add atmospheric drag (exponential model)
- Epoch 3000-4000: Add solar radiation pressure
- Epoch 4000+: Real IAF sensor data with all perturbations
+Epoch 0-1000: Pure Keplerian (μ=1, canonical units)
+Epoch 1000-2000: Add J2 perturbation (oblateness)
+Epoch 2000-3000: Add atmospheric drag (exponential model)
+Epoch 3000-4000: Add solar radiation pressure
+Epoch 4000+: Real IAF sensor data with all perturbations
 
 References:
- - Curriculum learning: Bengio et al. (2009)
- - foundation.md §5: Development Phases
+- Curriculum learning: Bengio et al. (2009)
+- foundation.md §5: Development Phases
 """
 
 import jax
@@ -39,370 +39,370 @@ import numpy as np
 
 
 class KeplerianOracle:
- """
- Analytical Keplerian dynamics for pre-training.
- 
- Provides ground-truth Hamiltonian, gradients, and trajectories
- without numerical integration error.
- """
- 
- def __init__(self, mu: float = 398600.4418):
-    self.mu = mu
- 
- def hamiltonian(self, q: jnp.ndarray, p: jnp.ndarray) -> float:
- """H = 0.5*p² - μ/|q|"""
- r = jnp.linalg.norm(q)
- v_sq = jnp.linalg.norm(p) ** 2
- return 0.5 * v_sq - self.mu / r
- 
- def dH_dq(self, q: jnp.ndarray, p: jnp.ndarray) -> jnp.ndarray:
- """∂H/∂q = μ*q/|q|³"""
- r = jnp.linalg.norm(q)
- return self.mu * q / (r ** 3)
- 
- def dH_dp(self, q: jnp.ndarray, p: jnp.ndarray) -> jnp.ndarray:
- """∂H/∂p = p (for unit mass)"""
- return p
- 
- def exact_trajectory(
- self,
- q0: jnp.ndarray,
- p0: jnp.ndarray,
- t_span: jnp.ndarray
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
- """
- Generate exact Keplerian trajectory (simplified elliptical).
- 
- For circular orbits, this is analytic. For elliptical, uses
- numerical integration with very small timestep for "ground truth".
- 
- Args:
- q0: Initial position [3]
- p0: Initial momentum [3]
- t_span: [T] time points
- 
- Returns:
- q_traj, p_traj: [T, 3] exact trajectories
- """
- # For pre-training, we use high-precision integration
- # In practice, this could use Orekit or analytical solution
- 
- def step_fn(carry, t):
- q, p, t_prev = carry
- dt = t - t_prev
- 
- # Symplectic Euler (sufficient for ground truth with tiny dt)
- dH_dp = self.dH_dp(q, p)
- q_new = q + dt * dH_dp
- 
- dH_dq = self.dH_dq(q_new, p)
- p_new = p - dt * dH_dq
- 
- return (q_new, p_new, t), (q_new, p_new)
- 
- _, (q_traj, p_traj) = jax.lax.scan(
- step_fn,
- (q0, p0, t_span[0]),
- t_span[1:]
-)
- 
- # Prepend initial state
- q_traj = jnp.concatenate([q0[None, :], q_traj], axis=0)
- p_traj = jnp.concatenate([p0[None, :], p_traj], axis=0)
- 
- return q_traj, p_traj
+                """
+                Analytical Keplerian dynamics for pre-training.
+
+                Provides ground-truth Hamiltonian, gradients, and trajectories
+                without numerical integration error.
+                """
+
+                def __init__(self, mu: float = 398600.4418):
+                                self.mu = mu
+
+                                def hamiltonian(self, q: jnp.ndarray, p: jnp.ndarray) -> float:
+                                                """H = 0.5*p² - μ/|q|"""
+                                                r = jnp.linalg.norm(q)
+                                                v_sq = jnp.linalg.norm(p) ** 2
+                                                return 0.5 * v_sq - self.mu / r
+
+                                                def dH_dq(self, q: jnp.ndarray, p: jnp.ndarray) -> jnp.ndarray:
+                                                                """∂H/∂q = μ*q/|q|³"""
+                                                                r = jnp.linalg.norm(q)
+                                                                return self.mu * q / (r ** 3)
+
+                                                                def dH_dp(self, q: jnp.ndarray, p: jnp.ndarray) -> jnp.ndarray:
+                                                                                """∂H/∂p = p (for unit mass)"""
+                                                                                return p
+
+                                                                                def exact_trajectory(
+                                                                                self,
+                                                                                q0: jnp.ndarray,
+                                                                                p0: jnp.ndarray,
+                                                                                t_span: jnp.ndarray
+                                                                                ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+                                                                                                """
+                                                                                                Generate exact Keplerian trajectory (simplified elliptical).
+
+                                                                                                For circular orbits, this is analytic. For elliptical, uses
+                                                                                                numerical integration with very small timestep for "ground truth".
+
+                                                                                                Args:
+                                                                                                q0: Initial position [3]
+                                                                                                p0: Initial momentum [3]
+                                                                                                t_span: [T] time points
+
+                                                                                                Returns:
+                                                                                                q_traj, p_traj: [T, 3] exact trajectories
+                                                                                                """
+                                                                                                # For pre-training, we use high-precision integration
+                                                                                                # In practice, this could use Orekit or analytical solution
+
+                                                                                                def step_fn(carry, t):
+                                                                                                                q, p, t_prev = carry
+                                                                                                                dt = t - t_prev
+
+                                                                                                                # Symplectic Euler (sufficient for ground truth with tiny dt)
+                                                                                                                dH_dp = self.dH_dp(q, p)
+                                                                                                                q_new = q + dt * dH_dp
+
+                                                                                                                dH_dq = self.dH_dq(q_new, p)
+                                                                                                                p_new = p - dt * dH_dq
+
+                                                                                                                return (q_new, p_new, t), (q_new, p_new)
+
+                                                                                                                _, (q_traj, p_traj) = jax.lax.scan(
+                                                                                                                step_fn,
+                                                                                                                (q0, p0, t_span[0]),
+                                                                                                                t_span[1:]
+                                                                                                                )
+
+                                                                                                                # Prepend initial state
+                                                                                                                q_traj = jnp.concatenate([q0[None, :], q_traj], axis=0)
+                                                                                                                p_traj = jnp.concatenate([p0[None, :], p_traj], axis=0)
+
+                                                                                                                return q_traj, p_traj
 
 
 class CurriculumPhase:
- """Single phase of the physics curriculum."""
- 
- def __init__(
- self,
- name: str,
- oracle: KeplerianOracle,
- perturbation_fn: Callable,
- noise_level: float,
- duration_epochs: int
-):
- self.name = name
- self.oracle = oracle
- self.perturbation_fn = perturbation_fn
- self.noise_level = noise_level
- self.duration_epochs = duration_epochs
- 
- def generate_batch(
- self,
- batch_size: int,
- key: jax.random.PRNGKey
-) -> Dict:
- """Generate training batch for this phase."""
- # Sample random initial conditions
- keys = jax.random.split(key, batch_size)
- 
- def sample_orbit(k):
- # Random altitude: 200-2000 km
- alt = jax.random.uniform(k, minval=200.0, maxval=2000.0)
- r = 6378.137 + alt
- 
- # Circular orbit with random inclination
- inc = jax.random.uniform(k, minval=0.0, maxval=jnp.pi)
- 
- q = jnp.array([r, 0.0, 0.0])
- v_circ = jnp.sqrt(self.oracle.mu / r)
- p = jnp.array([0.0, v_circ * jnp.cos(inc), v_circ * jnp.sin(inc)])
- 
- return q, p
- 
- q0_batch = []
- p0_batch = []
- 
- for k in keys:
- q, p = sample_orbit(k)
- q0_batch.append(q)
- p0_batch.append(p)
- 
- q0_batch = jnp.stack(q0_batch)
- p0_batch = jnp.stack(p0_batch)
- 
- return {
- 'q0': q0_batch,
- 'p0': p0_batch,
- 'H0': vmap(lambda q, p: self.oracle.hamiltonian(q, p))(q0_batch, p0_batch)
- }
+                """Single phase of the physics curriculum."""
+
+                def __init__(
+                self,
+                name: str,
+                oracle: KeplerianOracle,
+                perturbation_fn: Callable,
+                noise_level: float,
+                duration_epochs: int
+                ):
+                                self.name = name
+                                self.oracle = oracle
+                                self.perturbation_fn = perturbation_fn
+                                self.noise_level = noise_level
+                                self.duration_epochs = duration_epochs
+
+                                def generate_batch(
+                                self,
+                                batch_size: int,
+                                key: jax.random.PRNGKey
+                                ) -> Dict:
+                                                """Generate training batch for this phase."""
+                                                # Sample random initial conditions
+                                                keys = jax.random.split(key, batch_size)
+
+                                                def sample_orbit(k):
+                                                                # Random altitude: 200-2000 km
+                                                                alt = jax.random.uniform(k, minval=200.0, maxval=2000.0)
+                                                                r = 6378.137 + alt
+
+                                                                # Circular orbit with random inclination
+                                                                inc = jax.random.uniform(k, minval=0.0, maxval=jnp.pi)
+
+                                                                q = jnp.array([r, 0.0, 0.0])
+                                                                v_circ = jnp.sqrt(self.oracle.mu / r)
+                                                                p = jnp.array([0.0, v_circ * jnp.cos(inc), v_circ * jnp.sin(inc)])
+
+                                                                return q, p
+
+                                                                q0_batch = []
+                                                                p0_batch = []
+
+                                                                for k in keys:
+                                                                                q, p = sample_orbit(k)
+                                                                                q0_batch.append(q)
+                                                                                p0_batch.append(p)
+
+                                                                                q0_batch = jnp.stack(q0_batch)
+                                                                                p0_batch = jnp.stack(p0_batch)
+
+                                                                                return {
+                                                                                'q0': q0_batch,
+                                                                                'p0': p0_batch,
+                                                                                'H0': vmap(lambda q, p: self.oracle.hamiltonian(q, p))(q0_batch, p0_batch)
+                                                                                }
 
 
 class HamiltonianPretrainer:
- """
- Pre-trains model on synthetic Keplerian manifold before real data.
- 
- This ensures the model learns physics first, then adapts to noise.
- """
- 
- def __init__(
- self,
- model,
- learning_rate: float = 1e-4,
- mu: float = 398600.4418
-):
- self.model = model
- self.oracle = KeplerianOracle(mu)
- self.optimizer = optax.adam(learning_rate)
- self.opt_state = self.optimizer.init(model)
- 
- # Define curriculum phases
- self.phases = self._create_curriculum()
- 
- def _create_curriculum(self) -> List[CurriculumPhase]:
- """Create physics-first training curriculum."""
- 
- def no_perturbation(q, p, t):
- return jnp.zeros(3), jnp.zeros(3)
- 
- def j2_perturbation(q, p, t):
- # J2 oblateness perturbation
- r = jnp.linalg.norm(q)
- J2 = 1.08263e-3
- RE = 6378.137
- 
- factor = -3 * J2 * self.oracle.mu * (RE ** 2) / (2 * r ** 5)
- acc = factor * jnp.array([
- q[0] * (1 - 5 * (q[2] / r) ** 2),
- q[1] * (1 - 5 * (q[2] / r) ** 2),
- q[2] * (3 - 5 * (q[2] / r) ** 2)
- ])
- return acc, jnp.zeros(3)
- 
- def drag_perturbation(q, p, t):
- # Simple exponential drag
- v = p # Unit mass
- v_mag = jnp.linalg.norm(v)
- r = jnp.linalg.norm(q)
- h = r - 6378.137 # Altitude
- 
- rho0 = 1.225 # kg/m³ at sea level
- H_scale = 8.5 # km scale height
- rho = rho0 * jnp.exp(-h / H_scale)
- 
- Cd = 2.2
- A = 1e-4 # m² (1 cm²)
- m = 1.0 # kg
- 
- drag_acc = -0.5 * Cd * A / m * rho * v_mag * v
- return drag_acc, jnp.zeros(3)
- 
- phases = [
- CurriculumPhase(
- name="Pure Keplerian",
- oracle=self.oracle,
- perturbation_fn=no_perturbation,
- noise_level=0.0,
- duration_epochs=1000
-),
- CurriculumPhase(
- name="J2 Perturbation",
- oracle=self.oracle,
- perturbation_fn=j2_perturbation,
- noise_level=0.0,
- duration_epochs=500
-),
- CurriculumPhase(
- name="Atmospheric Drag",
- oracle=self.oracle,
- perturbation_fn=drag_perturbation,
- noise_level=1e-6, # Tiny noise
- duration_epochs=500
-),
- CurriculumPhase(
- name="Noisy Real-World",
- oracle=self.oracle,
- perturbation_fn=drag_perturbation,
- noise_level=1e-4, # Hanle-level noise
- duration_epochs=2000
-),
- ]
- 
- return phases
- 
- @partial(jit, static_argnums=(0,))
- def pretrain_step(
- self,
- model,
- opt_state,
- q0: jnp.ndarray,
- p0: jnp.ndarray,
- H0: jnp.ndarray,
- dt: float = 60.0, # 1 minute steps
- n_steps: int = 10
-) -> Tuple:
- """
- Single pre-training step with hard physics constraint.
- 
- Loss is ONLY data matching—physics enforced by architecture.
- """
- from train_phs_jax import forest_ruth_step
- 
- def loss_fn(params):
- model_with_params = eqx.tree_at(lambda m: m, model, params)
- 
- # Integrate trajectory
- q, p = q0, p0
- for _ in range(n_steps):
- q, p = forest_ruth_step(model_with_params, q, p, None, dt)
- 
- # Target: exact Keplerian final state
- q_target, p_target = self.oracle.exact_trajectory(
- q0, p0, jnp.linspace(0, n_steps * dt, n_steps + 1)
-)
- q_target = q_target[-1]
- p_target = p_target[-1]
- 
- # Data loss only—physics enforced by Forest-Ruth
- loss_q = jnp.mean((q - q_target) ** 2)
- loss_p = jnp.mean((p - p_target) ** 2)
- total_loss = loss_q + loss_p
- 
- # Metrics (for monitoring, not loss)
- H_final = model_with_params.get_hamiltonian(
- jnp.concatenate([q, p]), None
-)
- energy_drift = abs(H_final - H0) / abs(H0)
- 
- return total_loss, {
- 'loss': total_loss,
- 'energy_drift': energy_drift,
- 'position_error': jnp.sqrt(loss_q),
- }
- 
- # Compute loss and gradients
- (loss, metrics), grads = eqx.filter_value_and_grad(
- loss_fn, has_aux=True
-)(model)
- 
- # Update parameters
- updates, opt_state = self.optimizer.update(grads, opt_state, model)
- model = eqx.apply_updates(model, updates)
- 
- return model, opt_state, metrics
- 
- def run_pretraining(self, key: jax.random.PRNGKey) -> Dict:
- """
- Run full curriculum pre-training.
- 
- Returns:
- Dict with training history and final metrics
- """
- history = []
- 
- for phase_idx, phase in enumerate(self.phases):
- print(f"\n{'='*70}")
- print(f"Phase {phase_idx + 1}/{len(self.phases)}: {phase.name}")
- print(f"{'='*70}")
- 
- for epoch in range(phase.duration_epochs):
- key, subkey = jax.random.split(key)
- batch = phase.generate_batch(32, subkey)
- 
- self.model, self.opt_state, metrics = self.pretrain_step(
- self.model,
- self.opt_state,
- batch['q0'],
- batch['p0'],
- batch['H0']
-)
- 
- if epoch % 100 == 0:
- print(f"Epoch {epoch}: Loss={metrics['loss']:.6e}, "
- f"Energy Drift={metrics['energy_drift']:.2e}")
- 
- history.append({
- 'phase': phase.name,
- 'epoch': epoch,
- **metrics
- })
- 
- return {
- 'final_model': self.model,
- 'history': history
- }
+                """
+                Pre-trains model on synthetic Keplerian manifold before real data.
+
+                This ensures the model learns physics first, then adapts to noise.
+                """
+
+                def __init__(
+                self,
+                model,
+                learning_rate: float = 1e-4,
+                mu: float = 398600.4418
+                ):
+                                self.model = model
+                                self.oracle = KeplerianOracle(mu)
+                                self.optimizer = optax.adam(learning_rate)
+                                self.opt_state = self.optimizer.init(model)
+
+                                # Define curriculum phases
+                                self.phases = self._create_curriculum()
+
+                                def _create_curriculum(self) -> List[CurriculumPhase]:
+                                                """Create physics-first training curriculum."""
+
+                                                def no_perturbation(q, p, t):
+                                                                return jnp.zeros(3), jnp.zeros(3)
+
+                                                                def j2_perturbation(q, p, t):
+                                                                                # J2 oblateness perturbation
+                                                                                r = jnp.linalg.norm(q)
+                                                                                J2 = 1.08263e-3
+                                                                                RE = 6378.137
+
+                                                                                factor = -3 * J2 * self.oracle.mu * (RE ** 2) / (2 * r ** 5)
+                                                                                acc = factor * jnp.array([
+                                                                                q[0] * (1 - 5 * (q[2] / r) ** 2),
+                                                                                q[1] * (1 - 5 * (q[2] / r) ** 2),
+                                                                                q[2] * (3 - 5 * (q[2] / r) ** 2)
+                                                                                ])
+                                                                                return acc, jnp.zeros(3)
+
+                                                                                def drag_perturbation(q, p, t):
+                                                                                                # Simple exponential drag
+                                                                                                v = p # Unit mass
+                                                                                                v_mag = jnp.linalg.norm(v)
+                                                                                                r = jnp.linalg.norm(q)
+                                                                                                h = r - 6378.137 # Altitude
+
+                                                                                                rho0 = 1.225 # kg/m³ at sea level
+                                                                                                H_scale = 8.5 # km scale height
+                                                                                                rho = rho0 * jnp.exp(-h / H_scale)
+
+                                                                                                Cd = 2.2
+                                                                                                A = 1e-4 # m² (1 cm²)
+                                                                                                m = 1.0 # kg
+
+                                                                                                drag_acc = -0.5 * Cd * A / m * rho * v_mag * v
+                                                                                                return drag_acc, jnp.zeros(3)
+
+                                                                                                phases = [
+                                                                                                CurriculumPhase(
+                                                                                                name="Pure Keplerian",
+                                                                                                oracle=self.oracle,
+                                                                                                perturbation_fn=no_perturbation,
+                                                                                                noise_level=0.0,
+                                                                                                duration_epochs=1000
+                                                                                                ),
+                                                                                                CurriculumPhase(
+                                                                                                name="J2 Perturbation",
+                                                                                                oracle=self.oracle,
+                                                                                                perturbation_fn=j2_perturbation,
+                                                                                                noise_level=0.0,
+                                                                                                duration_epochs=500
+                                                                                                ),
+                                                                                                CurriculumPhase(
+                                                                                                name="Atmospheric Drag",
+                                                                                                oracle=self.oracle,
+                                                                                                perturbation_fn=drag_perturbation,
+                                                                                                noise_level=1e-6, # Tiny noise
+                                                                                                duration_epochs=500
+                                                                                                ),
+                                                                                                CurriculumPhase(
+                                                                                                name="Noisy Real-World",
+                                                                                                oracle=self.oracle,
+                                                                                                perturbation_fn=drag_perturbation,
+                                                                                                noise_level=1e-4, # Hanle-level noise
+                                                                                                duration_epochs=2000
+                                                                                                ),
+                                                                                                ]
+
+                                                                                                return phases
+
+                                                                                                @partial(jit, static_argnums=(0,))
+                                                                                                def pretrain_step(
+                                                                                                self,
+                                                                                                model,
+                                                                                                opt_state,
+                                                                                                q0: jnp.ndarray,
+                                                                                                p0: jnp.ndarray,
+                                                                                                H0: jnp.ndarray,
+                                                                                                dt: float = 60.0, # 1 minute steps
+                                                                                                n_steps: int = 10
+                                                                                                ) -> Tuple:
+                                                                                                                """
+                                                                                                                Single pre-training step with hard physics constraint.
+
+                                                                                                                Loss is ONLY data matching—physics enforced by architecture.
+                                                                                                                """
+                                                                                                                from train_phs_jax import forest_ruth_step
+
+                                                                                                                def loss_fn(params):
+                                                                                                                                model_with_params = eqx.tree_at(lambda m: m, model, params)
+
+                                                                                                                                # Integrate trajectory
+                                                                                                                                q, p = q0, p0
+                                                                                                                                for _ in range(n_steps):
+                                                                                                                                                q, p = forest_ruth_step(model_with_params, q, p, None, dt)
+
+                                                                                                                                                # Target: exact Keplerian final state
+                                                                                                                                                q_target, p_target = self.oracle.exact_trajectory(
+                                                                                                                                                q0, p0, jnp.linspace(0, n_steps * dt, n_steps + 1)
+                                                                                                                                                )
+                                                                                                                                                q_target = q_target[-1]
+                                                                                                                                                p_target = p_target[-1]
+
+                                                                                                                                                # Data loss only—physics enforced by Forest-Ruth
+                                                                                                                                                loss_q = jnp.mean((q - q_target) ** 2)
+                                                                                                                                                loss_p = jnp.mean((p - p_target) ** 2)
+                                                                                                                                                total_loss = loss_q + loss_p
+
+                                                                                                                                                # Metrics (for monitoring, not loss)
+                                                                                                                                                H_final = model_with_params.get_hamiltonian(
+                                                                                                                                                jnp.concatenate([q, p]), None
+                                                                                                                                                )
+                                                                                                                                                energy_drift = abs(H_final - H0) / abs(H0)
+
+                                                                                                                                                return total_loss, {
+                                                                                                                                                'loss': total_loss,
+                                                                                                                                                'energy_drift': energy_drift,
+                                                                                                                                                'position_error': jnp.sqrt(loss_q),
+                                                                                                                                                }
+
+                                                                                                                                                # Compute loss and gradients
+                                                                                                                                                (loss, metrics), grads = eqx.filter_value_and_grad(
+                                                                                                                                                loss_fn, has_aux=True
+                                                                                                                                                )(model)
+
+                                                                                                                                                # Update parameters
+                                                                                                                                                updates, opt_state = self.optimizer.update(grads, opt_state, model)
+                                                                                                                                                model = eqx.apply_updates(model, updates)
+
+                                                                                                                                                return model, opt_state, metrics
+
+                                                                                                                                                def run_pretraining(self, key: jax.random.PRNGKey) -> Dict:
+                                                                                                                                                                """
+                                                                                                                                                                Run full curriculum pre-training.
+
+                                                                                                                                                                Returns:
+                                                                                                                                                                Dict with training history and final metrics
+                                                                                                                                                                """
+                                                                                                                                                                history = []
+
+                                                                                                                                                                for phase_idx, phase in enumerate(self.phases):
+                                                                                                                                                                                print(f"\n{'='*70}")
+                                                                                                                                                                                print(f"Phase {phase_idx + 1}/{len(self.phases)}: {phase.name}")
+                                                                                                                                                                                print(f"{'='*70}")
+
+                                                                                                                                                                                for epoch in range(phase.duration_epochs):
+                                                                                                                                                                                                key, subkey = jax.random.split(key)
+                                                                                                                                                                                                batch = phase.generate_batch(32, subkey)
+
+                                                                                                                                                                                                self.model, self.opt_state, metrics = self.pretrain_step(
+                                                                                                                                                                                                self.model,
+                                                                                                                                                                                                self.opt_state,
+                                                                                                                                                                                                batch['q0'],
+                                                                                                                                                                                                batch['p0'],
+                                                                                                                                                                                                batch['H0']
+                                                                                                                                                                                                )
+
+                                                                                                                                                                                                if epoch % 100 == 0:
+                                                                                                                                                                                                                print(f"Epoch {epoch}: Loss={metrics['loss']:.6e}, "
+                                                                                                                                                                                                                f"Energy Drift={metrics['energy_drift']:.2e}")
+
+                                                                                                                                                                                                                history.append({
+                                                                                                                                                                                                                'phase': phase.name,
+                                                                                                                                                                                                                'epoch': epoch,
+                                                                                                                                                                                                                **metrics
+                                                                                                                                                                                                                })
+
+                                                                                                                                                                                                                return {
+                                                                                                                                                                                                                'final_model': self.model,
+                                                                                                                                                                                                                'history': history
+                                                                                                                                                                                                                }
 
 
 def test_pretraining():
- """Unit test: Run mini curriculum."""
- print("=" * 70)
- print("Hamiltonian Pre-training Unit Test")
- print("=" * 70)
- 
- from port_hamiltonian import PortHamiltonianSystem
- import equinox as eqx
- 
- # Create minimal PHS for testing
- key = jax.random.PRNGKey(0)
- model = PortHamiltonianSystem(
- state_dim=6,
- control_dim=3,
- key=key
-)
- 
- # Create pre-trainer
- pretrainer = HamiltonianPretrainer(model, learning_rate=1e-3)
- 
- print("\nCurriculum Phases:")
- for i, phase in enumerate(pretrainer.phases):
- print(f" {i+1}. {phase.name} ({phase.duration_epochs} epochs)")
- 
- # Run mini version
- print("\nRunning mini pre-training (10 epochs per phase)...")
- key = jax.random.PRNGKey(42)
- 
- # Override phases for quick test
- for phase in pretrainer.phases:
- phase.duration_epochs = 10
- 
- result = pretrainer.run_pretraining(key)
- 
- print("\n✓ Pre-training complete")
- print("=" * 70)
+                """Unit test: Run mini curriculum."""
+                print("=" * 70)
+                print("Hamiltonian Pre-training Unit Test")
+                print("=" * 70)
+
+                from port_hamiltonian import PortHamiltonianSystem
+                import equinox as eqx
+
+                # Create minimal PHS for testing
+                key = jax.random.PRNGKey(0)
+                model = PortHamiltonianSystem(
+                state_dim=6,
+                control_dim=3,
+                key=key
+                )
+
+                # Create pre-trainer
+                pretrainer = HamiltonianPretrainer(model, learning_rate=1e-3)
+
+                print("\nCurriculum Phases:")
+                for i, phase in enumerate(pretrainer.phases):
+                                print(f" {i+1}. {phase.name} ({phase.duration_epochs} epochs)")
+
+                                # Run mini version
+                                print("\nRunning mini pre-training (10 epochs per phase)...")
+                                key = jax.random.PRNGKey(42)
+
+                                # Override phases for quick test
+                                for phase in pretrainer.phases:
+                                                phase.duration_epochs = 10
+
+                                                result = pretrainer.run_pretraining(key)
+
+                                                print("\n✓ Pre-training complete")
+                                                print("=" * 70)
 
 
 if __name__ == "__main__":
- test_pretraining()
+                test_pretraining()

@@ -1,4 +1,5 @@
 //go:build !onnx
+// STUB: This file is a build stub. All functions return "not yet implemented" until the real backend is bound.
 
 package onnx
 

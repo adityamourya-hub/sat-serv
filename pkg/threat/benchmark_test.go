@@ -155,7 +155,7 @@ func BenchmarkSymbolicCertificateGeneration(b *testing.B) {
 
 // TestScenarioDetection validates detection accuracy across benchmark scenarios
 func TestScenarioDetection(t *testing.T) {
-t.Skip("Scenario detection test needs review - detection logic may have changed")
+	t.Fatal("NOT IMPLEMENTED: Scenario detection test needs review - detection logic may have changed")
 	engine := NewLaunchTripwireEngine()
 
 	// Add test corridor
@@ -221,7 +221,7 @@ func TestHGVCorridorAccuracy(t *testing.T) {
 
 // TestConstraintEnforcementAccuracy validates DPHNO constraint enforcement
 func TestConstraintEnforcementAccuracy(t *testing.T) {
-t.Skip("Constraint enforcement test needs review - energy/momentum constraints")
+	t.Fatal("NOT IMPLEMENTED: Constraint enforcement test needs review - energy/momentum constraints")
 	pc := NewPhysicalConstraints()
 
 	// Test valid orbital state (should have minimal violations)

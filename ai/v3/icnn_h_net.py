@@ -4,26 +4,26 @@ Input Convex Neural Network (ICNN) for Hamiltonian H(x, z)
 : Guaranteed Global Passivity
 
 Mathematical Foundation:
- The Hamiltonian H(x, z) must be convex in state x to ensure:
- - Unique global minimum (no local energy pockets)
- - Gradient ∇H is monotonic (cleaner SINDy residuals)
- - Global Asymptotic Stability (GAS) under passive control
- 
- ICNN Structure:
- y_{i+1} = σ(W_{z,i} y_i + W_{x,i} x + b_i)
- 
- Where:
- - W_{z,i} weights must be NON-NEGATIVE to preserve convexity
- - σ is a convex non-decreasing activation (softplus, ReLU)
- - x is the state (convex input)
- - z is the latent context (non-convex, flexible)
- 
- This ensures H(x, z) is convex in x while remaining expressive in z.
+The Hamiltonian H(x, z) must be convex in state x to ensure:
+- Unique global minimum (no local energy pockets)
+- Gradient ∇H is monotonic (cleaner SINDy residuals)
+- Global Asymptotic Stability (GAS) under passive control
+
+ICNN Structure:
+y_{i+1} = σ(W_{z,i} y_i + W_{x,i} x + b_i)
+
+Where:
+- W_{z,i} weights must be NON-NEGATIVE to preserve convexity
+- σ is a convex non-decreasing activation (softplus, ReLU)
+- x is the state (convex input)
+- z is the latent context (non-convex, flexible)
+
+This ensures H(x, z) is convex in x while remaining expressive in z.
 
 References:
- - Amos et al. (2017): Input Convex Neural Networks
- - Finocchiaro et al. (2020): Convex Neural Networks for Control
- - Sontag (1998): Mathematical Control Theory
+- Amos et al. (2017): Input Convex Neural Networks
+- Finocchiaro et al. (2020): Convex Neural Networks for Control
+- Sontag (1998): Mathematical Control Theory
 """
 
 import torch
@@ -32,427 +32,427 @@ import torch.nn.functional as F
 
 
 class ICNN_H_Net(nn.Module):
- """
- Input Convex Neural Network for Hamiltonian H(x, z).
- 
- Convex in state x, non-convex in latent context z.
- 
- Architecture:
- - z-path: Linear layers (no convexity constraint)
- - x-path: Convex layers with non-negative W_z weights
- - Final: Linear output (H value)
- 
- Args:
- state_dim: Dimension of state vector (default 6 for orbital: [x,y,z,vx,vy,vz])
- latent_dim: Dimension of latent code z (default 32)
- hidden_dim: Hidden layer dimension (default 128)
- num_layers: Number of convex layers (default 3)
- activation: Activation function (default 'softplus')
- 
- Properties:
- - Guarantees H(x, z) is convex in x by construction
- - Enforces W_z >= 0 via softplus during forward pass
- - Allows flexible modeling in z-space
- """
- 
- def __init__(
- self,
- state_dim: int = 6,
- latent_dim: int = 32,
- hidden_dim: int = 128,
- num_layers: int = 3,
- activation: str = 'softplus'
-):
- super().__init__()
- self.state_dim = state_dim
- self.latent_dim = latent_dim
- self.hidden_dim = hidden_dim
- self.num_layers = num_layers
- self.activation = activation
- 
- # Choose activation (must be convex and non-decreasing)
- if activation == 'softplus':
- self.act = F.softplus
- elif activation == 'relu':
- self.act = F.relu
- elif activation == 'elu':
- # ELU is convex for x >= 0
- self.act = lambda x: F.elu(x, alpha=1.0)
- else:
- raise ValueError(f"Unknown activation: {activation}")
- 
- # ===== Latent Context Path (z) =====
- # No convexity constraint on z-path - allows flexible conditioning
- self.z_to_hidden = nn.Linear(latent_dim, hidden_dim)
- self.z_to_hidden_bias = nn.Parameter(torch.zeros(hidden_dim))
- 
- # ===== Convex State Path (x) =====
- # W_z weights must be non-negative to preserve convexity
- # We store raw weights and apply softplus during forward pass
- self.W_z_raw = nn.ParameterList([
- nn.Parameter(torch.randn(hidden_dim, hidden_dim) * 0.01)
- for _ in range(num_layers)
- ])
- 
- # W_x weights have no constraint (affine in x preserves convexity)
- self.W_x = nn.ModuleList([
- nn.Linear(state_dim, hidden_dim)
- for _ in range(num_layers + 1)
- ])
- 
- # Biases for convex layers
- self.b = nn.ParameterList([
- nn.Parameter(torch.zeros(hidden_dim))
- for _ in range(num_layers)
- ])
- 
- # Final output layer (linear, preserves convexity)
- self.final_linear = nn.Linear(hidden_dim, 1)
- 
- # Initialize weights
- self._initialize_weights()
- 
- def _initialize_weights(self):
- """Initialize weights for stable training."""
- # Initialize W_z_raw to small positive values
- for w in self.W_z_raw:
- nn.init.constant_(w, 0.01)
- 
- # Initialize W_x with Xavier
- for w in self.W_x:
- nn.init.xavier_uniform_(w.weight)
- nn.init.zeros_(w.bias)
- 
- # Initialize final layer
- nn.init.xavier_uniform_(self.final_linear.weight)
- nn.init.zeros_(self.final_linear.bias)
- 
- def get_W_z(self, layer_idx: int) -> torch.Tensor:
- """
- Get non-negative W_z weights.
- 
- Applies softplus to raw weights to enforce non-negativity:
- W_z = softplus(W_z_raw)
- 
- Args:
- layer_idx: Layer index
- 
- Returns:
- Non-negative weight matrix
- """
- return F.softplus(self.W_z_raw[layer_idx])
- 
- def forward(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
- """
- Forward pass of ICNN.
- 
- Algorithm:
- h_0 = act(W_x[0] @ x + z_to_hidden @ z)
- h_{i+1} = act(abs(W_z[i]) @ h_i + W_x[i+1] @ x + b[i])
- H = final_linear @ h_L
- 
- Args:
- x: State tensor [batch, state_dim]
- z: Latent code tensor [batch, latent_dim]
- 
- Returns:
- H: Hamiltonian energy [batch, 1]
- """
- batch_size = x.shape[0]
- 
- # Initial hidden state from x and z
- h_x = self.W_x[0](x) # [batch, hidden_dim]
- h_z = self.z_to_hidden(z) + self.z_to_hidden_bias # [batch, hidden_dim]
- h = self.act(h_x + h_z)
- 
- # Convex hidden layers
- for i in range(self.num_layers):
- # Apply non-negative weight constraint to W_z
- W_z = self.get_W_z(i) # [hidden_dim, hidden_dim]
- 
- # z_part = W_z @ h (with W_z >= 0)
- z_part = torch.matmul(h, W_z.t())
- 
- # x_part = W_x @ x (affine in x preserves convexity)
- x_part = self.W_x[i + 1](x)
- 
- # h_{i+1} = act(z_part + x_part + b)
- h = self.act(z_part + x_part + self.b[i])
- 
- # Final output
- H = self.final_linear(h) # [batch, 1]
- 
- return H
- 
- def gradient(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
- """
- Compute gradient of H with respect to x.
- 
- Uses autograd to compute ∇_x H(x, z).
- 
- Args:
- x: State tensor [batch, state_dim]
- z: Latent code tensor [batch, latent_dim]
- 
- Returns:
- grad_H: Gradient tensor [batch, state_dim]
- """
- x_in = x.detach().requires_grad_(True)
- H = self.forward(x_in, z)
- grad_H = torch.autograd.grad(
- H.sum(), x_in, create_graph=True, retain_graph=True
-)[0]
- return grad_H
- 
- def hessian(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
- """
- Compute Hessian of H with respect to x.
- 
- For convexity verification, we need ∇²_x H(x, z) >= 0.
- 
- Args:
- x: State tensor [batch, state_dim]
- z: Latent code tensor [batch, latent_dim]
- 
- Returns:
- Hessian tensor [batch, state_dim, state_dim]
- """
- batch_size = x.shape[0]
- state_dim = x.shape[1]
- 
- # Compute gradient
- grad_H = self.gradient(x, z)
- 
- # Compute Hessian via second derivative
- hessian = torch.zeros(batch_size, state_dim, state_dim, device=x.device)
- 
- for i in range(state_dim):
- # Compute derivative of grad_H[:, i] with respect to x
- grad_g = torch.autograd.grad(
- grad_H[:, i].sum(), x, create_graph=True, retain_graph=True
-)[0]
- hessian[:, i, :] = grad_g
- 
- return hessian
- 
- def verify_convexity(
- self,
- x_samples: torch.Tensor,
- z_samples: torch.Tensor,
- tol: float = 1e-6
-) -> dict:
- """
- Verify convexity of H with respect to x.
- 
- Checks that the Hessian is positive semi-definite:
- λ_min(∇²_x H) >= -tol
- 
- Args:
- x_samples: Sample states [N, state_dim]
- z_samples: Sample latents [N, latent_dim]
- tol: Tolerance for numerical errors
- 
- Returns:
- Dictionary with convexity metrics:
- - min_eigenvalue: Minimum eigenvalue across all samples
- - max_eigenvalue: Maximum eigenvalue
- - is_convex: Boolean indicating convexity
- - violation_count: Number of samples violating convexity
- """
- self.eval()
- with torch.no_grad():
- hessians = self.hessian(x_samples, z_samples)
- 
- min_eigvals = []
- max_eigvals = []
- violation_count = 0
- 
- for i in range(x_samples.shape[0]):
- H = hessians[i] # [state_dim, state_dim]
- eigvals = torch.linalg.eigvalsh(H)
- 
- min_eig = eigvals.min().item()
- max_eig = eigvals.max().item()
- 
- min_eigvals.append(min_eig)
- max_eigvals.append(max_eig)
- 
- if min_eig < -tol:
- violation_count += 1
- 
- return {
- 'min_eigenvalue': min(min_eigvals),
- 'max_eigenvalue': max(max_eigvals),
- 'is_convex': violation_count == 0,
- 'violation_count': violation_count,
- 'total_samples': x_samples.shape[0]
- }
+                """
+                Input Convex Neural Network for Hamiltonian H(x, z).
+
+                Convex in state x, non-convex in latent context z.
+
+                Architecture:
+                - z-path: Linear layers (no convexity constraint)
+                - x-path: Convex layers with non-negative W_z weights
+                - Final: Linear output (H value)
+
+                Args:
+                state_dim: Dimension of state vector (default 6 for orbital: [x,y,z,vx,vy,vz])
+                latent_dim: Dimension of latent code z (default 32)
+                hidden_dim: Hidden layer dimension (default 128)
+                num_layers: Number of convex layers (default 3)
+                activation: Activation function (default 'softplus')
+
+                Properties:
+                - Guarantees H(x, z) is convex in x by construction
+                - Enforces W_z >= 0 via softplus during forward pass
+                - Allows flexible modeling in z-space
+                """
+
+                def __init__(
+                self,
+                state_dim: int = 6,
+                latent_dim: int = 32,
+                hidden_dim: int = 128,
+                num_layers: int = 3,
+                activation: str = 'softplus'
+                ):
+                                super().__init__()
+                                self.state_dim = state_dim
+                                self.latent_dim = latent_dim
+                                self.hidden_dim = hidden_dim
+                                self.num_layers = num_layers
+                                self.activation = activation
+
+                                # Choose activation (must be convex and non-decreasing)
+                                if activation == 'softplus':
+                                                self.act = F.softplus
+                                elif activation == 'relu':
+                                                self.act = F.relu
+                                elif activation == 'elu':
+                                                # ELU is convex for x >= 0
+                                                self.act = lambda x: F.elu(x, alpha=1.0)
+                                else:
+                                                raise ValueError(f"Unknown activation: {activation}")
+
+                                                # ===== Latent Context Path (z) =====
+                                                # No convexity constraint on z-path - allows flexible conditioning
+                                                self.z_to_hidden = nn.Linear(latent_dim, hidden_dim)
+                                                self.z_to_hidden_bias = nn.Parameter(torch.zeros(hidden_dim))
+
+                                                # ===== Convex State Path (x) =====
+                                                # W_z weights must be non-negative to preserve convexity
+                                                # We store raw weights and apply softplus during forward pass
+                                                self.W_z_raw = nn.ParameterList([
+                                                nn.Parameter(torch.randn(hidden_dim, hidden_dim) * 0.01)
+                                                for _ in range(num_layers)
+                                                ])
+
+                                                # W_x weights have no constraint (affine in x preserves convexity)
+                                                self.W_x = nn.ModuleList([
+                                                nn.Linear(state_dim, hidden_dim)
+                                                for _ in range(num_layers + 1)
+                                                ])
+
+                                                # Biases for convex layers
+                                                self.b = nn.ParameterList([
+                                                nn.Parameter(torch.zeros(hidden_dim))
+                                                for _ in range(num_layers)
+                                                ])
+
+                                                # Final output layer (linear, preserves convexity)
+                                                self.final_linear = nn.Linear(hidden_dim, 1)
+
+                                                # Initialize weights
+                                                self._initialize_weights()
+
+                                                def _initialize_weights(self):
+                                                                """Initialize weights for stable training."""
+                                                                # Initialize W_z_raw to small positive values
+                                                                for w in self.W_z_raw:
+                                                                                nn.init.constant_(w, 0.01)
+
+                                                                                # Initialize W_x with Xavier
+                                                                                for w in self.W_x:
+                                                                                                nn.init.xavier_uniform_(w.weight)
+                                                                                                nn.init.zeros_(w.bias)
+
+                                                                                                # Initialize final layer
+                                                                                                nn.init.xavier_uniform_(self.final_linear.weight)
+                                                                                                nn.init.zeros_(self.final_linear.bias)
+
+                                                                                                def get_W_z(self, layer_idx: int) -> torch.Tensor:
+                                                                                                                """
+                                                                                                                Get non-negative W_z weights.
+
+                                                                                                                Applies softplus to raw weights to enforce non-negativity:
+                                                                                                                W_z = softplus(W_z_raw)
+
+                                                                                                                Args:
+                                                                                                                layer_idx: Layer index
+
+                                                                                                                Returns:
+                                                                                                                Non-negative weight matrix
+                                                                                                                """
+                                                                                                                return F.softplus(self.W_z_raw[layer_idx])
+
+                                                                                                                def forward(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+                                                                                                                                """
+                                                                                                                                Forward pass of ICNN.
+
+                                                                                                                                Algorithm:
+                                                                                                                                h_0 = act(W_x[0] @ x + z_to_hidden @ z)
+                                                                                                                                h_{i+1} = act(abs(W_z[i]) @ h_i + W_x[i+1] @ x + b[i])
+                                                                                                                                H = final_linear @ h_L
+
+                                                                                                                                Args:
+                                                                                                                                x: State tensor [batch, state_dim]
+                                                                                                                                z: Latent code tensor [batch, latent_dim]
+
+                                                                                                                                Returns:
+                                                                                                                                H: Hamiltonian energy [batch, 1]
+                                                                                                                                """
+                                                                                                                                batch_size = x.shape[0]
+
+                                                                                                                                # Initial hidden state from x and z
+                                                                                                                                h_x = self.W_x[0](x) # [batch, hidden_dim]
+                                                                                                                                h_z = self.z_to_hidden(z) + self.z_to_hidden_bias # [batch, hidden_dim]
+                                                                                                                                h = self.act(h_x + h_z)
+
+                                                                                                                                # Convex hidden layers
+                                                                                                                                for i in range(self.num_layers):
+                                                                                                                                                # Apply non-negative weight constraint to W_z
+                                                                                                                                                W_z = self.get_W_z(i) # [hidden_dim, hidden_dim]
+
+                                                                                                                                                # z_part = W_z @ h (with W_z >= 0)
+                                                                                                                                                z_part = torch.matmul(h, W_z.t())
+
+                                                                                                                                                # x_part = W_x @ x (affine in x preserves convexity)
+                                                                                                                                                x_part = self.W_x[i + 1](x)
+
+                                                                                                                                                # h_{i+1} = act(z_part + x_part + b)
+                                                                                                                                                h = self.act(z_part + x_part + self.b[i])
+
+                                                                                                                                                # Final output
+                                                                                                                                                H = self.final_linear(h) # [batch, 1]
+
+                                                                                                                                                return H
+
+                                                                                                                                                def gradient(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+                                                                                                                                                                """
+                                                                                                                                                                Compute gradient of H with respect to x.
+
+                                                                                                                                                                Uses autograd to compute ∇_x H(x, z).
+
+                                                                                                                                                                Args:
+                                                                                                                                                                x: State tensor [batch, state_dim]
+                                                                                                                                                                z: Latent code tensor [batch, latent_dim]
+
+                                                                                                                                                                Returns:
+                                                                                                                                                                grad_H: Gradient tensor [batch, state_dim]
+                                                                                                                                                                """
+                                                                                                                                                                x_in = x.detach().requires_grad_(True)
+                                                                                                                                                                H = self.forward(x_in, z)
+                                                                                                                                                                grad_H = torch.autograd.grad(
+                                                                                                                                                                H.sum(), x_in, create_graph=True, retain_graph=True
+                                                                                                                                                                )[0]
+                                                                                                                                                                return grad_H
+
+                                                                                                                                                                def hessian(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+                                                                                                                                                                                """
+                                                                                                                                                                                Compute Hessian of H with respect to x.
+
+                                                                                                                                                                                For convexity verification, we need ∇²_x H(x, z) >= 0.
+
+                                                                                                                                                                                Args:
+                                                                                                                                                                                x: State tensor [batch, state_dim]
+                                                                                                                                                                                z: Latent code tensor [batch, latent_dim]
+
+                                                                                                                                                                                Returns:
+                                                                                                                                                                                Hessian tensor [batch, state_dim, state_dim]
+                                                                                                                                                                                """
+                                                                                                                                                                                batch_size = x.shape[0]
+                                                                                                                                                                                state_dim = x.shape[1]
+
+                                                                                                                                                                                # Compute gradient
+                                                                                                                                                                                grad_H = self.gradient(x, z)
+
+                                                                                                                                                                                # Compute Hessian via second derivative
+                                                                                                                                                                                hessian = torch.zeros(batch_size, state_dim, state_dim, device=x.device)
+
+                                                                                                                                                                                for i in range(state_dim):
+                                                                                                                                                                                                # Compute derivative of grad_H[:, i] with respect to x
+                                                                                                                                                                                                grad_g = torch.autograd.grad(
+                                                                                                                                                                                                grad_H[:, i].sum(), x, create_graph=True, retain_graph=True
+                                                                                                                                                                                                )[0]
+                                                                                                                                                                                                hessian[:, i, :] = grad_g
+
+                                                                                                                                                                                                return hessian
+
+                                                                                                                                                                                                def verify_convexity(
+                                                                                                                                                                                                self,
+                                                                                                                                                                                                x_samples: torch.Tensor,
+                                                                                                                                                                                                z_samples: torch.Tensor,
+                                                                                                                                                                                                tol: float = 1e-6
+                                                                                                                                                                                                ) -> dict:
+                                                                                                                                                                                                                """
+                                                                                                                                                                                                                Verify convexity of H with respect to x.
+
+                                                                                                                                                                                                                Checks that the Hessian is positive semi-definite:
+                                                                                                                                                                                                                λ_min(∇²_x H) >= -tol
+
+                                                                                                                                                                                                                Args:
+                                                                                                                                                                                                                x_samples: Sample states [N, state_dim]
+                                                                                                                                                                                                                z_samples: Sample latents [N, latent_dim]
+                                                                                                                                                                                                                tol: Tolerance for numerical errors
+
+                                                                                                                                                                                                                Returns:
+                                                                                                                                                                                                                Dictionary with convexity metrics:
+                                                                                                                                                                                                                - min_eigenvalue: Minimum eigenvalue across all samples
+                                                                                                                                                                                                                - max_eigenvalue: Maximum eigenvalue
+                                                                                                                                                                                                                - is_convex: Boolean indicating convexity
+                                                                                                                                                                                                                - violation_count: Number of samples violating convexity
+                                                                                                                                                                                                                """
+                                                                                                                                                                                                                self.eval()
+                                                                                                                                                                                                                with torch.no_grad():
+                                                                                                                                                                                                                                hessians = self.hessian(x_samples, z_samples)
+
+                                                                                                                                                                                                                                min_eigvals = []
+                                                                                                                                                                                                                                max_eigvals = []
+                                                                                                                                                                                                                                violation_count = 0
+
+                                                                                                                                                                                                                                for i in range(x_samples.shape[0]):
+                                                                                                                                                                                                                                                H = hessians[i] # [state_dim, state_dim]
+                                                                                                                                                                                                                                                eigvals = torch.linalg.eigvalsh(H)
+
+                                                                                                                                                                                                                                                min_eig = eigvals.min().item()
+                                                                                                                                                                                                                                                max_eig = eigvals.max().item()
+
+                                                                                                                                                                                                                                                min_eigvals.append(min_eig)
+                                                                                                                                                                                                                                                max_eigvals.append(max_eig)
+
+                                                                                                                                                                                                                                                if min_eig < -tol:
+                                                                                                                                                                                                                                                                violation_count += 1
+
+                                                                                                                                                                                                                                                                return {
+                                                                                                                                                                                                                                                                'min_eigenvalue': min(min_eigvals),
+                                                                                                                                                                                                                                                                'max_eigenvalue': max(max_eigvals),
+                                                                                                                                                                                                                                                                'is_convex': violation_count == 0,
+                                                                                                                                                                                                                                                                'violation_count': violation_count,
+                                                                                                                                                                                                                                                                'total_samples': x_samples.shape[0]
+                                                                                                                                                                                                                                                                }
 
 
 class IntegratedPHS(nn.Module):
- """
- Integrated Port-Hamiltonian System with ICNN Hamiltonian.
- 
- Combines:
- - ICNN_H_Net: Convex Hamiltonian H(x, z)
- - Cholesky R-Net: PSD Dissipation R(x, z)
- 
- Dynamics:
- dx/dt = (J - R) ∇H(x, z)
- 
- where:
- - J is the symplectic matrix (structure)
- - R is the dissipation matrix (PSD via Cholesky)
- - ∇H is the Hamiltonian gradient (monotonic due to convexity)
- 
- This structure guarantees:
- - Energy conservation (symplectic)
- - Energy dissipation (PSD R)
- - Global stability (convex H)
- """
- 
- def __init__(
- self,
- state_dim: int = 6,
- latent_dim: int = 32,
- hidden_dim: int = 128
-):
- super().__init__()
- self.state_dim = state_dim
- 
- # ICNN Hamiltonian network (convex in x)
- self.H_net = ICNN_H_Net(
- state_dim=state_dim,
- latent_dim=latent_dim,
- hidden_dim=hidden_dim
-)
- 
- # Cholesky-based dissipation network (PSD by construction)
- # L_net outputs lower triangular Cholesky factor
- self.L_net = nn.Linear(state_dim + latent_dim, state_dim * state_dim)
- 
- # Symplectic matrix J (fixed structure)
- self.J = self._build_symplectic_matrix(state_dim)
- 
- def _build_symplectic_matrix(self, dim: int) -> torch.Tensor:
- """
- Build standard symplectic matrix J.
- 
- J = [[0, I], [-I, 0]]
- 
- Args:
- dim: State dimension (must be even)
- 
- Returns:
- Symplectic matrix [dim, dim]
- """
- assert dim % 2 == 0, "State dimension must be even for symplectic matrix"
- n = dim // 2
- 
- J = torch.zeros(dim, dim)
- J[:n, n:] = torch.eye(n)
- J[n:, :n] = -torch.eye(n)
- 
- return J
- 
- def get_R(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
- """
- Compute PSD dissipation matrix R.
- 
- R = L @ L.T where L is lower triangular with positive diagonal.
- 
- Args:
- x: State tensor [batch, state_dim]
- z: Latent tensor [batch, latent_dim]
- 
- Returns:
- R: PSD dissipation matrix [batch, state_dim, state_dim]
- """
- batch_size = x.shape[0]
- 
- # Concatenate x and z
- xz = torch.cat([x, z], dim=-1)
- 
- # Predict Cholesky factor (flattened)
- L_flat = self.L_net(xz) # [batch, state_dim * state_dim]
- 
- # Reshape to matrix
- L = L_flat.view(batch_size, self.state_dim, self.state_dim)
- 
- # Enforce lower triangular structure
- L = torch.tril(L)
- 
- # Enforce positive diagonal (softplus)
- diag_indices = torch.arange(self.state_dim, device=x.device)
- L[:, diag_indices, diag_indices] = F.softplus(L[:, diag_indices, diag_indices]) + 1e-6
- 
- # Compute R = L @ L.T (guaranteed PSD)
- R = torch.bmm(L, L.transpose(1, 2))
- 
- return R
- 
- def forward(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
- """
- Compute state derivative dx/dt.
- 
- dx/dt = (J - R) ∇H(x, z)
- 
- Args:
- x: State tensor [batch, state_dim]
- z: Latent tensor [batch, latent_dim]
- 
- Returns:
- dx: State derivative [batch, state_dim]
- """
- # Compute Hamiltonian gradient
- grad_H = self.H_net.gradient(x, z) # [batch, state_dim]
- 
- # Compute dissipation matrix
- R = self.get_R(x, z) # [batch, state_dim, state_dim]
- 
- # Compute (J - R)
- J_minus_R = self.J.to(x.device) - R
- 
- # Compute dynamics: dx = (J - R) @ grad_H
- dx = torch.bmm(J_minus_R, grad_H.unsqueeze(-1)).squeeze(-1)
- 
- return dx
- 
- def hamiltonian(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
- """Compute Hamiltonian energy."""
- return self.H_net(x, z)
- 
- def verify_passivity(
- self,
- x_samples: torch.Tensor,
- z_samples: torch.Tensor
-) -> dict:
- """
- Verify passivity properties.
- 
- Checks:
- 1. H is convex in x (Hessian PSD)
- 2. R is PSD (Cholesky construction)
- 3. Energy dissipation: dH/dt <= 0
- 
- Args:
- x_samples: Sample states
- z_samples: Sample latents
- 
- Returns:
- Passivity verification metrics
- """
- # 1. Verify H convexity
- convexity_metrics = self.H_net.verify_convexity(x_samples, z_samples)
- 
- # 2. Verify R is PSD (by construction, always true)
- with torch.no_grad():
- R = self.get_R(x_samples, z_samples)
- R_psd = True # Guaranteed by Cholesky
- 
- return {
- 'H_convex': convexity_metrics['is_convex'],
- 'H_min_eigenvalue': convexity_metrics['min_eigenvalue'],
- 'R_PSD': R_psd,
- 'passivity_grade': 'A+' if convexity_metrics['is_convex'] and R_psd else 'C'
- }
+                """
+                Integrated Port-Hamiltonian System with ICNN Hamiltonian.
+
+                Combines:
+                - ICNN_H_Net: Convex Hamiltonian H(x, z)
+                - Cholesky R-Net: PSD Dissipation R(x, z)
+
+                Dynamics:
+                dx/dt = (J - R) ∇H(x, z)
+
+                where:
+                - J is the symplectic matrix (structure)
+                - R is the dissipation matrix (PSD via Cholesky)
+                - ∇H is the Hamiltonian gradient (monotonic due to convexity)
+
+                This structure guarantees:
+                - Energy conservation (symplectic)
+                - Energy dissipation (PSD R)
+                - Global stability (convex H)
+                """
+
+                def __init__(
+                self,
+                state_dim: int = 6,
+                latent_dim: int = 32,
+                hidden_dim: int = 128
+                ):
+                                super().__init__()
+                                self.state_dim = state_dim
+
+                                # ICNN Hamiltonian network (convex in x)
+                                self.H_net = ICNN_H_Net(
+                                state_dim=state_dim,
+                                latent_dim=latent_dim,
+                                hidden_dim=hidden_dim
+                                )
+
+                                # Cholesky-based dissipation network (PSD by construction)
+                                # L_net outputs lower triangular Cholesky factor
+                                self.L_net = nn.Linear(state_dim + latent_dim, state_dim * state_dim)
+
+                                # Symplectic matrix J (fixed structure)
+                                self.J = self._build_symplectic_matrix(state_dim)
+
+                                def _build_symplectic_matrix(self, dim: int) -> torch.Tensor:
+                                                """
+                                                Build standard symplectic matrix J.
+
+                                                J = [[0, I], [-I, 0]]
+
+                                                Args:
+                                                dim: State dimension (must be even)
+
+                                                Returns:
+                                                Symplectic matrix [dim, dim]
+                                                """
+                                                assert dim % 2 == 0, "State dimension must be even for symplectic matrix"
+                                                n = dim // 2
+
+                                                J = torch.zeros(dim, dim)
+                                                J[:n, n:] = torch.eye(n)
+                                                J[n:, :n] = -torch.eye(n)
+
+                                                return J
+
+                                                def get_R(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+                                                                """
+                                                                Compute PSD dissipation matrix R.
+
+                                                                R = L @ L.T where L is lower triangular with positive diagonal.
+
+                                                                Args:
+                                                                x: State tensor [batch, state_dim]
+                                                                z: Latent tensor [batch, latent_dim]
+
+                                                                Returns:
+                                                                R: PSD dissipation matrix [batch, state_dim, state_dim]
+                                                                """
+                                                                batch_size = x.shape[0]
+
+                                                                # Concatenate x and z
+                                                                xz = torch.cat([x, z], dim=-1)
+
+                                                                # Predict Cholesky factor (flattened)
+                                                                L_flat = self.L_net(xz) # [batch, state_dim * state_dim]
+
+                                                                # Reshape to matrix
+                                                                L = L_flat.view(batch_size, self.state_dim, self.state_dim)
+
+                                                                # Enforce lower triangular structure
+                                                                L = torch.tril(L)
+
+                                                                # Enforce positive diagonal (softplus)
+                                                                diag_indices = torch.arange(self.state_dim, device=x.device)
+                                                                L[:, diag_indices, diag_indices] = F.softplus(L[:, diag_indices, diag_indices]) + 1e-6
+
+                                                                # Compute R = L @ L.T (guaranteed PSD)
+                                                                R = torch.bmm(L, L.transpose(1, 2))
+
+                                                                return R
+
+                                                                def forward(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+                                                                                """
+                                                                                Compute state derivative dx/dt.
+
+                                                                                dx/dt = (J - R) ∇H(x, z)
+
+                                                                                Args:
+                                                                                x: State tensor [batch, state_dim]
+                                                                                z: Latent tensor [batch, latent_dim]
+
+                                                                                Returns:
+                                                                                dx: State derivative [batch, state_dim]
+                                                                                """
+                                                                                # Compute Hamiltonian gradient
+                                                                                grad_H = self.H_net.gradient(x, z) # [batch, state_dim]
+
+                                                                                # Compute dissipation matrix
+                                                                                R = self.get_R(x, z) # [batch, state_dim, state_dim]
+
+                                                                                # Compute (J - R)
+                                                                                J_minus_R = self.J.to(x.device) - R
+
+                                                                                # Compute dynamics: dx = (J - R) @ grad_H
+                                                                                dx = torch.bmm(J_minus_R, grad_H.unsqueeze(-1)).squeeze(-1)
+
+                                                                                return dx
+
+                                                                                def hamiltonian(self, x: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+                                                                                                """Compute Hamiltonian energy."""
+                                                                                                return self.H_net(x, z)
+
+                                                                                                def verify_passivity(
+                                                                                                self,
+                                                                                                x_samples: torch.Tensor,
+                                                                                                z_samples: torch.Tensor
+                                                                                                ) -> dict:
+                                                                                                                """
+                                                                                                                Verify passivity properties.
+
+                                                                                                                Checks:
+                                                                                                                1. H is convex in x (Hessian PSD)
+                                                                                                                2. R is PSD (Cholesky construction)
+                                                                                                                3. Energy dissipation: dH/dt <= 0
+
+                                                                                                                Args:
+                                                                                                                x_samples: Sample states
+                                                                                                                z_samples: Sample latents
+
+                                                                                                                Returns:
+                                                                                                                Passivity verification metrics
+                                                                                                                """
+                                                                                                                # 1. Verify H convexity
+                                                                                                                convexity_metrics = self.H_net.verify_convexity(x_samples, z_samples)
+
+                                                                                                                # 2. Verify R is PSD (by construction, always true)
+                                                                                                                with torch.no_grad():
+                                                                                                                                R = self.get_R(x_samples, z_samples)
+                                                                                                                                R_psd = True # Guaranteed by Cholesky
+
+                                                                                                                                return {
+                                                                                                                                'H_convex': convexity_metrics['is_convex'],
+                                                                                                                                'H_min_eigenvalue': convexity_metrics['min_eigenvalue'],
+                                                                                                                                'R_PSD': R_psd,
+                                                                                                                                'passivity_grade': 'A+' if convexity_metrics['is_convex'] and R_psd else 'C'
+                                                                                                                                }

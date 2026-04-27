@@ -271,3 +271,26 @@ go test -run TestSessionBatching ./pkg/ml/onnx -v
 - **cache.go**: `InferenceCache`, `VersionRegistry`, checksums
 - **common.go**: `MockInferrer`, tensor helpers, batch utilities
 - **integration_test.go**: Comprehensive test suite
+
+## Stub Files (Not Yet Implemented)
+
+The following stub files are scaffolding for future ML model integration. They return `fmt.Errorf("not yet implemented")` and require trained ONNX models to function.
+
+| Stub File | Intended Purpose | Required Training Pipeline |
+|-----------|-----------------|---------------------------|
+| `axiom_zero_integration_stub.go` | Axiom-Zero physics core JAX→Go weight transfer | Train DPHNO model in JAX, export to ONNX, implement CGO bindings |
+| `blindspot_forecaster_stub.go` | Sensor blindspot prediction from historical coverage | Train coverage forecaster on sensor telemetry |
+| `collision_model_stub.go` | Graph-based collision probability scoring | Train GNN on collision neighborhood graphs |
+| `delta_rkan_attributor_stub.go` | RKAN (Radial Basis Kolmogorov-Arnold Network) attribution | Train RKAN model on residuals |
+| `maneuver_model_stub.go` | Maneuver detection from time-series residuals | Train classifier on labeled maneuver data |
+| `pol_transformer_stub.go` | Policy transformer for intent inference | Train transformer on maneuver sequences |
+| `rapid_ranker_stub.go` | Rapid threat ranking for high-value targets | Train ranking model on threat features |
+| `rkan_covariance_stub.go` | RKAN-based covariance estimation for uncertainty | Train RKAN on covariance matrices |
+| `runtime_stub.go` | Fallback ONNX runtime implementation (failsafe) | Implement CGO bindings to onnxruntime-go |
+| `track_association_stub.go` | Track-to-track association for sensor fusion | Train association model on track histories |
+
+**Status**: All stubs are build scaffolding. No trained ML models exist. To unblock these features:
+1. Train the respective models using the data pipeline in `ai/v3/`
+2. Export to ONNX format
+3. Implement CGO bindings to `onnxruntime-go`
+4. Replace stub implementations with real runtime calls

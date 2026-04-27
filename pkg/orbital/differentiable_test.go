@@ -17,7 +17,7 @@ func TestDifferentiablePropagator_Parity(t *testing.T) {
 	defer prop.Close()
 
 	if !prop.enabled {
-		t.Skip("Differentiable model missing; skipping parity test")
+		t.Fatal("NOT IMPLEMENTED: "Differentiable model missing; skipping parity test")
 	}
 
 	// 2. Setup Test TLE (IRNSS-1I)
@@ -60,7 +60,7 @@ func TestDifferentiablePropagator_JacobianAccuracy(t *testing.T) {
 	modelPath := "pkg/ml/models/dsgp4_hybrid.onnx"
 	prop, _ := NewDifferentiablePropagator(modelPath)
 	if !prop.enabled {
-		t.Skip("Model missing")
+		t.Fatal("NOT IMPLEMENTED: "Model missing")
 	}
 
 	tle := &physics.TLE{Inclination: 29.17, RAAN: 50.93, Eccentricity: 0.0019, ArgOfPerigee: 207.65, MeanAnomaly: 152.09, MeanMotion: 1.0027, BStar: 1e-7, EpochYear: 2024, EpochDay: 99.3}

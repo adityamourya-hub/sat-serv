@@ -58,7 +58,7 @@ func TestAxiomPropagatorEnergyConservation(t *testing.T) {
 func TestAxiomParityWithSGP4(t *testing.T) {
 	kernel, err := NewRKANKernelFromJSON("/Users/adi/idex_iaf/ai/active/v3/axiom_v3_weights.json")
 	if err != nil {
-		t.Skip("Weights missing")
+		t.Fatal("NOT IMPLEMENTED: "Weights missing")
 	}
 
 	// ISS-like case

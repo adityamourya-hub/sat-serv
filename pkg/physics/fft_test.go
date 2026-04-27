@@ -281,7 +281,7 @@ func BenchmarkConvolution(b *testing.B) {
 
 // TestCrossCorrelation validates signal alignment detection
 func TestCrossCorrelation(t *testing.T) {
-	t.Skip("Cross-correlation peak at wrong index - implementation needs review")
+	t.Fatal("NOT IMPLEMENTED: "Cross-correlation peak at wrong index - implementation needs review")
 	// Create signal with known delay
 	// baseSignal := make([]float64, 256)
 	// for i := range baseSignal {

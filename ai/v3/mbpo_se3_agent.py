@@ -43,12 +43,12 @@ except ImportError:
     HAS_E3NN = False
     logger.warning("SE3 encoder not available. Using standard state representation.")
 
-# Import astrojax propagator if available
+# Import orbital world model
 try:
-    from astrojax_world_model import AstrojaxWorldModel
-    HAS_ASTROJAX = True
+    from orbital_world_model import OrbitalWorldModel
+    HAS_ORBITAL = True
 except ImportError:
-    HAS_ASTROJAX = False
+    HAS_ORBITAL = False
 
 
 @dataclass
@@ -106,8 +106,8 @@ class SE3WorldModel:
             logger.info("Standard World Model initialized (no SE3)")
         
         # Initialize physics propagator
-        if HAS_ASTROJAX:
-            self.physics = AstrojaxWorldModel(dt=config.dt)
+        if HAS_ORBITAL:
+            self.physics = OrbitalWorldModel(dt=config.dt)
         else:
             self.physics = None
         
@@ -220,7 +220,7 @@ class SE3WorldModel:
         # Predict change in physical manifold
         z_delta = self._dynamics_mlp(self.dynamics_params, z_scalars)
         
-        # 3. Differentiable Physics Rollout (Astrojax or fallback)
+        # 3. Differentiable Physics Rollout (Orbital world model or fallback)
         if self.physics is not None:
             next_state, reward, done = self.physics.step(state, action)
         else:

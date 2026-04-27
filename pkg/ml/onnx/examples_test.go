@@ -106,10 +106,10 @@ func DemoCachingUsage() {
 
 // TestExampleIntegration_Maneuver demonstrates full pipeline for maneuver detection.
 func TestExampleIntegration_Maneuver(t *testing.T) {
-	t.Skip("InferBatch deprecated and redundant in new Session-pool model")
+	t.Fatal("NOT IMPLEMENTED: "InferBatch deprecated and redundant in new Session-pool model")
 }
 
 // TestBatchPerformance_Scalability demonstrates linear scaling with batch size.
 func TestBatchPerformance_Scalability(t *testing.T) {
-	t.Skip("InferBatch deprecated and redundant in new Session-pool model")
+	t.Fatal("NOT IMPLEMENTED: "InferBatch deprecated and redundant in new Session-pool model")
 }

@@ -7,7 +7,7 @@ import (
 )
 
 func TestLaunchTripwireEngine_CheckLaunchTripwire(t *testing.T) {
-t.Skip("Launch tripwire test needs review - detection logic may have changed")
+t.Fatal("NOT IMPLEMENTED: "Launch tripwire test needs review - detection logic may have changed")
 	engine := NewLaunchTripwireEngine()
 
 	// Add a test corridor
@@ -109,7 +109,7 @@ func TestIMMFilter_UpdateIMMFilter(t *testing.T) {
 }
 
 func TestCalculateFractionalLaplacian(t *testing.T) {
-t.Skip("Fractional Laplacian test needs review - implementation may have changed")
+t.Fatal("NOT IMPLEMENTED: "Fractional Laplacian test needs review - implementation may have changed")
 	// Create wake history
 	history := make([]WakeMemoryState, 5)
 	for i := range history {
@@ -158,7 +158,7 @@ func TestIsInHGVCorridor(t *testing.T) {
 }
 
 func TestPhysicalConstraints_CheckEnergyConservation(t *testing.T) {
-t.Skip("Energy conservation test needs review - constraint logic may have changed")
+t.Fatal("NOT IMPLEMENTED: "Energy conservation test needs review - constraint logic may have changed")
 	pc := NewPhysicalConstraints()
 
 	// Test valid orbital state

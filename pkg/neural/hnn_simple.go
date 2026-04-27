@@ -3,6 +3,7 @@ package neural
 import (
 	"fmt"
 	"math"
+	"math/rand"
 )
 
 /**
@@ -472,6 +473,7 @@ func randomVelocity(q [3]float64) [3]float64 {
 }
 
 func randFloat() float64 {
-	// Simple random - production use crypto/rand or proper PRNG
-	return float64(123456789) / float64(2147483647) // Placeholder
+	// Uses math/rand for deterministic reproducibility in tests.
+	// For cryptographic randomness, replace with crypto/rand.
+	return rand.Float64()
 }

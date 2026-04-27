@@ -1,8 +1,0 @@
-numpy>=1.26
-scikit-learn>=1.5
-xgboost>=2.0
-skl2onnx>=1.17
-onnx>=1.16
-lightgbm>=4.3
-gymnasium>=0.29
-stable-baselines3>=2.3

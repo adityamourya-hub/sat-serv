@@ -84,7 +84,7 @@ func TestCorrelateAdvancedFusedObservation(t *testing.T) {
 }
 
 func TestCorrelateAdvancedHybridModelRerank(t *testing.T) {
-	t.Skip("NewHybridAssociationEngine undefined in current catalog package")
+	t.Fatal("NewHybridAssociationEngine undefined in current catalog package — must pass before merge")
 	s := NewStore(15)
 	s.ApplyDeltaWithRebuild(Delta{
 		Upserts: []ObjectRecord{
@@ -101,14 +101,13 @@ func TestCorrelateAdvancedHybridModelRerank(t *testing.T) {
 }
 
 func TestAssociateMHTLiteManeuverSplitAndPromotion(t *testing.T) {
-	t.Skip("FlagManeuver and AssociateMHTLite missing from Store")
+	t.Fatal("FlagManeuver and AssociateMHTLite missing from Store — must pass before merge")
 }
 
 func TestAssociateMHTLiteUCT(t *testing.T) {
-	t.Skip("AssociateMHTLite missing from Store")
+	t.Fatal("AssociateMHTLite missing from Store — must pass before merge")
 }
 
 func TestRapidRecatalogAfterManeuver(t *testing.T) {
-	t.Skip("RapidRecatalogAfterManeuver missing from Store")
+	t.Fatal("RapidRecatalogAfterManeuver missing from Store — must pass before merge")
 }
-

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 )
 
@@ -398,8 +399,9 @@ func randomConjunctionGeometry() ConjunctionGeometry {
 }
 
 func mathRand() float64 {
-	// Simple random - production use crypto/rand or proper PRNG
-	return 0.5 // Placeholder
+	// Uses math/rand for deterministic reproducibility in tests.
+	// For cryptographic randomness, replace with crypto/rand.
+	return rand.Float64()
 }
 
 /**

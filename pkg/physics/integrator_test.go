@@ -51,19 +51,19 @@ func (m *MockPHSModelInt) Hamiltonian(q, p, z []float64) float64 {
 
 // TestPhaseSpaceVolumePreservation verifies det(J) = 1 for Forest-Ruth
 func TestPhaseSpaceVolumePreservation(t *testing.T) {
-t.Skip("Phase-space volume preservation test needs numerical review")
+	t.Fatal("NOT IMPLEMENTED: Phase-space volume preservation test needs numerical review")
 	model := NewMockPHSModelInt(398600.4418)
 	engine := NewEngine(model)
-	
+
 	// Initial state: circular orbit
 	r0 := 6371.0 + 7000.0
 	v0 := math.Sqrt(model.mu / r0)
-	
+
 	q0 := []float64{r0, 0, 0}
 	p0 := []float64{0, v0, 0}
-	
+
 	dt := 10.0
-	
+
 	// Compute Jacobian via finite difference
 	epsilon := 1e-6
 	dim := 6
@@ -71,7 +71,7 @@ t.Skip("Phase-space volume preservation test needs numerical review")
 	for i := range J {
 		J[i] = make([]float64, dim)
 	}
-	
+
 	// Compute Jacobian column by column
 	for i := 0; i < dim; i++ {
 		// Perturb state
@@ -79,28 +79,28 @@ t.Skip("Phase-space volume preservation test needs numerical review")
 		stateMinus := make([]float64, dim)
 		copy(statePlus, append(q0, p0...))
 		copy(stateMinus, append(q0, p0...))
-		
+
 		statePlus[i] += epsilon
 		stateMinus[i] -= epsilon
-		
+
 		// Integrate forward
 		qPlus, pPlus := engine.SymplecticStep(statePlus[:3], statePlus[3:], nil, dt)
 		qMinus, pMinus := engine.SymplecticStep(stateMinus[:3], stateMinus[3:], nil, dt)
-		
+
 		statePlus = append(qPlus, pPlus...)
 		stateMinus = append(qMinus, pMinus...)
-		
+
 		// Finite difference
 		for j := 0; j < dim; j++ {
 			J[j][i] = (statePlus[j] - stateMinus[j]) / (2 * epsilon)
 		}
 	}
-	
+
 	// Compute determinant
 	det := matrixDeterminant6x6(J)
-	
+
 	t.Logf("Jacobian determinant: %.15f", det)
-	
+
 	// For symplectic integrator, det(J) should be exactly 1
 	// Allow small tolerance for numerical error
 	if math.Abs(det-1.0) > 1e-10 {
@@ -112,12 +112,12 @@ t.Skip("Phase-space volume preservation test needs numerical review")
 func TestRKF45VolumeLeak(t *testing.T) {
 	// This test shows that RKF45 leaks volume
 	// Commented out as RKF45 is deprecated
-	
+
 	// model := NewMockPHSModelInt(398600.4418)
 	// integrator := NewIntegratorRKF45()
 	// ... (would show det(J) != 1)
-	
-	t.Skip("RKF45 is deprecated; Forest-Ruth preserves volume exactly")
+
+	t.Fatal("NOT IMPLEMENTED: RKF45 is deprecated; Forest-Ruth preserves volume exactly")
 }
 
 // matrixDeterminant6x6 computes determinant of 6x6 matrix
@@ -135,7 +135,7 @@ func determinantRecursive(M [][]float64) float64 {
 	if n == 2 {
 		return M[0][0]*M[1][1] - M[0][1]*M[1][0]
 	}
-	
+
 	det := 0.0
 	for j := 0; j < n; j++ {
 		// Compute cofactor
@@ -153,7 +153,7 @@ func determinantRecursive(M [][]float64) float64 {
 		}
 		det += cofactor * determinantRecursive(minor)
 	}
-	
+
 	return det
 }
 
@@ -161,14 +161,14 @@ func determinantRecursive(M [][]float64) float64 {
 func BenchmarkSymplecticStep(b *testing.B) {
 	model := NewMockPHSModelInt(398600.4418)
 	engine := NewEngine(model)
-	
+
 	r0 := 6371.0 + 7000.0
 	v0 := math.Sqrt(model.mu / r0)
-	
+
 	q := []float64{r0, 0, 0}
 	p := []float64{0, v0, 0}
 	dt := 0.01 // 10ms
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		engine.SymplecticStep(q, p, nil, dt)

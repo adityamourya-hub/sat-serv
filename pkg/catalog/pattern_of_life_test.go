@@ -29,26 +29,26 @@ func TestFallbackPatternOfLifeInferenceReturnsBoundedScores(t *testing.T) {
 
 func TestAssociateMHTLiteIncludesIntentProxySignal(t *testing.T) {
 	// s := NewStore(20)
-	t.Skip("FlagManeuver and AssociateMHTLite not yet implemented in Refactored Store")
+	t.Fatal("FlagManeuver and AssociateMHTLite not yet implemented - must pass before merge")
 	// s.FlagManeuver(10)
 
 	// obs := TrackObservation{TrackID: 501, Pos: octree.Vector3{X: 100.2, Y: 100.1, Z: 99.9}, SigmaKm: 1.2, TimestampUnix: 100}
 	// dec := s.AssociateMHTLite(obs, 30, 3, nil)
 	/*
-	if len(dec.Hypotheses) == 0 {
-		t.Fatalf("expected hypotheses")
-	}
-	foundSplit := false
-	for _, h := range dec.Hypotheses {
-		if h.ObjectID == 10 && (h.Variant == "legacy_orbit" || h.Variant == "new_orbit") {
-			foundSplit = true
-			if h.IntentProxy < 0 || h.IntentProxy > 1 {
-				t.Fatalf("intent proxy out of range: %f", h.IntentProxy)
+		if len(dec.Hypotheses) == 0 {
+			t.Fatalf("expected hypotheses")
+		}
+		foundSplit := false
+		for _, h := range dec.Hypotheses {
+			if h.ObjectID == 10 && (h.Variant == "legacy_orbit" || h.Variant == "new_orbit") {
+				foundSplit = true
+				if h.IntentProxy < 0 || h.IntentProxy > 1 {
+					t.Fatalf("intent proxy out of range: %f", h.IntentProxy)
+				}
 			}
 		}
-	}
-	if !foundSplit {
-		t.Fatalf("expected maneuver split hypotheses with intent proxy signal")
-	}
+		if !foundSplit {
+			t.Fatalf("expected maneuver split hypotheses with intent proxy signal")
+		}
 	*/
 }

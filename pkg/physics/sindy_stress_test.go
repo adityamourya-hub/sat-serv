@@ -10,7 +10,7 @@ import (
 // TestSINDyStressTest1000Simulations runs 1,000 simulations with varying SNR
 // Target: >95% coefficient recovery rate for Mars/Rahu labels
 func TestSINDyStressTest1000Simulations(t *testing.T) {
-	t.Skip("Stress test: 1000 simulations — requires STLSQ performance optimization (reduce bootstrap iterations or cache factorizations)")
+	t.Fatal("NOT IMPLEMENTED: "Stress test: 1000 simulations — requires STLSQ performance optimization (reduce bootstrap iterations or cache factorizations)")
 	const numSimulations = 1000
 	const snrLevels = 5 // Test 5 different SNR levels
 
@@ -234,7 +234,7 @@ func countActiveCoeffs(coeffs []float64, threshold float64) int {
 
 // TestSINDySlidingWindowStress validates Sliding Window SINDy at 100Hz simulation
 func TestSINDySlidingWindowStress(t *testing.T) {
-	t.Skip("Sliding window: 30,000 updates — requires STLSQ performance optimization (reduce bootstrap iterations or cache factorizations)")
+	t.Fatal("NOT IMPLEMENTED: "Sliding window: 30,000 updates — requires STLSQ performance optimization (reduce bootstrap iterations or cache factorizations)")
 	// Create sliding window detector
 	swsindy := NewSlidingSINDy(50, 5) // 50-state window, stride 5
 	swsindy.Regressor.PolynomialDegree = 2

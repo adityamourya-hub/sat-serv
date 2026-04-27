@@ -11,7 +11,7 @@
 // The dashboard visualizes:
 //   - Geometric Manifold: 16x1o latent vectors (gravity field around HGV)
 //   - Symbolic Proof: SINDy-discovered equations with L/D coefficients
-//   - Safety Gradient: Astrojax imagination rollout heatmap
+//   - Safety Gradient: Orbital World Model imagination rollout heatmap
 //
 // This transforms the AI from a "Black Box" into a "Co-Processor" that the
 // IAF commander can verify and trust.

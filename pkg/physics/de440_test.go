@@ -166,7 +166,7 @@ func TestPreciseMoonPosition(t *testing.T) {
 }
 
 func TestPreciseSunPosition(t *testing.T) {
-	t.Skip("SPICE kernels not available - test needs external data")
+	t.Fatal("NOT IMPLEMENTED: "SPICE kernels not available - test needs external data")
 	eph := NewDE440Ephemeris(nil)
 
 	jd := 2460310.5 // 2024-01-01

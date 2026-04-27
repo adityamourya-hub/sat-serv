@@ -46,7 +46,7 @@ func loadSIGIDTestLibrary(path string) []SIGIDTestSignal {
 
 // TestSIGIDConfusionMatrix generates accuracy metrics for the 50-signal library.
 func TestSIGIDConfusionMatrix(t *testing.T) {
-t.Skip("SIGID test requires sqlite3 driver - missing import")
+t.Fatal("NOT IMPLEMENTED: "SIGID test requires sqlite3 driver - missing import")
 	// Load known fingerprints (PSD masks) from the local library
 	testSignals := loadSIGIDTestLibrary("../../assets/sigid_50_signals.json")
 	bridge, err := NewSIGIDBridge("/tmp/sigid_test")
@@ -92,7 +92,7 @@ t.Skip("SIGID test requires sqlite3 driver - missing import")
 	}
 
 	if total == 0 {
-		t.Skip("No military signals in test library")
+		t.Fatal("NOT IMPLEMENTED: "No military signals in test library")
 	}
 
 	accuracy := float64(correct) / float64(total)
@@ -155,7 +155,7 @@ func TestSpectralGhostDetection(t *testing.T) {
 
 // TestSIGIDHammingAccuracy validates Hamming distance matching precision
 func TestSIGIDHammingAccuracy(t *testing.T) {
-t.Skip("SIGID test requires sqlite3 driver - missing import")
+t.Fatal("NOT IMPLEMENTED: "SIGID test requires sqlite3 driver - missing import")
 	bridge, err := NewSIGIDBridge("/tmp/sigid_hamming_test")
 	if err != nil {
 		t.Fatalf("Failed to create SIGID bridge: %v", err)
@@ -187,7 +187,7 @@ t.Skip("SIGID test requires sqlite3 driver - missing import")
 
 // TestHighValueSignalPrioritization ensures military signals are prioritized
 func TestHighValueSignalPrioritization(t *testing.T) {
-t.Skip("SIGID test requires sqlite3 driver - missing import")
+t.Fatal("NOT IMPLEMENTED: "SIGID test requires sqlite3 driver - missing import")
 	bridge, err := NewSIGIDBridge("/tmp/sigid_priority_test")
 	if err != nil {
 		t.Fatalf("Failed to create SIGID bridge: %v", err)
@@ -201,7 +201,7 @@ t.Skip("SIGID test requires sqlite3 driver - missing import")
 	}
 
 	if len(milTemplates) == 0 {
-		t.Skip("No military templates in database")
+		t.Fatal("NOT IMPLEMENTED: "No military templates in database")
 	}
 
 	// Verify all military templates have appropriate threat levels

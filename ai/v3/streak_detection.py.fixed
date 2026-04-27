@@ -1,0 +1,433 @@
+"""
+3D Matched Filtering for Satellite Streak Detection
+Rapid Processing Module (i) - IAF 
+
+Uses MPDAF Cube with Time as 3rd dimension for detecting faint satellite streaks
+below single-frame noise floor via cross-correlation with streak template.
+"""
+
+import numpy as np
+from typing import List, Tuple, Optional
+from dataclasses import dataclass
+from datetime import datetime
+import logging
+
+# MPDAF imports
+from mpdaf.obj import Cube, Image, Spectrum
+from mpdaf.sdetect import Source
+from mpdaf.tools import multiprocessing as mpdaf_mp
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class StreakDetection:
+    """Detected satellite streak parameters"""
+    x_start: float # Start X coordinate (pixels)
+    y_start: float # Start Y coordinate (pixels)
+    x_end: float # End X coordinate (pixels)
+    y_end: float # End Y coordinate (pixels)
+    peak_sn: float # Peak signal-to-noise ratio
+    integrated_flux: float # Total flux along streak
+    length_pixels: float # Streak length in pixels
+    angle_degrees: float # Streak angle (0-180)
+    velocity_pixels_per_frame: float # Motion rate
+    detection_time: datetime
+    confidence: float # Detection confidence (0-1)
+
+
+@dataclass
+class StreakKernel:
+    """Matched filter kernel for streak detection"""
+    length: int # Kernel length (pixels)
+    width: int # Kernel width (pixels, PSF size)
+    angle: float # Streak angle (degrees)
+ 
+    def generate(self) -> np.ndarray:
+    """Generate 2D streak kernel for convolution"""
+    # Create line kernel at specified angle
+    kernel = np.zeros((self.length, self.length))
+ 
+    # Draw line through center
+    center = self.length // 2
+    angle_rad = np.deg2rad(self.angle)
+ 
+    for i in range(self.length):
+    offset = i - center
+    x = int(center + offset * np.cos(angle_rad))
+    y = int(center + offset * np.sin(angle_rad))
+ 
+    if 0 <= x < self.length and 0 <= y < self.length:
+    # Gaussian profile perpendicular to streak (PSF approximation)
+    for w in range(-self.width//2, self.width//2 + 1):
+    wx = int(x + w * np.sin(angle_rad))
+    wy = int(y - w * np.cos(angle_rad))
+    if 0 <= wx < self.length and 0 <= wy < self.length:
+    kernel[wy, wx] = np.exp(-0.5 * (w / (self.width/3))**2)
+ 
+    # Normalize
+    kernel_sum = kernel.sum()
+    if kernel_sum > 0:
+    kernel /= kernel_sum
+ 
+    return kernel
+
+
+class StreakDetector3D:
+    """
+    3D Matched Filter for satellite streak detection
+ 
+    Treats time-series imagery as [X, Y, Time] cube and applies
+    matched filtering to detect linear trajectories below noise floor.
+    """
+ 
+    def __init__(
+    self,
+    kernel_length: int = 15,
+    kernel_width: int = 3,
+    sn_threshold: float = 5.0, # 5-sigma detection
+    min_streak_length: int = 5, # Minimum streak length (frames)
+    max_velocity: float = 50.0, # Max velocity (pixels/frame)
+    n_angles: int = 36 # Angular sampling (5-degree steps)
+):
+    self.kernel_length = kernel_length
+    self.kernel_width = kernel_width
+    self.sn_threshold = sn_threshold
+    self.min_streak_length = min_streak_length
+    self.max_velocity = max_velocity
+    self.n_angles = n_angles
+ 
+    # Generate kernel bank at different angles
+    self.kernels = self._generate_kernel_bank()
+    logger.info(f"Initialized StreakDetector3D with {n_angles} angle kernels")
+ 
+    def _generate_kernel_bank(self) -> List[Tuple[float, StreakKernel]]:
+    """Generate streak kernels at multiple angles"""
+    kernels = []
+    for i in range(self.n_angles):
+    angle = i * (180.0 / self.n_angles)
+    kernel = StreakKernel(
+    length=self.kernel_length,
+    width=self.kernel_width,
+    angle=angle
+)
+    kernels.append((angle, kernel))
+    return kernels
+ 
+    def detect_streaks(
+    self,
+    image_stack: np.ndarray,
+    timestamps: List[datetime],
+    wcs_info: Optional[dict] = None
+) -> List[StreakDetection]:
+    """
+    Detect satellite streaks in time-series image stack
+ 
+    Args:
+    image_stack: 3D array [N_frames, Y, X] of sensor images
+    timestamps: List of frame timestamps
+    wcs_info: World Coordinate System metadata (optional)
+ 
+    Returns:
+    List of detected StreakDetection objects
+    """
+    n_frames, height, width = image_stack.shape
+    logger.info(f"Processing {n_frames} frames of size {width}x{height}")
+ 
+    # Create MPDAF Cube: [X, Y, Time] -> [lambda, Y, X] mapping
+    # Where "lambda" axis is actually time
+    cube_data = np.transpose(image_stack, (2, 1, 0)) # [X, Y, Time]
+ 
+    # Build MPDAF Cube
+    cube = Cube(data=cube_data)
+ 
+    # Step 1: Background subtraction (remove static sources)
+    logger.info("Subtracting background...")
+    background = cube.median(axis=0) # Median along time axis
+    cube_subtracted = cube - background
+ 
+    # Step 2: 3D Matched Filtering
+    logger.info("Applying 3D matched filters...")
+    detections = self._apply_matched_filters(cube_subtracted, timestamps)
+ 
+    # Step 3: Filter by SNR threshold and minimum length
+    valid_detections = [
+    d for d in detections 
+    if d.peak_sn >= self.sn_threshold and 
+    d.length_pixels >= self.min_streak_length
+    ]
+ 
+    logger.info(f"Detected {len(valid_detections)} valid streaks "
+    f"(total candidates: {len(detections)})")
+ 
+    return valid_detections
+ 
+    def _apply_matched_filters(
+    self, 
+    cube: Cube,
+    timestamps: List[datetime]
+) -> List[StreakDetection]:
+    """
+    Apply matched filter bank and extract detections
+ 
+    Uses MPDAF's loop_ima_multiprocessing for parallel processing
+    """
+    detections = []
+ 
+    # Process each time slice with parallel filtering
+    def process_time_slice(args):
+    """Process single time slice with all kernels"""
+    frame_idx, image_2d = args
+ 
+    frame_detections = []
+    for angle, kernel in self.kernels:
+    # 2D convolution with streak kernel
+    kernel_array = kernel.generate()
+ 
+    # Convolve image with kernel
+    convolved = self._convolve_2d(image_2d.data, kernel_array)
+ 
+    # Find peaks above threshold
+    peaks = self._find_peaks(convolved, angle, frame_idx)
+    frame_detections.extend(peaks)
+ 
+    return frame_detections
+ 
+    # Prepare arguments for parallel processing
+    slice_args = [(i, cube[i]) for i in range(cube.shape[0])]
+ 
+    # Use MPDAF multiprocessing
+    results = mpdaf_mp.loop_ima_multiprocessing(
+    process_time_slice,
+    slice_args,
+    nthreads=mpdaf_mp.MAX_THREADS
+)
+ 
+    # Flatten results
+    for frame_detections in results:
+    detections.extend(frame_detections)
+ 
+    # Link detections into streaks (temporal association)
+    streaks = self._link_detections(detections, timestamps)
+ 
+    return streaks
+ 
+    def _convolve_2d(
+    self, 
+    image: np.ndarray, 
+    kernel: np.ndarray
+) -> np.ndarray:
+    """Fast 2D convolution using FFT"""
+    from scipy.signal import fftconvolve
+ 
+    # Pad kernel to image size for FFT efficiency
+    result = fftconvolve(image, kernel, mode='same')
+ 
+    return result
+ 
+    def _find_peaks(
+    self, 
+    convolved: np.ndarray, 
+    angle: float,
+    frame_idx: int
+) -> List[StreakDetection]:
+    """Find peaks in convolved image above threshold"""
+    from scipy.ndimage import maximum_filter, generate_binary_structure
+ 
+    # Calculate local maxima
+    neighborhood = generate_binary_structure(2, 2)
+    local_max = maximum_filter(convolved, footprint=neighborhood) == convolved
+ 
+    # Threshold
+    threshold = self.sn_threshold * np.std(convolved)
+    peaks = (convolved > threshold) & local_max
+ 
+    # Extract peak positions
+    peak_positions = np.argwhere(peaks)
+ 
+    detections = []
+    for y, x in peak_positions:
+    snr = convolved[y, x] / np.std(convolved)
+ 
+    detection = StreakDetection(
+    x_start=float(x),
+    y_start=float(y),
+    x_end=float(x + self.kernel_length * np.cos(np.deg2rad(angle))),
+    y_end=float(y + self.kernel_length * np.sin(np.deg2rad(angle))),
+    peak_sn=float(snr),
+    integrated_flux=float(convolved[y, x]),
+    length_pixels=float(self.kernel_length),
+    angle_degrees=angle,
+    velocity_pixels_per_frame=0.0, # Will be calculated in linking
+    detection_time=datetime.now(),
+    confidence=min(snr / 10.0, 1.0) # Normalize to 0-1
+)
+    detections.append(detection)
+ 
+    return detections
+ 
+    def _link_detections(
+    self, 
+    detections: List[StreakDetection],
+    timestamps: List[datetime]
+) -> List[StreakDetection]:
+    """
+    Link detections across frames into continuous streaks
+ 
+    Uses simple nearest-neighbor association with velocity constraints
+    """
+    if not detections:
+    return []
+ 
+    # Group by similar angle (±10 degrees)
+    angle_bins = {}
+    for det in detections:
+    angle_bin = int(det.angle_degrees / 10) * 10
+    if angle_bin not in angle_bins:
+    angle_bins[angle_bin] = []
+    angle_bins[angle_bin].append(det)
+ 
+    # Link within each angle bin
+    streaks = []
+    for angle_bin, bin_detections in angle_bins.items():
+    # Sort by detection time
+    bin_detections.sort(key=lambda d: d.detection_time)
+ 
+    # Simple linking: group detections within velocity constraints
+    current_streak = [bin_detections[0]]
+ 
+    for det in bin_detections[1:]:
+    prev_det = current_streak[-1]
+ 
+    # Calculate velocity
+    dx = det.x_start - prev_det.x_start
+    dy = det.y_start - prev_det.y_start
+    dt = (det.detection_time - prev_det.detection_time).total_seconds()
+ 
+    if dt > 0:
+    velocity = np.sqrt(dx**2 + dy**2) / dt
+ 
+    # Check if velocity is consistent
+    if velocity <= self.max_velocity:
+    current_streak.append(det)
+    else:
+    # Save current streak and start new one
+    if len(current_streak) >= self.min_streak_length:
+    streaks.append(self._merge_streak(current_streak))
+    current_streak = [det]
+ 
+    # Don't forget last streak
+    if len(current_streak) >= self.min_streak_length:
+    streaks.append(self._merge_streak(current_streak))
+ 
+    return streaks
+ 
+    def _merge_streak(self, detections: List[StreakDetection]) -> StreakDetection:
+    """Merge multiple detections into single streak detection"""
+    # Calculate weighted average properties
+    weights = [d.peak_sn for d in detections]
+    total_weight = sum(weights)
+ 
+    if total_weight == 0:
+    total_weight = 1.0
+ 
+    # Weighted averages
+    avg_x_start = sum(d.x_start * w for d, w in zip(detections, weights)) / total_weight
+    avg_y_start = sum(d.y_start * w for d, w in zip(detections, weights)) / total_weight
+    avg_x_end = sum(d.x_end * w for d, w in zip(detections, weights)) / total_weight
+    avg_y_end = sum(d.y_end * w for d, w in zip(detections, weights)) / total_weight
+ 
+    # Calculate velocity
+    first_det = detections[0]
+    last_det = detections[-1]
+    dx = last_det.x_end - first_det.x_start
+    dy = last_det.y_end - first_det.y_start
+    dt = (last_det.detection_time - first_det.detection_time).total_seconds()
+ 
+    velocity = np.sqrt(dx**2 + dy**2) / dt if dt > 0 else 0.0
+ 
+    return StreakDetection(
+    x_start=avg_x_start,
+    y_start=avg_y_start,
+    x_end=avg_x_end,
+    y_end=avg_y_end,
+    peak_sn=max(d.peak_sn for d in detections),
+    integrated_flux=sum(d.integrated_flux for d in detections),
+    length_pixels=np.sqrt((avg_x_end - avg_x_start)**2 + (avg_y_end - avg_y_start)**2),
+    angle_degrees=detections[0].angle_degrees,
+    velocity_pixels_per_frame=velocity,
+    detection_time=first_det.detection_time,
+    confidence=min(sum(weights) / (10.0 * len(detections)), 1.0)
+)
+
+
+def export_to_uct_catalog(detections: List[StreakDetection], output_path: str):
+    """
+    Export detections to Uncorrelated Track (UCT) catalog format
+    for ingestion into Go-native catalog system
+    """
+    import json
+ 
+    uct_entries = []
+    for det in detections:
+    uct = {
+    "norad_cat_id": None, # Will be assigned by Go catalog correlation
+    "object_name": f"UCT_{det.detection_time.strftime('%Y%m%d_%H%M%S')}",
+    "detection_time": det.detection_time.isoformat(),
+    "ra_deg": det.x_start, # Convert from pixel to RA if WCS available
+    "dec_deg": det.y_start,
+    "velocity_ra": det.velocity_pixels_per_frame * np.cos(np.deg2rad(det.angle_degrees)),
+    "velocity_dec": det.velocity_pixels_per_frame * np.sin(np.deg2rad(det.angle_degrees)),
+    "peak_sn": det.peak_sn,
+    "confidence": det.confidence,
+    "detection_source": "MPDAF_3D_STREAK",
+    "sensor_type": "OPTICAL"
+    }
+    uct_entries.append(uct)
+ 
+    with open(output_path, 'w') as f:
+    json.dump(uct_entries, f, indent=2)
+ 
+    logger.info(f"Exported {len(uct_entries)} UCTs to {output_path}")
+
+
+# Example usage
+if __name__ == "__main__":
+    # Initialize detector
+    detector = StreakDetector3D(
+    kernel_length=15,
+    kernel_width=3,
+    sn_threshold=5.0,
+    min_streak_length=5
+)
+ 
+    # Example: Load time-series image stack
+    # In production, this would come from IAF optical sensors via Go backend
+    n_frames = 30
+    height, width = 1024, 1024
+ 
+    # Simulated image stack with synthetic streak
+    image_stack = np.random.normal(0, 1, (n_frames, height, width))
+ 
+    # Add synthetic streak
+    for i in range(10, 20):
+    x = 500 + i * 5
+    y = 500 + i * 2
+    if 0 <= x < width and 0 <= y < height:
+    image_stack[i, y-2:y+3, x-2:x+3] += 10.0
+ 
+    timestamps = [datetime.now() for _ in range(n_frames)]
+ 
+    # Detect streaks
+    detections = detector.detect_streaks(image_stack, timestamps)
+ 
+    # Export to UCT catalog
+    export_to_uct_catalog(detections, "uct_detections.json")
+ 
+    print(f"Detected {len(detections)} streaks")
+    for det in detections:
+    print(f" Streak: ({det.x_start:.1f}, {det.y_start:.1f}) -> "
+    f"({det.x_end:.1f}, {det.y_end:.1f}), "
+    f"SN={det.peak_sn:.1f}, Angle={det.angle_degrees:.1f}°")
