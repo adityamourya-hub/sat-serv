@@ -211,6 +211,27 @@ const pGlobe = prog(vsGlobe, fsGlobe);
 const pPoint = prog(vsPoint, fsPoint);
 const pLine  = prog(vsLine,  fsLine);
 
+/* ── Attribute/Uniform Locations ── */
+const locGlobe = {
+  aPos: gl.getAttribLocation(pGlobe, 'aPos'),
+  aTex: gl.getAttribLocation(pGlobe, 'aTex'),
+  uMVP: gl.getUniformLocation(pGlobe, 'uMVP'),
+  uTex: gl.getUniformLocation(pGlobe, 'uTex'),
+  uSun: gl.getUniformLocation(pGlobe, 'uSun')
+};
+const locPoint = {
+  aPos:  gl.getAttribLocation(pPoint, 'aPos'),
+  aSize: gl.getAttribLocation(pPoint, 'aSize'),
+  aCol:  gl.getAttribLocation(pPoint, 'aCol'),
+  uMVP:  gl.getUniformLocation(pPoint, 'uMVP')
+};
+const locLine = {
+  aPos: gl.getAttribLocation(pLine, 'aPos'),
+  uMVP: gl.getUniformLocation(pLine, 'uMVP'),
+  uCol: gl.getUniformLocation(pLine, 'uCol'),
+  uAlpha: gl.getUniformLocation(pLine, 'uAlpha')
+};
+
 /* ── Procedural Earth Texture ── */
 function makeEarthTex() {
   const size = 512;
@@ -390,14 +411,14 @@ function perspective(m, fovy, aspect, near, far) {
 }
 function multiply(out, a, b) {
   for(let i=0;i<4;i++)for(let j=0;j<4;j++){
-    out[i*4+j] = a[i]*b[j] + a[i+4]*b[j+4] + a[i+8]*b[j+8] + a[i+12]*b[j+12];
+    out[i + 4*j] = a[i]*b[4*j] + a[i+4]*b[1+4*j] + a[i+8]*b[2+4*j] + a[i+12]*b[3+4*j];
   }
   return out;
 }
 function rotateY(m, angle) {
   const c=Math.cos(angle), s=Math.sin(angle);
   const r = mat4();
-  r[0]=c; r[2]=s; r[5]=1; r[8]=-s; r[10]=c; r[15]=1;
+  r[0]=c; r[2]=-s; r[5]=1; r[8]=s; r[10]=c; r[15]=1;
   const tmp = mat4();
   multiply(tmp, m, r);
   for(let i=0;i<16;i++) m[i]=tmp[i];
@@ -406,7 +427,7 @@ function rotateY(m, angle) {
 function rotateX(m, angle) {
   const c=Math.cos(angle), s=Math.sin(angle);
   const r = mat4();
-  r[0]=1; r[5]=c; r[6]=-s; r[9]=s; r[10]=c; r[15]=1;
+  r[0]=1; r[5]=c; r[6]=s; r[9]=-s; r[10]=c; r[15]=1;
   const tmp = mat4();
   multiply(tmp, m, r);
   for(let i=0;i<16;i++) m[i]=tmp[i];
@@ -439,21 +460,25 @@ canvas.addEventListener('wheel', e=>{
 function drawGlobe(mvp) {
   gl.useProgram(pGlobe);
   gl.bindBuffer(gl.ARRAY_BUFFER, bPos);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(locGlobe.aPos);
+  gl.vertexAttribPointer(locGlobe.aPos, 3, gl.FLOAT, false, 0, 0);
   gl.bindBuffer(gl.ARRAY_BUFFER, bTex);
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(locGlobe.aTex);
+  gl.vertexAttribPointer(locGlobe.aTex, 2, gl.FLOAT, false, 0, 0);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bInd);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, earthTex);
-  gl.uniform1i(gl.getUniformLocation(pGlobe, 'uTex'), 0);
-  gl.uniformMatrix4fv(gl.getUniformLocation(pGlobe, 'uMVP'), false, mvp);
-  // Sun from above India
-  gl.uniform3f(gl.getUniformLocation(pGlobe, 'uSun'), 0.3, 0.7, 0.6);
+  gl.uniform1i(locGlobe.uTex, 0);
+  gl.uniformMatrix4fv(locGlobe.uMVP, false, mvp);
+  gl.uniform3f(locGlobe.uSun, 0.3, 0.7, 0.6);
   gl.enable(gl.DEPTH_TEST);
   gl.drawElements(gl.TRIANGLES, globeGeo.ind.length, gl.UNSIGNED_SHORT, 0);
 }
+
+/* ── Reusable Satellite Buffers ── */
+const bSatPos  = gl.createBuffer();
+const bSatSize = gl.createBuffer();
+const bSatCol  = gl.createBuffer();
 
 function drawSats(mvp, t) {
   const pos=[], size=[], col=[];
@@ -464,16 +489,23 @@ function drawSats(mvp, t) {
     col.push(...COLORS[s.type]);
   });
   gl.useProgram(pPoint);
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf(new Float32Array(pos), gl.ARRAY_BUFFER));
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf(new Float32Array(size), gl.ARRAY_BUFFER));
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf(new Float32Array(col), gl.ARRAY_BUFFER));
-  gl.enableVertexAttribArray(2);
-  gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
-  gl.uniformMatrix4fv(gl.getUniformLocation(pPoint, 'uMVP'), false, mvp);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, bSatPos);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(locPoint.aPos);
+  gl.vertexAttribPointer(locPoint.aPos, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, bSatSize);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(size), gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(locPoint.aSize);
+  gl.vertexAttribPointer(locPoint.aSize, 1, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, bSatCol);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(col), gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(locPoint.aCol);
+  gl.vertexAttribPointer(locPoint.aCol, 3, gl.FLOAT, false, 0, 0);
+
+  gl.uniformMatrix4fv(locPoint.uMVP, false, mvp);
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.depthMask(false);
   gl.drawArrays(gl.POINTS, 0, sats.length);
@@ -484,11 +516,11 @@ function drawSats(mvp, t) {
 function drawLines(mvp, b, count, color, alpha) {
   gl.useProgram(pLine);
   gl.bindBuffer(gl.ARRAY_BUFFER, b);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-  gl.uniformMatrix4fv(gl.getUniformLocation(pLine, 'uMVP'), false, mvp);
-  gl.uniform3fv(gl.getUniformLocation(pLine, 'uCol'), color);
-  gl.uniform1f(gl.getUniformLocation(pLine, 'uAlpha'), alpha);
+  gl.enableVertexAttribArray(locLine.aPos);
+  gl.vertexAttribPointer(locLine.aPos, 3, gl.FLOAT, false, 0, 0);
+  gl.uniformMatrix4fv(locLine.uMVP, false, mvp);
+  gl.uniform3fv(locLine.uCol, color);
+  gl.uniform1f(locLine.uAlpha, alpha);
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.depthMask(false);
   gl.drawArrays(gl.LINES, 0, count);
@@ -506,10 +538,9 @@ function frame() {
   perspective(proj, 45*Math.PI/180, aspect, 0.1, 100);
 
   const view = identity(mat4());
-  const cl = Math.cos(camLat*Math.PI/180), sl = Math.sin(camLat*Math.PI/180);
-  const co = Math.cos(camLon*Math.PI/180), so = Math.sin(camLon*Math.PI/180);
   translate(view, 0, 0, -camDist);
-  rotateY(view, -co); rotateX(view, -sl);
+  rotateY(view, -camLon * Math.PI/180);
+  rotateX(view, -camLat * Math.PI/180);
 
   const mvp = mat4();
   multiply(mvp, proj, view);
