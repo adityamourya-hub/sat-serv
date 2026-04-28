@@ -84,6 +84,46 @@
     display:none; text-align:center; }
   #fallback h3 { color:#00c8ff; margin-bottom:8px; }
   #fallback p { color:#8892a8; font-size:13px; }
+
+  /* Toast Notifications */
+  #toast-container { position:fixed; top:80px; right:16px; z-index:200; pointer-events:none; }
+  .toast { pointer-events:auto; margin-bottom:8px; padding:12px 16px; border-radius:6px;
+    background:rgba(10,14,26,0.95); border:1px solid rgba(255,255,255,0.1);
+    backdrop-filter:blur(8px); max-width:380px; animation:slideIn 0.3s ease-out; }
+  @keyframes slideIn { from{transform:translateX(100%); opacity:0;} to{transform:translateX(0); opacity:1;} }
+  .toast.info { border-left:3px solid #60a5fa; }
+  .toast.warning { border-left:3px solid #facc15; }
+  .toast.critical { border-left:3px solid #f87171; }
+  .toast.emergency { border-left:3px solid #ff0000; animation:pulse 0.5s infinite; }
+  .toast .toast-title { font-size:13px; font-weight:600; color:#e0e6f0; margin-bottom:4px; }
+  .toast .toast-message { font-size:11px; color:#8892a8; }
+  .toast .toast-close { float:right; cursor:pointer; color:#8892a8; font-size:14px; margin-left:8px; }
+  .toast .toast-close:hover { color:#e0e6f0; }
+
+  /* Alert Panel Enhancements */
+  .alert-list { max-height:300px; overflow-y:auto; }
+  .alert-list::-webkit-scrollbar { width:6px; }
+  .alert-list::-webkit-scrollbar-track { background:rgba(0,0,0,0.2); }
+  .alert-list::-webkit-scrollbar-thumb { background:rgba(0,200,255,0.3); border-radius:3px; }
+  .alert-item { padding:10px; margin-bottom:6px; border-radius:6px; border-left:3px solid;
+    background:rgba(255,255,255,0.03); cursor:pointer; transition:all 0.2s; }
+  .alert-item:hover { background:rgba(255,255,255,0.06); }
+  .alert-item.info { border-left-color:#60a5fa; }
+  .alert-item.warning { border-left-color:#facc15; }
+  .alert-item.critical { border-left-color:#f87171; }
+  .alert-item.emergency { border-left-color:#ff0000; }
+  .alert-item .alert-severity { font-size:10px; text-transform:uppercase; letter-spacing:1px;
+    font-weight:700; margin-bottom:4px; }
+  .alert-item.info .alert-severity { color:#60a5fa; }
+  .alert-item.warning .alert-severity { color:#facc15; }
+  .alert-item.critical .alert-severity { color:#f87171; }
+  .alert-item.emergency .alert-severity { color:#ff0000; }
+  .alert-item .alert-msg { font-size:12px; color:#e0e6f0; margin-bottom:4px; }
+  .alert-item .alert-meta { font-size:10px; color:#8892a8; }
+  .alert-item .alert-ack { margin-top:6px; padding:4px 8px; border-radius:4px;
+    background:rgba(0,200,255,0.15); color:#00c8ff; font-size:10px; font-weight:600;
+    cursor:pointer; border:none; transition:background 0.2s; }
+  .alert-item .alert-ack:hover { background:rgba(0,200,255,0.25); }
 </style>
 </head>
 <body>
@@ -95,6 +135,9 @@
     <div class="status"><span class="dot"></span>OPERATIONAL &nbsp;|&nbsp; Catalogue: <span id="catCount">0</span> objects &nbsp;|&nbsp; <span id="clock"></span></div>
   </div>
 </div>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
 
 <div id="panel">
   <h2>System Status</h2>
@@ -108,17 +151,19 @@
   <div class="stat"><span class="label">Latency (30k)</span><span class="value green">&lt;100ms</span></div>
 
   <h2 style="margin-top:16px;">Active Alerts</h2>
-  <div class="alert-card">
-    <div class="title">⚠ CONJUNCTION — ISS / COSMOS Debris</div>
-    <div class="desc">TCA: +4h 23m &bull; Miss: 1.2 km &bull; Pc: 2.3×10⁻⁴<br>Radial uncertainty: 0.08 km | In-track: 1.4 km</div>
-  </div>
-  <div class="alert-card warn">
-    <div class="title">△ MANEUVER — GSAT-30 (36564)</div>
-    <div class="desc">Detected Δv: 0.12 m/s &bull; Type: Station-keeping<br>Confidence: 94.2% | Physics-validated ✓</div>
-  </div>
-  <div class="alert-card warn">
-    <div class="title">📡 NavIC SPOOF ATTEMPT — Siliguri</div>
-    <div class="desc">Classification: Spoofing (conf: 0.98)<br>Action: Auto-switched to dual-freq | S4=0.72</div>
+  <div id="alert-list" class="alert-list">
+    <div class="alert-item critical" data-alert-id="demo-1">
+      <div class="alert-severity">CRITICAL</div>
+      <div class="alert-msg">CONJUNCTION — ISS / COSMOS Debris</div>
+      <div class="alert-meta">TCA: +4h 23m | Miss: 1.2 km | Pc: 2.3×10⁻⁴</div>
+      <button class="alert-ack" onclick="acknowledgeAlert('demo-1')">Acknowledge</button>
+    </div>
+    <div class="alert-item warning" data-alert-id="demo-2">
+      <div class="alert-severity">WARNING</div>
+      <div class="alert-msg">MANEUVER — GSAT-30 (36564)</div>
+      <div class="alert-meta">Δv: 0.12 m/s | Type: Station-keeping</div>
+      <button class="alert-ack" onclick="acknowledgeAlert('demo-2')">Acknowledge</button>
+    </div>
   </div>
 
   <h2 style="margin-top:16px;">Sovereign Volumes</h2>
@@ -926,7 +971,28 @@ function drawSats(mvp, t) {
     // Highlight hovered/selected satellite
     if(idx === hoveredSat || idx === selectedSat) baseSize *= 1.8;
     size.push(baseSize * (canvas.width/1600));
-    col.push(...COLORS[s.type]);
+    
+    // Use alert severity colour if available, otherwise use type colour
+    let satColor = COLORS[s.type];
+    if (s.alertSeverity) {
+      switch(s.alertSeverity) {
+        case 'INFO':
+          satColor = [0.38, 0.65, 0.98]; // #60a5fa
+          break;
+        case 'WARNING':
+          satColor = [0.98, 0.8, 0.08]; // #facc15
+          break;
+        case 'CRITICAL':
+          satColor = [0.97, 0.44, 0.44]; // #f87171
+          break;
+        case 'EMERGENCY':
+          satColor = [1.0, 0.0, 0.0]; // #ff0000
+          // Extra pulsing for emergency
+          baseSize *= (1.0 + 0.5 * Math.sin(t * 6));
+          break;
+      }
+    }
+    col.push(...satColor);
   });
   if(pos.length === 0) return;
   gl.useProgram(pPoint);
@@ -1002,6 +1068,199 @@ function frame() {
   }
 
   // Update tooltip position if a satellite is selected and camera moves
+
+/* ── Alerting System (SSE + Toast + Sound) ── */
+let eventSource = null;
+let audioContext = null;
+
+// Sound player using Web Audio API (base64 encoded sounds)
+const sounds = {
+  warning: null,
+  critical: null,
+  emergency: null
+};
+
+function initAudio() {
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playTone(frequency, duration, type = 'sine', repeat = 1) {
+  if (!audioContext) initAudio();
+  if (audioContext.state === 'suspended') audioContext.resume();
+  
+  for (let i = 0; i < repeat; i++) {
+    setTimeout(() => {
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+      
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + duration);
+    }, i * (duration * 1000));
+  }
+}
+
+function playAlertSound(severity) {
+  switch(severity) {
+    case 'WARNING':
+      playTone(800, 0.2, 'sine', 1);
+      break;
+    case 'CRITICAL':
+      playTone(600, 0.15, 'square', 3);
+      break;
+    case 'EMERGENCY':
+      // Continuous klaxon - will stop when acknowledged
+      if (!sounds.emergency) {
+        sounds.emergency = setInterval(() => playTone(500, 0.1, 'sawtooth', 1), 500);
+      }
+      break;
+  }
+}
+
+function stopEmergencySound() {
+  if (sounds.emergency) {
+    clearInterval(sounds.emergency);
+    sounds.emergency = null;
+  }
+}
+
+// Toast notifications
+function showToast(severity, title, message) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast ${severity.toLowerCase()}`;
+  
+  toast.innerHTML = `
+    <span class="toast-close" onclick="this.parentElement.remove()">×</span>
+    <div class="toast-title">${title}</div>
+    <div class="toast-message">${message}</div>
+  `;
+  
+  container.appendChild(toast);
+  playAlertSound(severity);
+  
+  // Auto-dismiss after 30 seconds (except emergency)
+  if (severity !== 'EMERGENCY') {
+    setTimeout(() => {
+      if (toast.parentElement) toast.remove();
+    }, 30000);
+  }
+}
+
+// Alert panel
+function addAlertToPanel(alert) {
+  const alertList = document.getElementById('alert-list');
+  const alertItem = document.createElement('div');
+  alertItem.className = `alert-item ${alert.severity.toLowerCase()}`;
+  alertItem.dataset.alertId = alert.alert_id;
+  
+  const meta = [];
+  if (alert.metrics) {
+    if (alert.metrics.pc) meta.push(`Pc: ${alert.metrics.pc.toExponential(2)}`);
+    if (alert.metrics.miss_km) meta.push(`Miss: ${alert.metrics.miss_km.toFixed(2)} km`);
+    if (alert.metrics.z_score) meta.push(`Z-score: ${alert.metrics.z_score.toFixed(2)}`);
+  }
+  
+  alertItem.innerHTML = `
+    <div class="alert-severity">${alert.severity}</div>
+    <div class="alert-msg">${alert.title}</div>
+    <div class="alert-meta">${meta.join(' | ')}</div>
+    <button class="alert-ack" onclick="acknowledgeAlert('${alert.alert_id}', '${alert.severity}')">Acknowledge</button>
+  `;
+  
+  alertItem.addEventListener('click', () => {
+    // Focus on the satellite if it has a target ID
+    if (alert.primary_norad_id) {
+      const satIdx = sats.findIndex(s => s.norad === alert.primary_norad_id);
+      if (satIdx >= 0) {
+        selectedSat = satIdx;
+        // TODO: Show tooltip with alert details
+      }
+    }
+  });
+  
+  alertList.insertBefore(alertItem, alertList.firstChild);
+  
+  // Keep only last 20 alerts
+  while (alertList.children.length > 20) {
+    alertList.removeChild(alertList.lastChild);
+  }
+}
+
+function acknowledgeAlert(alertId, severity) {
+  fetch(`/api/alerts/${alertId}/ack`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      operator_id: 'OPERATOR',
+      action: 'MONITOR',
+      notes: 'Acknowledged via dashboard'
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    // Remove from panel
+    const alertItem = document.querySelector(`[data-alert-id="${alertId}"]`);
+    if (alertItem) alertItem.remove();
+    
+    // Stop emergency sound if applicable
+    if (severity === 'EMERGENCY') {
+      stopEmergencySound();
+    }
+  })
+  .catch(err => console.error('Failed to acknowledge alert:', err));
+}
+
+// SSE connection
+function connectToAlertStream() {
+  eventSource = new EventSource('/api/alerts/stream');
+  
+  eventSource.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    
+    if (msg.type === 'ALERT') {
+      const alert = msg.payload;
+      
+      // Add to panel
+      addAlertToPanel(alert);
+      
+      // Show toast
+      showToast(alert.severity, alert.severity, alert.title);
+      
+      // Colour-code satellite on globe
+      if (alert.primary_norad_id) {
+        const sat = sats.find(s => s.norad === alert.primary_norad_id);
+        if (sat) {
+          sat.alertSeverity = alert.severity;
+        }
+      }
+    }
+  };
+  
+  eventSource.onerror = (error) => {
+    console.error('SSE connection error:', error);
+    // Reconnect after 5 seconds
+    setTimeout(() => {
+      eventSource.close();
+      connectToAlertStream();
+    }, 5000);
+  };
+}
+
+// Initialize alerting system on page load
+document.addEventListener('DOMContentLoaded', () => {
+  connectToAlertStream();
+});
+
+// ── Update tooltip position if a satellite is selected and camera moves
   if(selectedSat >= 0) {
     const s = sats[selectedSat];
     const p = kepler(s.a, s.e, s.i, s.omega, s.w, s.M0, simTime);

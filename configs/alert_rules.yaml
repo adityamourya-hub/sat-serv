@@ -1,0 +1,306 @@
+# SSIS Sovereign Alerting Rules Configuration
+# Classification: SOVEREIGN_INTEL / AIR_GAPPED_ONLY
+# Hot-reloadable: Send SIGHUP to engine process to reload without restart
+#
+# Each rule defines:
+#   - category: Alert type (matches alert_category enum)
+#   - severity: Default severity (INFO/WARNING/CRITICAL/EMERGENCY)
+#   - threshold: Numeric threshold that triggers the rule
+#   - escalation: Auto-escalation if unacknowledged
+
+rules:
+  # ──────────────────────────────────────────────
+  # CONJUNCTION RISK
+  # ──────────────────────────────────────────────
+  - id: "CONJ_WARNING"
+    category: CONJUNCTION_RISK
+    severity: WARNING
+    enabled: true
+    description: "Conjunction Pc exceeds warning threshold"
+    condition:
+      metric: "probability_of_collision"
+      operator: ">="
+      threshold: 1.0e-5
+    escalation:
+      timeout_min: 30
+      escalate_to: CRITICAL
+
+  - id: "CONJ_CRITICAL"
+    category: CONJUNCTION_RISK
+    severity: CRITICAL
+    enabled: true
+    description: "Conjunction Pc exceeds critical threshold — maneuver decision required"
+    condition:
+      metric: "probability_of_collision"
+      operator: ">="
+      threshold: 1.0e-4
+    escalation:
+      timeout_min: 10
+      escalate_to: EMERGENCY
+
+  - id: "CONJ_MISS_DISTANCE"
+    category: CONJUNCTION_RISK
+    severity: CRITICAL
+    enabled: true
+    description: "Miss distance below hard-body radius safety margin"
+    condition:
+      metric: "miss_distance_km"
+      operator: "<="
+      threshold: 1.0
+    escalation:
+      timeout_min: 5
+      escalate_to: EMERGENCY
+
+  # ──────────────────────────────────────────────
+  # MANEUVER DETECTION
+  # ──────────────────────────────────────────────
+  - id: "MANEUVER_YELLOW"
+    category: MANEUVER_DETECTION
+    severity: WARNING
+    enabled: true
+    description: "Orbital element deviation exceeds yellow Z-score threshold"
+    condition:
+      metric: "z_score"
+      operator: ">="
+      threshold: 3.0
+    escalation:
+      timeout_min: 60
+      escalate_to: CRITICAL
+
+  - id: "MANEUVER_RED"
+    category: MANEUVER_DETECTION
+    severity: CRITICAL
+    enabled: true
+    description: "Orbital element deviation exceeds red Z-score threshold — likely intentional"
+    condition:
+      metric: "z_score"
+      operator: ">="
+      threshold: 6.0
+    escalation:
+      timeout_min: 15
+      escalate_to: EMERGENCY
+
+  - id: "MANEUVER_NEAR_INDIAN"
+    category: MANEUVER_DETECTION
+    severity: EMERGENCY
+    enabled: true
+    description: "Maneuver detected by non-Indian asset near Indian sovereign volume"
+    condition:
+      metric: "maneuver_near_sovereign"
+      operator: "=="
+      threshold: 1
+    escalation:
+      timeout_min: 0
+      escalate_to: EMERGENCY
+
+  # ──────────────────────────────────────────────
+  # RE-ENTRY RISK
+  # ──────────────────────────────────────────────
+  - id: "REENTRY_WARNING"
+    category: REENTRY_RISK
+    severity: WARNING
+    enabled: true
+    description: "Object perigee altitude dropping — potential re-entry within 7 days"
+    condition:
+      metric: "perigee_altitude_km"
+      operator: "<="
+      threshold: 200.0
+    escalation:
+      timeout_min: 120
+      escalate_to: CRITICAL
+
+  - id: "REENTRY_CRITICAL"
+    category: REENTRY_RISK
+    severity: CRITICAL
+    enabled: true
+    description: "Imminent re-entry — object below 150km perigee"
+    condition:
+      metric: "perigee_altitude_km"
+      operator: "<="
+      threshold: 150.0
+    escalation:
+      timeout_min: 30
+      escalate_to: EMERGENCY
+
+  - id: "REENTRY_OVER_INDIA"
+    category: REENTRY_RISK
+    severity: EMERGENCY
+    enabled: true
+    description: "Re-entry corridor intersects Indian territory"
+    condition:
+      metric: "reentry_over_india"
+      operator: "=="
+      threshold: 1
+    escalation:
+      timeout_min: 0
+      escalate_to: EMERGENCY
+
+  # ──────────────────────────────────────────────
+  # BLIND SPOT / COVERAGE GAP
+  # ──────────────────────────────────────────────
+  - id: "BLINDSPOT_WARNING"
+    category: BLIND_SPOT
+    severity: WARNING
+    enabled: true
+    description: "Coverage gap exceeds 30 minutes for strategic site"
+    condition:
+      metric: "gap_duration_min"
+      operator: ">="
+      threshold: 30
+    escalation:
+      timeout_min: 60
+      escalate_to: CRITICAL
+
+  - id: "BLINDSPOT_CRITICAL"
+    category: BLIND_SPOT
+    severity: CRITICAL
+    enabled: true
+    description: "Coverage gap exceeds 60 minutes — adversary window of opportunity"
+    condition:
+      metric: "gap_duration_min"
+      operator: ">="
+      threshold: 60
+    escalation:
+      timeout_min: 15
+      escalate_to: EMERGENCY
+
+  # ──────────────────────────────────────────────
+  # SENSOR HEALTH DEGRADATION
+  # ──────────────────────────────────────────────
+  - id: "SENSOR_DEGRADED"
+    category: SENSOR_HEALTH
+    severity: WARNING
+    enabled: true
+    description: "Sensor health score below operational threshold"
+    condition:
+      metric: "health_score"
+      operator: "<="
+      threshold: 0.7
+    escalation:
+      timeout_min: 120
+      escalate_to: CRITICAL
+
+  - id: "SENSOR_OFFLINE"
+    category: SENSOR_HEALTH
+    severity: CRITICAL
+    enabled: true
+    description: "Sensor offline — no observations received"
+    condition:
+      metric: "health_score"
+      operator: "<="
+      threshold: 0.1
+    escalation:
+      timeout_min: 30
+      escalate_to: EMERGENCY
+
+  - id: "SENSOR_STALE"
+    category: SENSOR_HEALTH
+    severity: WARNING
+    enabled: true
+    description: "No observation received from sensor in threshold period"
+    condition:
+      metric: "last_obs_age_min"
+      operator: ">="
+      threshold: 15
+    escalation:
+      timeout_min: 30
+      escalate_to: CRITICAL
+
+  # ──────────────────────────────────────────────
+  # BEHAVIOURAL ANOMALY
+  # ──────────────────────────────────────────────
+  - id: "ANOMALY_CO_ORBITAL"
+    category: BEHAVIOURAL_ANOMALY
+    severity: EMERGENCY
+    enabled: true
+    description: "Co-orbital threat pattern detected — intentional approach to Indian asset"
+    condition:
+      metric: "intent_co_orbital"
+      operator: "=="
+      threshold: 1
+    escalation:
+      timeout_min: 0
+      escalate_to: EMERGENCY
+
+  - id: "ANOMALY_RENDEZVOUS"
+    category: BEHAVIOURAL_ANOMALY
+    severity: CRITICAL
+    enabled: true
+    description: "Rendezvous pattern detected near Indian asset"
+    condition:
+      metric: "intent_rendezvous"
+      operator: "=="
+      threshold: 1
+    escalation:
+      timeout_min: 10
+      escalate_to: EMERGENCY
+
+  - id: "ANOMALY_MEGA_CONSTELLATION"
+    category: BEHAVIOURAL_ANOMALY
+    severity: WARNING
+    enabled: true
+    description: "Unusual mega-constellation deployment pattern detected"
+    condition:
+      metric: "constellation_anomaly_score"
+      operator: ">="
+      threshold: 0.8
+    escalation:
+      timeout_min: 60
+      escalate_to: CRITICAL
+
+  - id: "ANOMALY_NAVIC_SPOOF"
+    category: BEHAVIOURAL_ANOMALY
+    severity: EMERGENCY
+    enabled: true
+    description: "NavIC signal spoofing or jamming signature detected"
+    condition:
+      metric: "navic_spoof_detected"
+      operator: "=="
+      threshold: 1
+    escalation:
+      timeout_min: 0
+      escalate_to: EMERGENCY
+
+  # ──────────────────────────────────────────────
+  # SOVEREIGN INTRUSION
+  # ──────────────────────────────────────────────
+  - id: "INTRUSION_WARNING"
+    category: SOVEREIGN_INTRUSION
+    severity: WARNING
+    enabled: true
+    description: "Non-Indian satellite entered sovereign monitoring volume"
+    condition:
+      metric: "intrusion_detected"
+      operator: "=="
+      threshold: 1
+    escalation:
+      timeout_min: 30
+      escalate_to: CRITICAL
+
+  - id: "INTRUSION_CRITICAL"
+    category: SOVEREIGN_INTRUSION
+    severity: CRITICAL
+    enabled: true
+    description: "Non-Indian ISR satellite in critical sovereign volume (Siliguri/Galwan)"
+    condition:
+      metric: "intrusion_critical_volume"
+      operator: "=="
+      threshold: 1
+    escalation:
+      timeout_min: 10
+      escalate_to: EMERGENCY
+
+# Global settings
+settings:
+  evaluation_interval_sec: 10    # How often the rules engine evaluates
+  max_alerts_per_minute: 100     # Rate limiting to prevent alert fatigue
+  dedup_window_sec: 300          # Suppress duplicate alerts within 5 minutes
+  default_escalation_min: 30     # Default auto-escalation timeout
+  audit_every_alert: true        # Log every alert to audit_log
+  sign_every_alert: true         # Ed25519 sign every alert
+
+# Version tracking
+metadata:
+  version: "1.0.0"
+  last_updated: "2026-04-28T00:00:00Z"
+  authority: "IAF_SSA_DIRECTORATE"

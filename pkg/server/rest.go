@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"ssis/internal/alerts"
 	"ssis/pkg/catalog"
 	"ssis/pkg/cryptography"
 	"ssis/pkg/engine"
@@ -48,6 +49,11 @@ func (s *Server) SetupRouter() *gin.Engine {
 
 	// Metrics endpoint
 	r.GET("/metrics", s.handleMetrics)
+
+	// Alerting endpoints
+	r.GET("/api/alerts/stream", s.handleAlertStream)
+	r.GET("/api/alerts", s.handleListAlerts)
+	r.POST("/api/alerts/:id/ack", s.handleAcknowledgeAlert)
 
 	return r
 }
@@ -325,6 +331,135 @@ func (s *Server) handleCollisionRisk(c *gin.Context) {
 			c.Header("X-SSIS-Signature", sig)
 			resp["signature"] = sig
 		}
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// handleAlertStream serves SSE alerts to connected clients
+func (s *Server) handleAlertStream(c *gin.Context) {
+	// Get SSE hub from engine runtime
+	sseHub := s.Engine.GetSSEHub()
+	if sseHub == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status":  "error",
+			"message": "Alerting system not initialized",
+		})
+		return
+	}
+
+	// Determine role from JWT or default to OPERATOR
+	role := alerts.RoleOperator
+	// TODO: Extract role from JWT claims when auth is implemented
+
+	sseHub.ServeSSE(c.Writer, c.Request, role)
+}
+
+// handleListAlerts retrieves alerts with pagination and filtering
+func (s *Server) handleListAlerts(c *gin.Context) {
+	repo := s.Engine.GetAlertRepo()
+	if repo == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status":  "error",
+			"message": "Alerting system not initialized",
+		})
+		return
+	}
+
+	// Parse query parameters
+	filter := alerts.DefaultFilter()
+	if category := c.Query("category"); category != "" {
+		filter.Category = alerts.Category(category)
+	}
+	if severity := c.Query("severity"); severity != "" {
+		filter.Severity = alerts.Severity(severity)
+	}
+	if status := c.Query("status"); status != "" {
+		filter.Status = alerts.Status(status)
+	}
+	if sinceStr := c.Query("since"); sinceStr != "" {
+		since, err := time.Parse(time.RFC3339, sinceStr)
+		if err == nil {
+			filter.Since = &since
+		}
+	}
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 && limit <= 1000 {
+			filter.Limit = limit
+		}
+	}
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		if offset, err := strconv.Atoi(offsetStr); err == nil && offset >= 0 {
+			filter.Offset = offset
+		}
+	}
+
+	ctx := c.Request.Context()
+	alerts, total, err := repo.QueryAlerts(ctx, filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to query alerts",
+		})
+		return
+	}
+
+	resp := gin.H{
+		"status":    "success",
+		"timestamp": time.Now().Unix(),
+		"total":     total,
+		"count":     len(alerts),
+		"alerts":    alerts,
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// handleAcknowledgeAlert acknowledges an alert with an action
+func (s *Server) handleAcknowledgeAlert(c *gin.Context) {
+	repo := s.Engine.GetAlertRepo()
+	if repo == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status":  "error",
+			"message": "Alerting system not initialized",
+		})
+		return
+	}
+
+	alertID := c.Param("id")
+
+	var req alerts.AckRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Invalid request body",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := repo.AcknowledgeAlert(ctx, alertID, req.OperatorID, req.Action, req.Notes); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to acknowledge alert",
+		})
+		return
+	}
+
+	// Fetch updated alert
+	updated, err := repo.GetAlertByID(ctx, alertID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Alert acknowledged but failed to fetch updated state",
+		})
+		return
+	}
+
+	resp := gin.H{
+		"status":    "success",
+		"timestamp": time.Now().Unix(),
+		"alert":     updated,
 	}
 
 	c.JSON(http.StatusOK, resp)

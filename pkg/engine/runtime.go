@@ -4,15 +4,18 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"ssis/internal/alerts"
 	"ssis/pkg/catalog"
 	"ssis/pkg/collision"
 	"ssis/pkg/cryptography"
@@ -84,6 +87,12 @@ type Runtime struct {
 	propagator *HybridPropagator
 	tracer     trace.Tracer
 
+	// Alert system components
+	dbPool    *pgxpool.Pool
+	alertRepo *alerts.Repository
+	sseHub    *alerts.SSEHub
+	evaluator *alerts.Evaluator
+
 	capacity   int
 	numWorkers int
 	stop       chan struct{}
@@ -99,10 +108,20 @@ func (r *Runtime) GetEventBus() *types.EventBus {
 	return r.bus
 }
 
+// GetSSEHub returns the SSE hub for alert streaming
+func (r *Runtime) GetSSEHub() *alerts.SSEHub {
+	return r.sseHub
+}
+
+// GetAlertRepo returns the alert repository
+func (r *Runtime) GetAlertRepo() *alerts.Repository {
+	return r.alertRepo
+}
+
 /**
  * NewRuntime initializes the SSIS orchestrator.
  */
-func NewRuntime(capacity int, store *catalog.Store, signer *cryptography.Signer, pool *ONNXPool) *Runtime {
+func NewRuntime(capacity int, store *catalog.Store, signer *cryptography.Signer, onnxPool *ONNXPool, dbPool *pgxpool.Pool) *Runtime {
 	numUKF := 75
 	r := &Runtime{
 		ukfQueues:  make([]chan *types.Observation, numUKF),
@@ -112,18 +131,35 @@ func NewRuntime(capacity int, store *catalog.Store, signer *cryptography.Signer,
 		signer:     signer,
 		metrics:    NewEngineMetrics(),
 		tasker:     NewTasker(0.85),
-		onnxPool:   pool,
+		onnxPool:   onnxPool,
 		propagator: NewHybridPropagator(nil, nil, nil, *signer), // Simplified init
 		tracer:     otel.Tracer("ssis-engine"),
 		capacity:   capacity,
 		numWorkers: numUKF,
 		stop:       make(chan struct{}),
+		dbPool:     dbPool,
 	}
 	r.config.MaxQueueSize = 1000
 	workerCap := capacity / numUKF
 	for i := 0; i < numUKF; i++ {
 		r.ukfQueues[i] = make(chan *types.Observation, workerCap)
 	}
+
+	// Initialize alert system if database pool is provided
+	if dbPool != nil {
+		r.sseHub = alerts.NewSSEHub()
+		r.alertRepo = alerts.NewRepository(dbPool)
+
+		// Create evaluator with rules config path
+		rulesPath := "configs/alert_rules.yaml"
+		eval, err := alerts.NewEvaluator(rulesPath, r.alertRepo, r.sseHub, signer)
+		if err != nil {
+			slog.Warn("Failed to initialize alert evaluator", "error", err)
+		} else {
+			r.evaluator = eval
+		}
+	}
+
 	return r
 }
 
@@ -168,9 +204,22 @@ func (r *Runtime) Start() {
 	go r.alertDispatcher()
 	r.wg.Add(1)
 	go r.collisionWorker()
+
+	// Start alert evaluator if initialized
+	if r.evaluator != nil {
+		r.evaluator.Start(r.bus)
+		slog.Info("Alert evaluator started")
+	}
 }
 
 func (r *Runtime) Stop(ctx context.Context) error {
+	// Stop alert evaluator if initialized
+	if r.evaluator != nil {
+		if err := r.evaluator.Stop(ctx); err != nil {
+			slog.Warn("Failed to stop alert evaluator", "error", err)
+		}
+	}
+
 	close(r.stop)
 	done := make(chan struct{})
 	go func() { r.wg.Wait(); close(done) }()

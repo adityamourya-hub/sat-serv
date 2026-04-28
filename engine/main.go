@@ -19,6 +19,8 @@ import (
 	"ssis/pkg/orbital"
 	"ssis/pkg/persistence"
 	"ssis/pkg/server"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type SatelliteEntry struct {
@@ -106,9 +108,25 @@ func run() error {
 		onnxPool = nil
 	}
 
+	// 5. Initialize PostgreSQL Pool for alerting system
+	dbURL := getEnvOrDefault("SSIS_DB_URL", "postgres://aditya_admin:changeme@localhost:5432/ssis_db?sslmode=disable")
+	var dbPool *pgxpool.Pool
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer dbCancel()
+
+	dbPool, err = pgxpool.New(dbCtx, dbURL)
+	if err != nil {
+		fmt.Printf("WARNING: Failed to connect to PostgreSQL: %v. Alerting system will be disabled.\n", err)
+		dbPool = nil
+		dbCancel() // Cancel context since we won't use the pool
+	} else {
+		fmt.Printf("INFO: Connected to PostgreSQL for alerting system\n")
+		// Don't defer dbPool.Close() here - it will be closed in the shutdown handler
+	}
+
 	// 5. Initialize Engine Runtime (Workstream 1.1 Logic)
 	// Capacity 1000 for obsQueue as per analysis doc.
-	engineRuntime := engine.NewRuntime(1000, catalogStore.Store, signer, onnxPool)
+	engineRuntime := engine.NewRuntime(1000, catalogStore.Store, signer, onnxPool, dbPool)
 	engineRuntime.Start()
 
 	// 6. Load Initial Catalogue
