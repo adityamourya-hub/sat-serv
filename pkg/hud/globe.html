@@ -7,7 +7,9 @@
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:'Segoe UI',system-ui,sans-serif; background:#0a0e1a; color:#e0e6f0; overflow:hidden; }
-  #canvas { width:100vw; height:100vh; display:block; }
+  #canvas { width:100vw; height:100vh; display:block; cursor:grab; }
+  #canvas:active { cursor:grabbing; }
+  #canvas.hover-sat { cursor:pointer; }
 
   #hud { position:fixed; top:0; left:0; right:0; z-index:100; pointer-events:none; }
   #topbar { display:flex; justify-content:space-between; align-items:center;
@@ -25,21 +27,56 @@
   .stat { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px; }
   .stat .label { color:#8892a8; } .stat .value { color:#e0e6f0; font-weight:600; }
   .stat .value.green { color:#4ade80; } .stat .value.yellow { color:#facc15; } .stat .value.red { color:#f87171; }
-  .alert-card { margin-top:8px; padding:10px; border-radius:6px; border-left:3px solid #f87171; background:rgba(248,113,113,0.08); }
+  .alert-card { margin-top:8px; padding:10px; border-radius:6px; border-left:3px solid #f87171; background:rgba(248,113,113,0.08); cursor:pointer; transition:background 0.2s; }
+  .alert-card:hover { background:rgba(248,113,113,0.15); }
   .alert-card.warn { border-left-color:#facc15; background:rgba(250,204,21,0.06); }
+  .alert-card.warn:hover { background:rgba(250,204,21,0.12); }
   .alert-card .title { font-size:12px; font-weight:600; color:#f87171; }
   .alert-card.warn .title { color:#facc15; }
   .alert-card .desc { font-size:11px; color:#8892a8; margin-top:4px; }
 
+  #tooltip { position:fixed; z-index:150; display:none; pointer-events:none;
+    background:rgba(10,14,26,0.96); border:1px solid rgba(0,200,255,0.3); border-radius:8px;
+    padding:14px 16px; min-width:260px; max-width:320px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.5); backdrop-filter:blur(8px); }
+  #tooltip .tt-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  #tooltip .tt-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  #tooltip .tt-name { font-size:14px; font-weight:700; color:#e0e6f0; }
+  #tooltip .tt-type { font-size:10px; text-transform:uppercase; letter-spacing:1px; padding:2px 6px; border-radius:4px; background:rgba(0,200,255,0.15); color:#00c8ff; margin-left:auto; }
+  #tooltip .tt-row { display:flex; justify-content:space-between; font-size:12px; padding:3px 0; }
+  #tooltip .tt-row .tt-label { color:#8892a8; } #tooltip .tt-row .tt-val { color:#e0e6f0; font-weight:600; font-family:'SF Mono',monospace; }
+  #tooltip .tt-sep { border-top:1px solid rgba(255,255,255,0.06); margin:8px 0; }
+  #tooltip .tt-orbit { font-size:11px; color:#8892a8; }
+
+  #layerbar { position:fixed; top:60px; left:16px; z-index:100;
+    display:flex; flex-direction:column; gap:6px; pointer-events:auto; }
+  .layer-btn { display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:6px;
+    background:rgba(10,14,26,0.85); border:1px solid rgba(255,255,255,0.08); color:#8892a8;
+    font-size:11px; font-weight:600; cursor:pointer; transition:all 0.15s; }
+  .layer-btn:hover { border-color:rgba(0,200,255,0.3); color:#e0e6f0; }
+  .layer-btn.on { border-color:rgba(0,200,255,0.4); color:#e0e6f0; }
+  .layer-btn .l-dot { width:8px; height:8px; border-radius:50%; opacity:0.5; transition:opacity 0.15s; }
+  .layer-btn.on .l-dot { opacity:1; }
+
+  #timebar { position:fixed; bottom:52px; left:50%; transform:translateX(-50%); z-index:100;
+    display:flex; align-items:center; gap:10px; pointer-events:auto;
+    background:rgba(10,14,26,0.9); border:1px solid rgba(0,200,255,0.15); border-radius:8px; padding:6px 14px; }
+  #timebar button { background:transparent; border:1px solid rgba(0,200,255,0.3); color:#00c8ff;
+    border-radius:4px; padding:3px 10px; font-size:12px; cursor:pointer; transition:all 0.15s; }
+  #timebar button:hover { background:rgba(0,200,255,0.15); }
+  #timebar button.active { background:rgba(0,200,255,0.25); }
+  #timebar .tspeed { font-size:11px; color:#8892a8; min-width:48px; text-align:center; }
+
   #capbar { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:100;
-    display:flex; gap:8px; pointer-events:auto; flex-wrap:wrap; justify-content:center; }
-  .cap { padding:6px 14px; border-radius:20px; font-size:11px; font-weight:600;
+    display:flex; gap:6px; pointer-events:auto; flex-wrap:wrap; justify-content:center; }
+  .cap { padding:5px 12px; border-radius:20px; font-size:10px; font-weight:600;
     background:rgba(0,200,255,0.1); border:1px solid rgba(0,200,255,0.3); color:#00c8ff; white-space:nowrap; }
   .cap.active { background:rgba(0,200,255,0.25); border-color:#00c8ff; }
 
-  #legend { position:fixed; bottom:60px; left:16px; z-index:100;
-    background:rgba(10,14,26,0.9); border:1px solid rgba(0,200,255,0.15); border-radius:6px; padding:12px; font-size:11px; }
-  .legend-item { display:flex; align-items:center; gap:8px; margin:4px 0; }
+  #legend { position:fixed; bottom:96px; left:16px; z-index:100;
+    background:rgba(10,14,26,0.9); border:1px solid rgba(0,200,255,0.15); border-radius:6px; padding:10px; font-size:11px; }
+  .legend-item { display:flex; align-items:center; gap:8px; margin:3px 0; cursor:pointer; transition:opacity 0.15s; }
+  .legend-item:hover { opacity:0.7; }
   .legend-dot { width:10px; height:10px; border-radius:50%; }
 
   #fallback { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200;
@@ -98,6 +135,44 @@
   <div class="legend-item"><div class="legend-dot" style="background:#facc15;"></div>Maneuver Detected</div>
   <div class="legend-item"><div class="legend-dot" style="background:#c084fc;"></div>NavIC Anomaly</div>
   <div class="legend-item"><div class="legend-dot" style="background:rgba(0,200,255,0.2); border:1px solid rgba(0,200,255,0.4);"></div>Sovereign Volume</div>
+</div>
+
+<!-- Layer Toggles -->
+<div id="layerbar">
+  <div class="layer-btn on" data-layer="indian"><div class="l-dot" style="background:#4ade80;"></div>Indian Assets</div>
+  <div class="layer-btn on" data-layer="tracked"><div class="l-dot" style="background:#60a5fa;"></div>Tracked Objects</div>
+  <div class="layer-btn on" data-layer="risk"><div class="l-dot" style="background:#f87171;"></div>Conjunction Risk</div>
+  <div class="layer-btn on" data-layer="maneuver"><div class="l-dot" style="background:#facc15;"></div>Maneuver Detected</div>
+  <div class="layer-btn on" data-layer="anomaly"><div class="l-dot" style="background:#c084fc;"></div>NavIC Anomaly</div>
+  <div class="layer-btn on" data-layer="trails"><div class="l-dot" style="background:rgba(255,255,255,0.5);"></div>Orbit Trails</div>
+  <div class="layer-btn on" data-layer="grid"><div class="l-dot" style="background:rgba(0,200,255,0.5);"></div>Lat/Lon Grid</div>
+  <div class="layer-btn on" data-layer="volume"><div class="l-dot" style="background:rgba(0,200,255,0.3); border:1px solid rgba(0,200,255,0.5);"></div>Sovereign Volume</div>
+</div>
+
+<!-- Satellite Tooltip -->
+<div id="tooltip">
+  <div class="tt-header">
+    <div class="tt-dot" id="ttDot"></div>
+    <div class="tt-name" id="ttName">Satellite</div>
+    <div class="tt-type" id="ttType">TRACKED</div>
+  </div>
+  <div class="tt-sep"></div>
+  <div class="tt-row"><span class="tt-label">NORAD ID</span><span class="tt-val" id="ttId">—</span></div>
+  <div class="tt-row"><span class="tt-label">Altitude</span><span class="tt-val" id="ttAlt">—</span></div>
+  <div class="tt-row"><span class="tt-label">Inclination</span><span class="tt-val" id="ttInc">—</span></div>
+  <div class="tt-row"><span class="tt-label">Eccentricity</span><span class="tt-val" id="ttEcc">—</span></div>
+  <div class="tt-row"><span class="tt-label">Period</span><span class="tt-val" id="ttPeriod">—</span></div>
+  <div class="tt-sep"></div>
+  <div class="tt-orbit" id="ttStatus">Status: Normal operation</div>
+</div>
+
+<!-- Time Controls -->
+<div id="timebar">
+  <button id="btnPause">⏸ Pause</button>
+  <button id="btnSpeed1" class="active">1×</button>
+  <button id="btnSpeed5">5×</button>
+  <button id="btnSpeed20">20×</button>
+  <span class="tspeed" id="tspeedLabel">1×</span>
 </div>
 
 <div id="capbar">
@@ -192,6 +267,34 @@ uniform vec3 uCol;
 uniform float uAlpha;
 void main(){ gl_FragColor = vec4(uCol, uAlpha); }`;
 
+/* Atmosphere glow shader */
+const vsAtmo = `
+attribute vec3 aPos;
+uniform mat4 uMVP;
+varying vec3 vNorm;
+void main(){
+  gl_Position = uMVP * vec4(aPos,1.0);
+  vNorm = normalize(aPos);
+}`;
+const fsAtmo = `
+precision mediump float;
+varying vec3 vNorm;
+uniform vec3 uSun;
+void main(){
+  float d = max(dot(vNorm, normalize(uSun)), 0.0);
+  float glow = pow(d, 3.0) * 0.6 + pow(d, 12.0) * 0.4;
+  gl_FragColor = vec4(0.0, 0.65, 1.0, glow * 0.35);
+}`;
+
+/* Starfield shader */
+const vsStar = `
+attribute vec3 aPos;
+uniform mat4 uMVP;
+void main(){ gl_Position = uMVP * vec4(aPos,1.0); gl_PointSize = 1.5; }`;
+const fsStar = `
+precision mediump float;
+void main(){ float d = length(gl_PointCoord-vec2(0.5)); if(d>0.5)discard; float a=1.0-smoothstep(0.2,0.5,d); gl_FragColor=vec4(1.0,1.0,1.0,a*0.7); }`;
+
 function compile(type, src) {
   const s = gl.createShader(type);
   gl.shaderSource(s, src);
@@ -210,6 +313,8 @@ function prog(vs, fs) {
 const pGlobe = prog(vsGlobe, fsGlobe);
 const pPoint = prog(vsPoint, fsPoint);
 const pLine  = prog(vsLine,  fsLine);
+const pAtmo  = prog(vsAtmo,  fsAtmo);
+const pStar  = prog(vsStar,  fsStar);
 
 /* ── Attribute/Uniform Locations ── */
 const locGlobe = {
@@ -230,6 +335,15 @@ const locLine = {
   uMVP: gl.getUniformLocation(pLine, 'uMVP'),
   uCol: gl.getUniformLocation(pLine, 'uCol'),
   uAlpha: gl.getUniformLocation(pLine, 'uAlpha')
+};
+const locAtmo = {
+  aPos: gl.getAttribLocation(pAtmo, 'aPos'),
+  uMVP: gl.getUniformLocation(pAtmo, 'uMVP'),
+  uSun: gl.getUniformLocation(pAtmo, 'uSun')
+};
+const locStar = {
+  aPos: gl.getAttribLocation(pStar, 'aPos'),
+  uMVP: gl.getUniformLocation(pStar, 'uMVP')
 };
 
 /* ── Procedural Earth Texture ── */
@@ -317,6 +431,47 @@ const bTex = buf(globeGeo.tex, gl.ARRAY_BUFFER);
 const bInd = buf(globeGeo.ind, gl.ELEMENT_ARRAY_BUFFER);
 const earthTex = makeEarthTex();
 
+/* ── Atmosphere Geometry (slightly larger sphere) ── */
+const atmoGeo = sphere(EARTH_R * 1.03, 48);
+const bAtmoPos = buf(atmoGeo.pos, gl.ARRAY_BUFFER);
+const bAtmoInd = buf(atmoGeo.ind, gl.ELEMENT_ARRAY_BUFFER);
+
+/* ── Starfield ── */
+function makeStars(n) {
+  const pos = [];
+  for(let i=0;i<n;i++){
+    const theta = Math.acos(2*Math.random()-1);
+    const phi = Math.random()*Math.PI*2;
+    const r = 50 + Math.random()*50;
+    pos.push(r*Math.sin(theta)*Math.cos(phi), r*Math.sin(theta)*Math.sin(phi), r*Math.cos(theta));
+  }
+  return new Float32Array(pos);
+}
+const bStars = buf(makeStars(800), gl.ARRAY_BUFFER);
+
+/* ── Lat/Lon Grid ── */
+function makeGrid(seg) {
+  const pts = [];
+  for(let i=0;i<=seg;i++){
+    const lat = -90 + i*(180/seg);
+    for(let j=0;j<seg;j++){
+      const lon1 = j*(360/seg), lon2 = (j+1)*(360/seg);
+      pts.push(...ll2xyz(lat,lon1,0.002), ...ll2xyz(lat,lon2,0.002));
+    }
+  }
+  for(let i=0;i<=seg;i++){
+    const lon = i*(360/seg);
+    for(let j=0;j<seg;j++){
+      const lat1 = -90 + j*(180/seg), lat2 = -90 + (j+1)*(180/seg);
+      pts.push(...ll2xyz(lat1,lon,0.002), ...ll2xyz(lat2,lon,0.002));
+    }
+  }
+  return new Float32Array(pts);
+}
+const gridData = makeGrid(12);
+const bGrid = buf(gridData, gl.ARRAY_BUFFER);
+const GRID_VERTS = gridData.length / 3;
+
 /* ── Satellite Data ── */
 const RE = 6371, MU = 398600.4418;
 function kepler(a, e, i, omega, w, M0, t) {
@@ -340,17 +495,53 @@ function kepler(a, e, i, omega, w, M0, t) {
   };
 }
 
+const SAT_NAMES = [
+  'IRS-1C','IRS-1D','IRS-P3','IRS-P4','Resourcesat-1','Resourcesat-2','Cartosat-1','Cartosat-2','Cartosat-2A','Cartosat-2B',
+  'Cartosat-3','RISAT-1','RISAT-2','RISAT-2B','RISAT-2BR1','SARAL','Oceansat-2','Oceansat-3','ScatSat-1','INSAT-3A',
+  'INSAT-3C','INSAT-4A','GSAT-8','GSAT-10','GSAT-12','GSAT-14','GSAT-15','GSAT-16','GSAT-17','GSAT-18',
+  'GSAT-19','GSAT-29','GSAT-30','GSAT-31','GSAT-24','CMS-01','RISAT-2B','EOS-01','EOS-02','EOS-04',
+  'NISAR','Chandrayaan-2','Chandrayaan-3','Mangalyaan','Astrosat','Aditya-L1','XPoSat','GSAT-7','GSAT-7A','GSAT-6',
+  'NVS-01','GSLV-F12','PSLV-C56','LVM3-M4','SSLV-D2','Aryabhata','Bhaskara','Rohini-1','SROSS','STSat-1'
+];
+
+const SAT_STATUSES = {
+  indian:   ['Operational','Station-keeping','Nominal','Active surveillance','Imaging mode'],
+  tracked:  ['Tracked','Catalogued','Observed','Monitor','Passive track'],
+  risk:     ['CONJUNCTION RISK','Close approach','High Pc','Collision alert','EVASION ADVISED'],
+  maneuver: ['Maneuver detected','Station-keeping burn','Δv confirmed','Orbit adjustment','Repositioning'],
+  anomaly:  ['NavIC spoof detected','Jamming signature','RF anomaly','Signal degradation','SCINTILLATION']
+};
+
 const sats = [];
+let nameIdx = 0;
 for(let p=0; p<12; p++){
   for(let s=0; s<30; s++){
-    const a = RE+400+Math.random()*1600;
-    const t = Math.random()<0.08 ? 'indian' : Math.random()<0.05 ? 'risk' : Math.random()<0.04 ? 'maneuver' : 'tracked';
+    const a = RE + 400 + Math.random()*1600;
+    const e = 0.001 + Math.random()*0.01;
+    const inc = 20 + Math.random()*80;
+    let t;
+    const r = Math.random();
+    if(r < 0.08) t = 'indian';
+    else if(r < 0.13) t = 'risk';
+    else if(r < 0.17) t = 'maneuver';
+    else if(r < 0.20) t = 'anomaly';
+    else t = 'tracked';
+
+    const period = 2*Math.PI*Math.sqrt((a*a*a)/MU)/60; // minutes
+    const alt = a - RE;
+    const name = SAT_NAMES[nameIdx % SAT_NAMES.length] || ('OBJ-' + (nameIdx+25000));
+    const id = 25000 + nameIdx;
+    const status = SAT_STATUSES[t][Math.floor(Math.random()*SAT_STATUSES[t].length)];
+
     sats.push({
-      a, e:0.001+Math.random()*0.01, i:20+Math.random()*80,
-      omega:p*30+Math.random()*5, w:Math.random()*360,
-      M0:(s*12+Math.random()*5)*Math.PI/180, type:t,
+      a, e, i: inc,
+      omega: p*30 + Math.random()*5,
+      w: Math.random()*360,
+      M0: (s*12 + Math.random()*5)*Math.PI/180,
+      type: t, name, id, status, alt, period,
       phase: Math.random()*Math.PI*2
     });
+    nameIdx++;
   }
 }
 document.getElementById('catCount').textContent = sats.length;
@@ -438,23 +629,264 @@ function translate(m, x,y,z) {
   return m;
 }
 
+/* ── Layer Visibility State ── */
+const layers = {
+  indian: true, tracked: true, risk: true, maneuver: true, anomaly: true,
+  trails: true, grid: true, volume: true
+};
+
+/* ── Time Control State ── */
+let timeSpeed = 1.0;
+let paused = false;
+let simT = 0;
+
+/* ── Inverse 4x4 (for unprojection) ── */
+function invert4(out, m) {
+  const a00=m[0],a01=m[1],a02=m[2],a03=m[3],a10=m[4],a11=m[5],a12=m[6],a13=m[7];
+  const a20=m[8],a21=m[9],a22=m[10],a23=m[11],a30=m[12],a31=m[13],a32=m[14],a33=m[15];
+  const b00=a00*a11-a01*a10, b01=a00*a12-a02*a10, b02=a00*a13-a03*a10;
+  const b03=a01*a12-a02*a11, b04=a01*a13-a03*a11, b05=a02*a13-a03*a12;
+  const b06=a20*a31-a21*a30, b07=a20*a32-a22*a30, b08=a20*a33-a23*a30;
+  const b09=a21*a32-a22*a31, b10=a21*a33-a23*a31, b11=a22*a33-a23*a32;
+  let det = b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06;
+  if(!det) return null; det=1.0/det;
+  out[0]=(a11*b11-a12*b10+a13*b09)*det; out[1]=(a02*b10-a01*b11-a03*b09)*det;
+  out[2]=(a31*b05-a32*b04+a33*b03)*det; out[3]=(a22*b04-a21*b05-a23*b03)*det;
+  out[4]=(a12*b08-a10*b11-a13*b07)*det; out[5]=(a00*b11-a02*b08+a03*b07)*det;
+  out[6]=(a32*b02-a30*b05-a33*b01)*det; out[7]=(a20*b05-a22*b02+a23*b01)*det;
+  out[8]=(a10*b10-a11*b08+a13*b06)*det; out[9]=(a01*b08-a00*b10-a03*b06)*det;
+  out[10]=(a30*b04-a31*b02+a33*b00)*det; out[11]=(a21*b02-a20*b04-a23*b00)*det;
+  out[12]=(a11*b07-a10*b09-a12*b06)*det; out[13]=(a00*b09-a01*b07+a02*b06)*det;
+  out[14]=(a31*b01-a30*b03-a32*b00)*det; out[15]=(a20*b03-a21*b01+a22*b00)*det;
+  return out;
+}
+
+/* ── Project world point to screen coords ── */
+function projectPoint(mvp, x,y,z) {
+  const xp = mvp[0]*x + mvp[4]*y + mvp[8]*z + mvp[12];
+  const yp = mvp[1]*x + mvp[5]*y + mvp[9]*z + mvp[13];
+  const zp = mvp[2]*x + mvp[6]*y + mvp[10]*z + mvp[14];
+  const wp = mvp[3]*x + mvp[7]*y + mvp[11]*z + mvp[15];
+  if(wp <= 0) return null;
+  const ndcx = xp/wp, ndcy = yp/wp;
+  return {
+    x: (ndcx * 0.5 + 0.5) * canvas.width,
+    y: (-ndcy * 0.5 + 0.5) * canvas.height,
+    z: zp/wp
+  };
+}
+
+/* ── Hover / Click Picking ── */
+let hoveredSat = -1;
+let selectedSat = -1;
+
+function pickSat(mx, my, mvp, t) {
+  let best = -1, bestD = Infinity;
+  sats.forEach((s, idx) => {
+    if(!layers[s.type]) return;
+    const p = kepler(s.a, s.e, s.i, s.omega, s.w, s.M0, t);
+    const sp = projectPoint(mvp, p.x, p.y, p.z);
+    if(!sp || sp.z < -1 || sp.z > 1) return;
+    const dx = sp.x - mx, dy = sp.y - my;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const threshold = SIZES[s.type] * (canvas.width/1600) * 2.5;
+    if(dist < threshold && dist < bestD) { best = idx; bestD = dist; }
+  });
+  return best;
+}
+
+function updateCursor(mx, my, mvp, t) {
+  const h = pickSat(mx, my, mvp, t);
+  if(h !== hoveredSat) {
+    hoveredSat = h;
+    canvas.classList.toggle('hover-sat', h >= 0);
+  }
+}
+
+/* ── Tooltip ── */
+const tooltip = document.getElementById('tooltip');
+function showTooltip(sat, mx, my) {
+  const c = COLORS[sat.type];
+  const rgb = `rgb(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)})`;
+  document.getElementById('ttDot').style.background = rgb;
+  document.getElementById('ttName').textContent = sat.name;
+  document.getElementById('ttType').textContent = sat.type;
+  document.getElementById('ttType').style.color = rgb;
+  document.getElementById('ttId').textContent = sat.id;
+  document.getElementById('ttAlt').textContent = Math.round(sat.alt) + ' km';
+  document.getElementById('ttInc').textContent = sat.i.toFixed(1) + '°';
+  document.getElementById('ttEcc').textContent = sat.e.toFixed(4);
+  document.getElementById('ttPeriod').textContent = sat.period.toFixed(1) + ' min';
+  document.getElementById('ttStatus').textContent = sat.status;
+  tooltip.style.display = 'block';
+  const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+  let tx = mx + 16, ty = my + 16;
+  if(tx + tw > window.innerWidth) tx = mx - tw - 16;
+  if(ty + th > window.innerHeight) ty = my - th - 16;
+  tooltip.style.left = tx + 'px';
+  tooltip.style.top = ty + 'px';
+}
+function hideTooltip() {
+  tooltip.style.display = 'none';
+  selectedSat = -1;
+}
+
+/* ── Orbit Trails (precompute one orbit per sat) ── */
+const trailPts = [];
+const trailCounts = [];
+for(let s of sats) {
+  const pts = [];
+  const n = Math.sqrt(MU/(s.a*s.a*s.a));
+  const T = 2*Math.PI/n;
+  for(let k=0; k<=48; k++){
+    const t = k/48 * T;
+    const p = kepler(s.a, s.e, s.i, s.omega, s.w, s.M0, t);
+    pts.push(p.x, p.y, p.z);
+  }
+  trailPts.push(new Float32Array(pts));
+  trailCounts.push(49);
+}
+const bTrails = sats.map(() => gl.createBuffer());
+
+/* ── Draw Atmosphere ── */
+function drawAtmo(mvp) {
+  gl.useProgram(pAtmo);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bAtmoPos);
+  gl.enableVertexAttribArray(locAtmo.aPos);
+  gl.vertexAttribPointer(locAtmo.aPos, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bAtmoInd);
+  gl.uniformMatrix4fv(locAtmo.uMVP, false, mvp);
+  gl.uniform3f(locAtmo.uSun, 0.3, 0.7, 0.6);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
+  gl.drawElements(gl.TRIANGLES, atmoGeo.ind.length, gl.UNSIGNED_SHORT, 0);
+  gl.disable(gl.CULL_FACE);
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+}
+
+/* ── Draw Starfield ── */
+function drawStars(mvp) {
+  gl.useProgram(pStar);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bStars);
+  gl.enableVertexAttribArray(locStar.aPos);
+  gl.vertexAttribPointer(locStar.aPos, 3, gl.FLOAT, false, 0, 0);
+  gl.uniformMatrix4fv(locStar.uMVP, false, mvp);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  gl.drawArrays(gl.POINTS, 0, 800);
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+}
+
+/* ── Draw Grid ── */
+function drawGrid(mvp) {
+  gl.useProgram(pLine);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bGrid);
+  gl.enableVertexAttribArray(locLine.aPos);
+  gl.vertexAttribPointer(locLine.aPos, 3, gl.FLOAT, false, 0, 0);
+  gl.uniformMatrix4fv(locLine.uMVP, false, mvp);
+  gl.uniform3f(locLine.uCol, 0.0, 0.5, 0.7);
+  gl.uniform1f(locLine.uAlpha, 0.15);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  gl.drawArrays(gl.LINES, 0, GRID_VERTS);
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+}
+
+/* ── Draw Orbit Trails ── */
+function drawTrails(mvp) {
+  gl.useProgram(pLine);
+  gl.uniform3f(locLine.uCol, 0.4, 0.5, 0.6);
+  gl.uniform1f(locLine.uAlpha, 0.12);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  sats.forEach((s, idx) => {
+    if(!layers[s.type]) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, bTrails[idx]);
+    gl.bufferData(gl.ARRAY_BUFFER, trailPts[idx], gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(locLine.aPos);
+    gl.vertexAttribPointer(locLine.aPos, 3, gl.FLOAT, false, 0, 0);
+    gl.uniformMatrix4fv(locLine.uMVP, false, mvp);
+    gl.drawArrays(gl.LINE_STRIP, 0, trailCounts[idx]);
+  });
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+}
+
 /* ── Camera ── */
 let camDist = 4.5, camLat = 20, camLon = 78, autoRotate = true;
 let mouseDown = false, lastMX = 0, lastMY = 0;
-canvas.addEventListener('mousedown', e=>{ mouseDown=true; lastMX=e.clientX; lastMY=e.clientY; autoRotate=false; });
+
+// Track mouse for hover detection
+let mouseX = 0, mouseY = 0;
+
+canvas.addEventListener('mousedown', e=>{
+  mouseDown = true;
+  lastMX = e.clientX; lastMY = e.clientY;
+  autoRotate = false;
+  // Click to identify
+  if(hoveredSat >= 0) {
+    selectedSat = hoveredSat;
+    showTooltip(sats[selectedSat], e.clientX, e.clientY);
+  } else {
+    hideTooltip();
+  }
+});
 window.addEventListener('mouseup', ()=>mouseDown=false);
 window.addEventListener('mousemove', e=>{
+  mouseX = e.clientX; mouseY = e.clientY;
   if(!mouseDown) return;
   camLon += (e.clientX-lastMX)*0.3;
   camLat -= (e.clientY-lastMY)*0.3;
   camLat = Math.max(-85, Math.min(85, camLat));
   lastMX=e.clientX; lastMY=e.clientY;
+  // Hide tooltip while dragging
+  if(selectedSat >= 0) hideTooltip();
 });
 canvas.addEventListener('wheel', e=>{
   camDist *= (1 + e.deltaY*0.001);
   camDist = Math.max(1.5, Math.min(15, camDist));
   e.preventDefault();
 });
+
+/* ── Layer Toggle Handlers ── */
+document.querySelectorAll('.layer-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const layer = btn.dataset.layer;
+    layers[layer] = !layers[layer];
+    btn.classList.toggle('on', layers[layer]);
+  });
+});
+
+/* ── Time Control Handlers ── */
+const btnPause = document.getElementById('btnPause');
+const btnSpeed1 = document.getElementById('btnSpeed1');
+const btnSpeed5 = document.getElementById('btnSpeed5');
+const btnSpeed20 = document.getElementById('btnSpeed20');
+const tspeedLabel = document.getElementById('tspeedLabel');
+
+function setSpeed(s) {
+  timeSpeed = s;
+  paused = false;
+  [btnSpeed1, btnSpeed5, btnSpeed20].forEach(b => b.classList.remove('active'));
+  if(s===1) btnSpeed1.classList.add('active');
+  if(s===5) btnSpeed5.classList.add('active');
+  if(s===20) btnSpeed20.classList.add('active');
+  tspeedLabel.textContent = (s===0 ? 'PAUSED' : s+'×');
+  btnPause.textContent = '⏸ Pause';
+}
+
+btnPause.addEventListener('click', () => {
+  paused = !paused;
+  btnPause.textContent = paused ? '▶ Play' : '⏸ Pause';
+  tspeedLabel.textContent = paused ? 'PAUSED' : timeSpeed+'×';
+});
+btnSpeed1.addEventListener('click', () => setSpeed(1));
+btnSpeed5.addEventListener('click', () => setSpeed(5));
+btnSpeed20.addEventListener('click', () => setSpeed(20));
 
 /* ── Render ── */
 function drawGlobe(mvp) {
@@ -482,12 +914,21 @@ const bSatCol  = gl.createBuffer();
 
 function drawSats(mvp, t) {
   const pos=[], size=[], col=[];
-  sats.forEach(s => {
+  sats.forEach((s, idx) => {
+    if(!layers[s.type]) return;
     const p = kepler(s.a, s.e, s.i, s.omega, s.w, s.M0, t);
     pos.push(p.x, p.y, p.z);
-    size.push(SIZES[s.type] * (canvas.width/1600));
+    // Pulsing effect for high-priority satellites (risk, maneuver, anomaly)
+    let baseSize = SIZES[s.type];
+    if(s.type === 'risk' || s.type === 'maneuver' || s.type === 'anomaly') {
+      baseSize *= (1.0 + 0.3 * Math.sin(t * 3 + s.phase));
+    }
+    // Highlight hovered/selected satellite
+    if(idx === hoveredSat || idx === selectedSat) baseSize *= 1.8;
+    size.push(baseSize * (canvas.width/1600));
     col.push(...COLORS[s.type]);
   });
+  if(pos.length === 0) return;
   gl.useProgram(pPoint);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, bSatPos);
@@ -508,7 +949,7 @@ function drawSats(mvp, t) {
   gl.uniformMatrix4fv(locPoint.uMVP, false, mvp);
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.depthMask(false);
-  gl.drawArrays(gl.POINTS, 0, sats.length);
+  gl.drawArrays(gl.POINTS, 0, pos.length/3);
   gl.depthMask(true);
   gl.disable(gl.BLEND);
 }
@@ -529,9 +970,19 @@ function drawLines(mvp, b, count, color, alpha) {
 }
 
 let startT = performance.now();
+let lastFrameT = 0;
+
 function frame() {
-  const now = (performance.now() - startT) / 1000;
-  if(autoRotate) camLon += 0.05;
+  const nowMs = performance.now();
+  const dt = (nowMs - lastFrameT) / 1000;
+  lastFrameT = nowMs;
+
+  if(!paused) {
+    simT += dt * timeSpeed;
+  }
+  const simTime = simT;
+
+  if(autoRotate) camLon += 0.05 * timeSpeed;
 
   const aspect = canvas.width / canvas.height;
   const proj = mat4();
@@ -545,14 +996,38 @@ function frame() {
   const mvp = mat4();
   multiply(mvp, proj, view);
 
-  gl.clearColor(0.04, 0.05, 0.10, 1.0);
+  // Update hover state when not dragging (works even when paused)
+  if(!mouseDown) {
+    updateCursor(mouseX * (canvas.width/window.innerWidth), mouseY * (canvas.height/window.innerHeight), mvp, simTime);
+  }
+
+  // Update tooltip position if a satellite is selected and camera moves
+  if(selectedSat >= 0) {
+    const s = sats[selectedSat];
+    const p = kepler(s.a, s.e, s.i, s.omega, s.w, s.M0, simTime);
+    const sp = projectPoint(mvp, p.x, p.y, p.z);
+    if(sp && sp.z > -1 && sp.z < 1) {
+      // Convert canvas coords to CSS pixels
+      const cssX = sp.x * (window.innerWidth/canvas.width);
+      const cssY = sp.y * (window.innerHeight/canvas.height);
+      showTooltip(s, cssX, cssY);
+    } else {
+      hideTooltip();
+    }
+  }
+
+  gl.clearColor(0.02, 0.03, 0.08, 1.0);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
 
+  drawStars(mvp);
+  if(layers.grid) drawGrid(mvp);
   drawGlobe(mvp);
-  drawSats(mvp, now);
+  drawAtmo(mvp);
+  if(layers.trails) drawTrails(mvp);
+  drawSats(mvp, simTime);
+  if(layers.volume) drawLines(mvp, bVolume, volPts.length/3, [0.0,0.78,1.0], 0.3);
   drawLines(mvp, bCorridor, corridor.length/3, [0.97,0.44,0.44], 0.9);
-  drawLines(mvp, bVolume, volPts.length/3, [0.0,0.78,1.0], 0.3);
 
   requestAnimationFrame(frame);
 }
@@ -565,7 +1040,10 @@ setInterval(() => {
 document.getElementById('clock').textContent =
   new Date().toISOString().replace('T',' ').slice(0,19) + ' UTC';
 
-if(gl) requestAnimationFrame(frame);
+if(gl) {
+  lastFrameT = performance.now();
+  requestAnimationFrame(frame);
+}
 </script>
 </body>
 </html>
