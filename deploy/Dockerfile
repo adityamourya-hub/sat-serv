@@ -44,9 +44,11 @@ RUN ldconfig
 WORKDIR /app
 COPY --from=builder /app/ssis_engine .
 COPY --from=builder /app/pkg/ml/models ./pkg/ml/models
+COPY --from=builder /app/configs ./configs
 
 # SSIS Operational Environment Variables
 ENV SSIS_MODEL_DIR=/app/pkg/ml/models
+ENV SSIS_CONFIG_PATH=/app/configs
 ENV SSIS_GRPC_PORT=50051
 ENV SSIS_REST_PORT=8080
 ENV LD_LIBRARY_PATH=/usr/local/lib

@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"ssis/pkg/catalog"
 	"ssis/pkg/common"
 	"ssis/pkg/cryptography"
@@ -19,8 +21,6 @@ import (
 	"ssis/pkg/orbital"
 	"ssis/pkg/persistence"
 	"ssis/pkg/server"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type SatelliteEntry struct {
@@ -162,6 +162,7 @@ func run() error {
 		keyFile := os.Getenv("SSIS_GRPC_KEY")
 
 		fmt.Printf("  -> Hardened gRPC server starting on :50051 (mTLS: %v)\n", cfg.Security.MTLSEnabled)
+
 		tlsConfig := &tls.Config{}
 		if certFile != "" && keyFile != "" {
 			cert, err := tls.LoadX509KeyPair(certFile, keyFile)

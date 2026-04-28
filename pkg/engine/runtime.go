@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"math"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -151,7 +152,11 @@ func NewRuntime(capacity int, store *catalog.Store, signer *cryptography.Signer,
 		r.alertRepo = alerts.NewRepository(dbPool)
 
 		// Create evaluator with rules config path
-		rulesPath := "configs/alert_rules.yaml"
+		configPath := os.Getenv("SSIS_CONFIG_PATH")
+		if configPath == "" {
+			configPath = "configs"
+		}
+		rulesPath := fmt.Sprintf("%s/alert_rules.yaml", configPath)
 		eval, err := alerts.NewEvaluator(rulesPath, r.alertRepo, r.sseHub, signer)
 		if err != nil {
 			slog.Warn("Failed to initialize alert evaluator", "error", err)

@@ -43,7 +43,7 @@ END $$;
 -- ============================================================
 CREATE TABLE IF NOT EXISTS alerts (
     -- Identity
-    alert_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    alert_id        UUID NOT NULL DEFAULT gen_random_uuid(),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     -- Classification
@@ -86,10 +86,13 @@ CREATE TABLE IF NOT EXISTS alerts (
 
     -- Cryptographic integrity
     signature       BYTEA,                -- Ed25519 signature of alert payload
-    
+
     -- Auto-escalation
     escalation_deadline TIMESTAMPTZ,      -- When to auto-escalate if unacknowledged
-    escalated_to    alert_severity
+    escalated_to    alert_severity,
+
+    -- Composite primary key for TimescaleDB hypertable (must include partitioning column)
+    PRIMARY KEY (alert_id, created_at)
 );
 
 -- Convert to hypertable for time-series performance

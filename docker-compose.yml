@@ -13,7 +13,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./init-db:/docker-entrypoint-initdb.d # Auto-runs your schema
+      - ./init-db:/docker-entrypoint-initdb.d # Auto-runs your schema (including 02_alerts.sql)
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aditya_admin -d ssis_db"]
@@ -29,6 +29,37 @@ services:
     volumes:
       - shared_mem:/tmp
     shm_size: '2gb' # Direct allocation of shared memory
+
+  # SSIS Sovereign Engine with Alerting System
+  engine:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    container_name: ssis_engine
+    restart: always
+    ports:
+      - "50051:50051" # gRPC
+      - "8080:8080"   # REST API + SSE
+    volumes:
+      - ./configs:/app/configs:ro # Mount alert rules config (read-only)
+      - ./pkg/ml/models:/app/pkg/ml/models:ro # ONNX models
+    environment:
+      - SSIS_DB_URL=postgres://aditya_admin:changeme@db:5432/ssis_db?sslmode=disable
+      - SSIS_CONFIG_PATH=/app/configs
+      - SSIS_MODEL_DIR=/app/pkg/ml/models
+      - SSIS_GRPC_PORT=50051
+      - SSIS_REST_PORT=8080
+      - LD_LIBRARY_PATH=/usr/local/lib
+    depends_on:
+      db:
+        condition: service_healthy
+      plasma:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Analytics Template (Python/MPDAF/JAX)
   analytics:
