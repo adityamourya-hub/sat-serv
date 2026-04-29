@@ -32,9 +32,9 @@ class StreamingRadarDataset(Dataset):
         # 2. Simulate CPI
         iq_np = self.sim.simulate_cpi(targets, noise_figure_db=noise_fig)
         
-        # 3. Process into torch format [2, P, R, E]
+        # 3. Process into torch format [P, R, E, 2]
         # Normalization: Applying 1e8 scale
-        iq = torch.from_numpy(np.stack([iq_np.real, iq_np.imag], axis=-1)).float().permute(3, 0, 1, 2) * 1e8
+        iq = torch.from_numpy(np.stack([iq_np.real, iq_np.imag], axis=-1)).float() * 1e8
         
         # 4. Create labels [50, 6]
         # [range, doppler, az, el, rcs, confidence]
@@ -48,7 +48,7 @@ class StreamingRadarDataset(Dataset):
             labels[i, 5] = 1.0 # Present
             
         if self.augmentation:
-            iq = self.augmentation(iq.unsqueeze(0)).squeeze(0)
+            iq = self.augmentation(iq)  # Augmentation handles shape transformation
             
         return iq, labels
 

@@ -75,11 +75,12 @@ class RadarAugmentation:
         return iq_aug
 
     def __call__(self, iq):
-        # iq: [B, 128, 1024, 64, 2] -> Transform to [B, 2, P, R, E] if needed
-        # We assume training iq is already in [B, 2, P, R, E]
-        
+        # iq: [P, R, E, 2] -> Transform to [B, 2, P, R, E] for augmentation, then back
         # Ensure iq is on the correct device
         iq = iq.to(self.device)
+        
+        # Add batch dimension and permute to [B, 2, P, R, E] for augmentation
+        iq = iq.unsqueeze(0).permute(0, 4, 1, 2, 3)
         
         snr = random.uniform(*self.noise_range)
         iq = self.add_noise(iq, snr)
@@ -91,5 +92,8 @@ class RadarAugmentation:
             iq = self.add_ground_clutter(iq)
             
         iq = self.add_phase_jitter(iq, jitter_deg=random.uniform(0.1, 2.0))
+        
+        # Permute back to [B, P, R, E, 2] and remove batch dimension
+        iq = iq.permute(0, 2, 3, 4, 1).squeeze(0)
         
         return iq
