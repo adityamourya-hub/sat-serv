@@ -86,22 +86,19 @@ def evidential_radar_loss(alphas, y_present, lambda_reg=0.2):
     """
     Dirichlet Loss with Non-Uniform Clutter Prior.
     y_present: [B, max_detections] binary target mask
+    alphas: [B, max_detections], evidence per detection slot (> 1.0)
     """
-    S = torch.sum(alphas, dim=-1, keepdim=True)
-    p = alphas / S
+    # Per-slot belief: alpha_i / (alpha_i + alpha_clutter)
+    # Since we only have one alpha per slot, treat it as log-evidence
+    # Use MSE between normalized belief and y_present (avoids [0,1] constraint of BCE)
+    S = alphas + 1.0  # S = alpha + alpha_clutter (assume clutter alpha=1)
+    p = (alphas - 1.0) / S  # belief mass in [0, 1)
     
-    # MSE loss for classification (present vs absent)
-    # y_present maps to the "target" channel of the Dirichlet
-    # For a binary detection, we treat it as 2-class Dirichlet: [p_target, p_clutter]
-    # Here alphas is [B, max_detections], we use it as the target evidence
-    
-    # Regression error (simplified)
-    err = F.binary_cross_entropy(torch.clamp(p, 1e-6, 1-1e-6), y_present)
+    # MSE loss — no [0,1] input constraint
+    err = F.mse_loss(p, y_present)
     
     # Regularization against Clutter Prior
-    # In a full logic, we'd have a 2nd alpha for clutter. 
-    # Here we use a generic penalty on misleading evidence.
-    penalty = lambda_reg * torch.mean(torch.sum((1-y_present) * (alphas - 1), dim=-1))
+    penalty = lambda_reg * torch.mean(torch.sum((1 - y_present) * (alphas - 1), dim=-1))
     
     return err + penalty
 
