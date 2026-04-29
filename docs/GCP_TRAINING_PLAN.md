@@ -290,7 +290,12 @@ model.apply(init_weights)
 # NaN hook to identify problematic layer
 nan_hooks = []
 def nan_hook(module, inp, out):
-    if torch.isnan(out).any():
+    # Handle both tensor and tuple outputs
+    if isinstance(out, tuple):
+        for i, o in enumerate(out):
+            if torch.isnan(o).any():
+                print(f"  🔴 NaN detected in {type(module).__name__} output[{i}]", flush=True)
+    elif torch.isnan(out).any():
         print(f"  🔴 NaN detected in {type(module).__name__}", flush=True)
 
 for name, module in model.named_modules():
