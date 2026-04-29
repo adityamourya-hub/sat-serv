@@ -15,6 +15,8 @@ ai/models/**
 ai/training/**
 ai/simulator/data/**
 pkg/ml/models/**
+!pkg/ml/models/*.onnx
+!pkg/ml/models/*.pt
 pkg/ml/pax/models/**
 models/llm/**
 *.jsonl

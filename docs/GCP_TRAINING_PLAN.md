@@ -40,7 +40,7 @@ I've audited your entire codebase. Here's exactly what exists for each model:
 ```bash
 # Run locally (your Mac)
 export PROJECT_ID=$(gcloud config get-value project)
-export BUCKET="ssis-training-$(date +%s)"
+export BUCKET="ssis-training-1776624951"
 export ZONE="us-central1-a"   # cheapest L4 zone
 
 gcloud storage buckets create gs://${BUCKET} \
@@ -80,8 +80,12 @@ gcloud compute ssh ssis-trainer --zone=${ZONE}
 sudo nvidia-smi   # Verify L4 GPU
 
 # Clone repo
-git clone https://github.com/adityamourya-hub/idex.git /ssis
-cd /ssis
+git clone https://github.com/adityamourya-hub/idex.git /idex
+cd /idex
+
+#Virtual env -
+
+source ~/ssis-env/bin/activate && cd ~/idex
 
 # Install Python deps
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
@@ -93,17 +97,20 @@ pip3 install jax[cuda12] jaxlib   # For trajectory generator only
 python3 -c "import torch; print(f'CUDA: {torch.cuda.is_available()}, Device: {torch.cuda.get_device_name(0)}')"
 # Expected: CUDA: True, Device: NVIDIA L4
 ```
+#(ssis-env) root@ssis-all-0423-1753:~/idex# python3 -c "import torch; print(f'CUDA: {torch.cuda.#is_available()}, Device: {torch.cuda.get_device_name(0)}')"
+#CUDA: True, Device: Tesla V100-SXM2-16GB
+#(ssis-env) root@ssis-all-0423-1753:~/idex#
 
 ### 1.4 Upload Existing Weights (from your Mac)
 
 ```bash
 # Run locally — push existing trained weights to VM
 gcloud compute scp --recurse \
-    pkg/ml/models/ ssis-trainer:/ssis/pkg/ml/models/ \
+    pkg/ml/models/ ssis-trainer:/idex/pkg/ml/models/ \
     --zone=${ZONE}
 
 gcloud compute scp --recurse \
-    weights/ ssis-trainer:/ssis/weights/ \
+    weights/ ssis-trainer:/idex/weights/ \
     --zone=${ZONE}
 ```
 
@@ -120,7 +127,7 @@ This is the **volumetric scan + blind spot** demo piece. Uses the existing `ai/v
 #### 2A.1 Training Command
 
 ```bash
-cd /ssis
+cd /idex
 
 # Create the training script wrapper for spot-safe execution
 cat > /tmp/train_sensor_tasking.py << 'SCRIPT'
@@ -192,6 +199,7 @@ print("\n✅ Sensor Tasking RL training complete!")
 print(f"Production ONNX: pkg/ml/models/sensor_tasking.onnx")
 SCRIPT
 
+mkdir -p weights/sensor_tasking
 python3 /tmp/train_sensor_tasking.py 2>&1 | tee weights/sensor_tasking/train.log
 ```
 
@@ -209,7 +217,7 @@ This is the full radar signal processing pipeline. Uses streaming synthetic IQ d
 #### 2B.1 Training Command
 
 ```bash
-cd /ssis
+cd /idex
 
 cat > /tmp/train_ateena_radar.py << 'SCRIPT'
 import sys, os, signal, time
@@ -345,7 +353,7 @@ The Go engine (`pkg/ml/inference.go:PredictRapidScore`) expects **4 ONNX outputs
 #### 3A.1 Train XGBoost Base + Neural Evidential Wrapper
 
 ```bash
-cd /ssis
+cd /idex
 
 cat > /tmp/train_rapid_ranker.py << 'SCRIPT'
 import sys, os, json
@@ -525,7 +533,7 @@ gsutil cp pkg/ml/models/rapid_ranker.onnx gs://${BUCKET}/weights/production/
 #### 3B.1 Generate Synthetic Trajectory Data
 
 ```bash
-cd /ssis
+cd /idex
 
 cat > /tmp/generate_hnode_data.py << 'SCRIPT'
 """Generate synthetic Kepler+drag trajectories for HNODE training."""
@@ -631,7 +639,7 @@ python3 /tmp/generate_hnode_data.py 2>&1 | tee ai/neural_ode/data/generation.log
 #### 3B.2 Train Axiom-HNODE
 
 ```bash
-cd /ssis
+cd /idex
 
 cat > /tmp/train_hnode.py << 'SCRIPT'
 """

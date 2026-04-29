@@ -21,8 +21,8 @@ import torch.nn as nn
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from enum import Enum
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 
 
 class SensorType(Enum):
@@ -379,9 +379,8 @@ def train_sensor_tasking_ppo(
         for t in range(128):  # Episode length (trajectory)
             logits, continuous, value = policy(state.unsqueeze(0))
             
-            # Sample action
-            probs = torch.softmax(logits, dim=-1)
-            station_dist = torch.distributions.Categorical(probs)
+            # Sample action (use logits directly for numerical stability)
+            station_dist = torch.distributions.Categorical(logits=logits)
             station_idx = station_dist.sample()
             
             action = torch.cat([
