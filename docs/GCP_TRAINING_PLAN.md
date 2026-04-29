@@ -287,20 +287,26 @@ def init_weights(m):
 
 model.apply(init_weights)
 
-# NaN hook to identify problematic layer
+# NaN hook to identify problematic layer (defensive)
 nan_hooks = []
 def nan_hook(module, inp, out):
-    # Handle both tensor and tuple outputs
-    if isinstance(out, tuple):
-        for i, o in enumerate(out):
-            if torch.isnan(o).any():
-                print(f"  🔴 NaN detected in {type(module).__name__} output[{i}]", flush=True)
-    elif torch.isnan(out).any():
-        print(f"  🔴 NaN detected in {type(module).__name__}", flush=True)
+    try:
+        # Only check if output is a tensor
+        if isinstance(out, torch.Tensor):
+            if torch.isnan(out).any():
+                print(f"  🔴 NaN detected in {type(module).__name__}", flush=True)
+        elif isinstance(out, (tuple, list)):
+            for i, o in enumerate(out):
+                if isinstance(o, torch.Tensor) and torch.isnan(o).any():
+                    print(f"  🔴 NaN detected in {type(module).__name__} output[{i}]", flush=True)
+    except Exception as e:
+        pass  # Skip hooks that fail on unknown types
 
+# Only register hooks on Conv, Linear, BatchNorm layers (not all modules)
 for name, module in model.named_modules():
-    hook = module.register_forward_hook(nan_hook)
-    nan_hooks.append(hook)
+    if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Linear, nn.BatchNorm2d)):
+        hook = module.register_forward_hook(nan_hook)
+        nan_hooks.append(hook)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=1e-5)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
 # scaler = GradScaler()  # AMP disabled due to NaN instability
