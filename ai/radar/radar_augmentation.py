@@ -21,7 +21,7 @@ class RadarAugmentation:
         snr_linear = 10 ** (snr_db / 10)
         signal_power = torch.mean(torch.sum(iq**2, dim=1))
         noise_power = signal_power / snr_linear
-        noise = torch.randn_like(iq) * torch.sqrt(noise_power / 2.0)
+        noise = torch.randn_like(iq, device=self.device) * torch.sqrt(noise_power / 2.0)
         return iq + noise
 
     def add_drfm_spoof(self, iq, alpha=0.5, delay_bins=5, doppler_shift=0.1):
@@ -33,7 +33,7 @@ class RadarAugmentation:
         spoof = torch.roll(iq, shifts=delay_bins, dims=3)
         # Apply Doppler phase shift: exp(j * 2pi * fd * t)
         B, C, P, R, E = iq.shape
-        t = torch.arange(P).to(self.device).float()
+        t = torch.arange(P, device=self.device).float()
         phase = 2 * np.pi * doppler_shift * t
         
         rot_r = torch.cos(phase).view(1, 1, P, 1, 1)
@@ -50,7 +50,7 @@ class RadarAugmentation:
         """
         B, C, P, R, E = iq.shape
         jitter_rad = np.radians(jitter_deg)
-        noise = torch.randn(B, 1, P, 1, E).to(self.device) * jitter_rad
+        noise = torch.randn(B, 1, P, 1, E, device=self.device) * jitter_rad
         
         rot_r = torch.cos(noise)
         rot_i = torch.sin(noise)
