@@ -242,7 +242,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
-from torch.cuda.amp import GradScaler, autocast
 from ateena_iqnet import ATeenaIQNet
 from radar_augmentation import RadarAugmentation
 from ateena_sim import ATeenaSimulator, generate_random_scenario
@@ -257,7 +256,10 @@ class StreamingRadarDataset(Dataset):
     def __getitem__(self, idx):
         targets, noise_fig = generate_random_scenario(min_targets=1, max_targets=3)
         iq_np = self.sim.simulate_cpi(targets, noise_figure_db=noise_fig)
-        iq = torch.from_numpy(np.stack([iq_np.real, iq_np.imag], axis=-1)).float() * 1e4
+        iq_raw = np.stack([iq_np.real, iq_np.imag], axis=-1).astype(np.float32)
+        # Per-sample normalization to unit std — eliminates amplitude-driven NaN
+        std = iq_raw.std() + 1e-8
+        iq = torch.from_numpy(iq_raw / std).float()
         labels = torch.zeros(50, 6)
         for i, t in enumerate(targets[:50]):
             labels[i] = torch.tensor([t['range_km'], t['velocity_kms'], t.get('azimuth_deg',0), t.get('elevation_deg',45), t.get('rcs_m2',1), 1.0])
@@ -309,8 +311,7 @@ for name, module in model.named_modules():
         nan_hooks.append(hook)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=1e-5)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
-# scaler = GradScaler()  # AMP disabled due to NaN instability
-aug = None  # Augmentation disabled to isolate NaN source
+aug = None  # Augmentation disabled; re-enable once NaN is resolved
 
 # Checkpoint path and best_loss defined before SIGTERM handler
 ckpt_path = "weights/ateena_radar/latest_checkpoint.pt"
@@ -345,7 +346,6 @@ if os.path.exists(ckpt_path):
     ckpt = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(ckpt['model_state'])
     optimizer.load_state_dict(ckpt['optimizer_state'])
-    # scaler_state not used when AMP disabled
     start_epoch = ckpt['epoch'] + 1
     best_loss = ckpt.get('best_loss', float('inf'))
     print(f"Resumed from epoch {start_epoch}, best_loss={best_loss:.4f}", flush=True)
@@ -407,7 +407,6 @@ if __name__ == '__main__':
                     'epoch': epoch, 'step': i,
                     'model_state': model.state_dict(),
                     'optimizer_state': optimizer.state_dict(),
-                    # 'scaler_state': scaler.state_dict(),
                     'loss': loss_val, 'best_loss': best_loss,
                 }, ckpt_path)
                 print(f"  💾 Step ckpt @ epoch {epoch+1} step {i}", flush=True)
@@ -415,7 +414,8 @@ if __name__ == '__main__':
             if i >= 250:
                 break
         
-        scheduler.step()
+        if n_batches > 0:
+            scheduler.step()
         avg_loss = total_loss / max(n_batches, 1)
         epoch_time = time.time() - t0
         print(f"Epoch {epoch+1}/100 | Loss: {avg_loss:.4f} | LR: {scheduler.get_last_lr()[0]:.6f} | {epoch_time:.0f}s", flush=True)
@@ -425,7 +425,6 @@ if __name__ == '__main__':
             'epoch': epoch,
             'model_state': model.state_dict(),
             'optimizer_state': optimizer.state_dict(),
-            # 'scaler_state': scaler.state_dict(),  # AMP disabled
             'loss': avg_loss,
             'best_loss': best_loss,
         }

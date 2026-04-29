@@ -23,53 +23,45 @@ class ComplexBatchNorm2d(nn.Module):
         self.beta = nn.Parameter(torch.zeros(num_features, 2))
 
     def forward(self, x):
-        # x: [B, 2, C, H, W] where dim 1 is (I, Q)
-        # Handle 3D input [B, 2, R] by treating as [B, 2, 1, 1, R]
-        original_shape = x.shape
-        if x.dim() == 3:
+        # Stable normalization: normalize I and Q channels independently
+        # Handles both 3D [B, 2, R] and 5D [B, 2, C, H, W] inputs
+        is_3d = (x.dim() == 3)
+        if is_3d:
             B, D, R = x.shape
             x = x.view(B, D, 1, 1, R)
         
         B, D, C, H, W = x.shape
-        x_flat = x.permute(0, 2, 3, 4, 1).reshape(-1, 2) # [B*C*H*W, 2]
+        N = B * C * H * W
+        x_flat = x.permute(0, 2, 3, 4, 1).reshape(N, 2)  # [N, 2]
         
         if self.training:
-            mean = x_flat.mean(dim=0)
-            # Update mean tracking
-            self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean
-            
-            # Center and calculate covariance
-            x_centered = x_flat - mean
-            cov = (x_centered.transpose(0, 1) @ x_centered) / (x_flat.shape[0] - 1)
-            self.running_cov = (1 - self.momentum) * self.running_cov + self.momentum * cov
+            mean = x_flat.mean(dim=0)  # [2]
+            var = x_flat.var(dim=0, unbiased=False).clamp(min=self.eps)  # [2]
+            with torch.no_grad():
+                # Update all num_features rows consistently
+                self.running_mean.copy_(
+                    (1 - self.momentum) * self.running_mean + self.momentum * mean.unsqueeze(0).expand_as(self.running_mean)
+                )
+                new_cov = torch.diag(var)
+                self.running_cov.copy_(
+                    (1 - self.momentum) * self.running_cov + self.momentum * new_cov.unsqueeze(0).expand_as(self.running_cov)
+                )
         else:
-            mean = self.running_mean
-            cov = self.running_cov
-            x_centered = x_flat - mean
-
-        # Optimize eigendecomposition for 2x2 matrix using direct formula
-        cov_eps = cov + self.eps * torch.eye(2).to(x.device)
-        det_cov = cov_eps[0,0] * cov_eps[1,1] - cov_eps[0,1] * cov_eps[1,0]
-        inv_det = 1.0 / torch.sqrt(torch.clamp(det_cov, min=1e-6))
-        inv_cov = torch.zeros_like(cov_eps)
-        inv_cov[0,0] = inv_det * cov_eps[1,1]
-        inv_cov[1,1] = inv_det * cov_eps[0,0]
-        inv_cov[0,1] = -inv_det * cov_eps[0,1]
-        inv_cov[1,0] = -inv_det * cov_eps[1,0]
-        whitener = torch.sqrt(inv_cov)  # Approximate square root inverse
-        x_norm = x_centered @ whitener
-
-        # Scale and Shift (W is 2x2 learned weight)
-        # For 3D input case, use simpler whitening without spatial dimensions
-        if original_shape == (B, D, R):
-            # Simple whitening for 1D case
-            out = x_norm @ self.W[0] + self.beta[0]
-            out = out.view(B, 2, R)
-        else:
-            out = (x_norm.unsqueeze(1) @ self.W.repeat(B*H*W, 1, 1)).squeeze(1) + self.beta.repeat(B*H*W, 1)
-            out = out.reshape(B, H, W, C, 2).permute(0, 4, 3, 1, 2)
+            mean = self.running_mean[0]
+            var = self.running_cov[0].diagonal().clamp(min=self.eps)
         
-        return out
+        x_norm = (x_flat - mean) / torch.sqrt(var + self.eps)  # [N, 2]
+        
+        # Scale and shift (diagonal of W for numerical stability)
+        scale = self.W[0].diagonal()  # [2]
+        out = x_norm * scale + self.beta[0]  # [N, 2]
+        
+        # Restore original shape
+        if is_3d:
+            # out: [B*R, 2] -> [B, 2, R]
+            return out.reshape(B, W, 2).permute(0, 2, 1)  # W=R when is_3d
+        else:
+            return out.reshape(B, C, H, W, 2).permute(0, 4, 1, 2, 3)
 
 class ModReLU(nn.Module):
     """
