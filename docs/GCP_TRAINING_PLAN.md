@@ -274,6 +274,28 @@ class Config:
     n_doppler_bins = 32
 
 model = ATeenaIQNet(Config()).to(device)
+
+# Initialize with smaller weights to prevent NaN
+def init_weights(m):
+    if isinstance(m, nn.Linear) or isinstance(m, nn.Conv1d) or isinstance(m, nn.Conv2d):
+        nn.init.xavier_uniform_(m.weight, gain=0.1)
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
+    elif isinstance(m, nn.BatchNorm2d):
+        nn.init.ones_(m.weight)
+        nn.init.zeros_(m.bias)
+
+model.apply(init_weights)
+
+# NaN hook to identify problematic layer
+nan_hooks = []
+def nan_hook(module, inp, out):
+    if torch.isnan(out).any():
+        print(f"  🔴 NaN detected in {type(module).__name__}", flush=True)
+
+for name, module in model.named_modules():
+    hook = module.register_forward_hook(nan_hook)
+    nan_hooks.append(hook)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=1e-5)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
 # scaler = GradScaler()  # AMP disabled due to NaN instability
@@ -392,7 +414,7 @@ if __name__ == '__main__':
             'epoch': epoch,
             'model_state': model.state_dict(),
             'optimizer_state': optimizer.state_dict(),
-            'scaler_state': scaler.state_dict(),
+            # 'scaler_state': scaler.state_dict(),  # AMP disabled
             'loss': avg_loss,
             'best_loss': best_loss,
         }
