@@ -296,6 +296,9 @@ class PortHamiltonianSystem(nn.Module):
         # Gradient clipping to prevent exploding gradients
         grad_H = torch.nn.utils.clip_grad_norm_(grad_H, max_norm=1.0)
         
+        # Force grad_H to correct device (debugging device mismatch)
+        grad_H = grad_H.to(x.device)
+        
         # 2. Get structure matrices
         J = self.get_interconnection_matrix(x.device).to(x.device)
         R = self.get_dissipation_matrix(x, z_latent).to(x.device)
