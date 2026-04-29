@@ -433,7 +433,7 @@ class SymplecticAugmentedLoss(nn.Module):
         p = flat_traj[:, 3:6]
         
         # Energy constraint
-        H = model.h_net(flat_traj).view(batch_size, seq_len)
+        H = model.H_net(flat_traj).view(batch_size, seq_len)
         H_mean = H.mean(dim=1, keepdim=True)
         energy_residual = H - H_mean
         h_energy = energy_residual.pow(2).mean()
