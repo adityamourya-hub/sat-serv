@@ -400,7 +400,7 @@ def train_sensor_tasking_ppo(
         rewards = []
         dones = []
         
-        for t in range(256):  # Episode length (trajectory) - increased for V100 16GB
+        for t in range(128):  # Episode length (trajectory)
             # Forward pass (keep FP32 for numerical stability)
             logits, continuous, value = policy(state.unsqueeze(0))
             
@@ -409,8 +409,9 @@ def train_sensor_tasking_ppo(
             station_idx = station_dist.sample()
             
             # Build action tensor with correct dimensions
-            # station_idx is [1] (batched), squeeze to scalar then normalize
-            station_action = station_idx.squeeze().float() / (n_stations - 1) * 2 - 1
+            # station_idx is [1] (batched), squeeze to scalar
+            # Environment expects: [station_idx (0 to n-1), azimuth_norm, elevation_norm, dwell_norm]
+            station_action = station_idx.squeeze().float()
             continuous_action = continuous.squeeze(0)
             
             # Concatenate: both are now 1D tensors
@@ -421,8 +422,8 @@ def train_sensor_tasking_ppo(
             log_probs.append(log_prob)
             values.append(value.squeeze())
             
-            # Step environment
-            next_state, reward, done, info = env.step(action.cpu().numpy())
+            # Step environment (detach action from computation graph)
+            next_state, reward, done, info = env.step(action.detach().cpu().numpy())
             
             rewards.append(reward)
             dones.append(done)
