@@ -24,7 +24,8 @@ class ComplexBatchNorm2d(nn.Module):
 
     def forward(self, x):
         # x: [B, 2, C, H, W] where dim 1 is (I, Q)
-        # Handle 3D input [B, 2, R] by reshaping to [B, 2, 1, 1, R]
+        # Handle 3D input [B, 2, R] by treating as [B, 2, 1, 1, R]
+        original_shape = x.shape
         if x.dim() == 3:
             B, D, R = x.shape
             x = x.view(B, D, 1, 1, R)
@@ -59,9 +60,16 @@ class ComplexBatchNorm2d(nn.Module):
         x_norm = x_centered @ whitener
 
         # Scale and Shift (W is 2x2 learned weight)
-        out = (x_norm.unsqueeze(1) @ self.W.repeat(B*H*W, 1, 1)).squeeze(1) + self.beta.repeat(B*H*W, 1)
+        # For 3D input case, use simpler whitening without spatial dimensions
+        if original_shape == (B, D, R):
+            # Simple whitening for 1D case
+            out = x_norm @ self.W[0] + self.beta[0]
+            out = out.view(B, 2, R)
+        else:
+            out = (x_norm.unsqueeze(1) @ self.W.repeat(B*H*W, 1, 1)).squeeze(1) + self.beta.repeat(B*H*W, 1)
+            out = out.reshape(B, H, W, C, 2).permute(0, 4, 3, 1, 2)
         
-        return out.reshape(B, H, W, C, 2).permute(0, 4, 3, 1, 2)
+        return out
 
 class ModReLU(nn.Module):
     """
