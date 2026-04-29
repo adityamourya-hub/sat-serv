@@ -257,7 +257,7 @@ class StreamingRadarDataset(Dataset):
     def __getitem__(self, idx):
         targets, noise_fig = generate_random_scenario(min_targets=1, max_targets=3)
         iq_np = self.sim.simulate_cpi(targets, noise_figure_db=noise_fig)
-        iq = torch.from_numpy(np.stack([iq_np.real, iq_np.imag], axis=-1)).float() * 1e8
+        iq = torch.from_numpy(np.stack([iq_np.real, iq_np.imag], axis=-1)).float() * 1e4
         labels = torch.zeros(50, 6)
         for i, t in enumerate(targets[:50]):
             labels[i] = torch.tensor([t['range_km'], t['velocity_kms'], t.get('azimuth_deg',0), t.get('elevation_deg',45), t.get('rcs_m2',1), 1.0])
@@ -274,7 +274,7 @@ class Config:
     n_doppler_bins = 32
 
 model = ATeenaIQNet(Config()).to(device)
-optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=1e-5)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
 scaler = GradScaler()  # AMP scaler for V100 fp16
 aug = RadarAugmentation(device=device)
@@ -297,7 +297,7 @@ def on_sigterm(sig, frame):
         'scaler_state': scaler.state_dict(),
         'loss': _cur_loss, 'best_loss': best_loss,
     }, ckpt_path)
-    os.system(f"gsutil -q cp {ckpt_path} gs://${{BUCKET}}/checkpoints/ateena_radar/emergency.pt")
+    os.system(f"gsutil -q cp {ckpt_path} gs://ssis-training-1776624951/checkpoints/ateena_radar/emergency.pt")
     print("✓ Emergency checkpoint saved.", flush=True)
 signal.signal(signal.SIGTERM, on_sigterm)
 
