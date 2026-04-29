@@ -320,102 +320,103 @@ if os.path.exists(ckpt_path):
     print(f"Resumed from epoch {start_epoch}, best_loss={best_loss:.4f}", flush=True)
 print(f"Model params: {sum(p.numel() for p in model.parameters())/1e6:.2f}M", flush=True)
 
-for epoch in range(start_epoch, 100):
-    if preempted:
-        break
-    _cur_epoch = epoch
-    
-    model.train()
-    total_loss = 0.0
-    n_batches = 0
-    t0 = time.time()
-    
-    for i, (iq_batch, labels) in enumerate(loader):
+if __name__ == '__main__':
+    for epoch in range(start_epoch, 100):
         if preempted:
             break
-        _cur_step = i
+        _cur_epoch = epoch
         
-        iq_batch = iq_batch.to(device, non_blocking=True)  # [B, P, R, E, 2]
-        labels = labels.to(device, non_blocking=True)
-        # Apply GPU augmentation per sample (aug expects [P,R,E,2] input)
-        iq_batch = torch.stack([aug(iq_batch[b]) for b in range(iq_batch.shape[0])])
+        model.train()
+        total_loss = 0.0
+        n_batches = 0
+        t0 = time.time()
         
-        optimizer.zero_grad(set_to_none=True)
-        with autocast():
-            detections, alphas, features = model(iq_batch)
-            l_reg = F.smooth_l1_loss(detections, labels)
-            l_evd = evidential_radar_loss(alphas, (labels[:, :, 5] > 0.5).float())
-            loss = l_reg + l_evd
+        for i, (iq_batch, labels) in enumerate(loader):
+            if preempted:
+                break
+            _cur_step = i
+            
+            iq_batch = iq_batch.to(device, non_blocking=True)  # [B, P, R, E, 2]
+            labels = labels.to(device, non_blocking=True)
+            # Apply GPU augmentation per sample (aug expects [P,R,E,2] input)
+            iq_batch = torch.stack([aug(iq_batch[b]) for b in range(iq_batch.shape[0])])
+            
+            optimizer.zero_grad(set_to_none=True)
+            with autocast():
+                detections, alphas, features = model(iq_batch)
+                l_reg = F.smooth_l1_loss(detections, labels)
+                l_evd = evidential_radar_loss(alphas, (labels[:, :, 5] > 0.5).float())
+                loss = l_reg + l_evd
+            
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            scaler.step(optimizer)
+            scaler.update()
+            
+            loss_val = loss.item()
+            _cur_loss = loss_val
+            total_loss += loss_val
+            n_batches += 1
+            
+            if i % 10 == 0:
+                elapsed = time.time() - t0
+                steps_per_sec = (i + 1) / max(elapsed, 1e-6)
+                print(f"  E{epoch+1} step {i}/250 loss={loss_val:.4f} ({steps_per_sec:.1f} steps/s)", flush=True)
+            
+            # Step-level checkpoint every 50 steps
+            if i > 0 and i % 50 == 0:
+                torch.save({
+                    'epoch': epoch, 'step': i,
+                    'model_state': model.state_dict(),
+                    'optimizer_state': optimizer.state_dict(),
+                    'scaler_state': scaler.state_dict(),
+                    'loss': loss_val, 'best_loss': best_loss,
+                }, ckpt_path)
+                print(f"  💾 Step ckpt @ epoch {epoch+1} step {i}", flush=True)
+            
+            if i >= 250:
+                break
         
-        scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        scaler.step(optimizer)
-        scaler.update()
+        scheduler.step()
+        avg_loss = total_loss / max(n_batches, 1)
+        epoch_time = time.time() - t0
+        print(f"Epoch {epoch+1}/100 | Loss: {avg_loss:.4f} | LR: {scheduler.get_last_lr()[0]:.6f} | {epoch_time:.0f}s", flush=True)
         
-        loss_val = loss.item()
-        _cur_loss = loss_val
-        total_loss += loss_val
-        n_batches += 1
+        # Epoch checkpoint every epoch (overwrite latest)
+        ckpt_data = {
+            'epoch': epoch,
+            'model_state': model.state_dict(),
+            'optimizer_state': optimizer.state_dict(),
+            'scaler_state': scaler.state_dict(),
+            'loss': avg_loss,
+            'best_loss': best_loss,
+        }
+        torch.save(ckpt_data, ckpt_path)
         
-        if i % 10 == 0:
-            elapsed = time.time() - t0
-            steps_per_sec = (i + 1) / max(elapsed, 1e-6)
-            print(f"  E{epoch+1} step {i}/250 loss={loss_val:.4f} ({steps_per_sec:.1f} steps/s)", flush=True)
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            torch.save(model.state_dict(), "weights/ateena_radar/best_model.pt")
+            print(f"  ⭐ New best: {best_loss:.4f}", flush=True)
         
-        # Step-level checkpoint every 50 steps
-        if i > 0 and i % 50 == 0:
-            torch.save({
-                'epoch': epoch, 'step': i,
-                'model_state': model.state_dict(),
-                'optimizer_state': optimizer.state_dict(),
-                'scaler_state': scaler.state_dict(),
-                'loss': loss_val, 'best_loss': best_loss,
-            }, ckpt_path)
-            print(f"  💾 Step ckpt @ epoch {epoch+1} step {i}", flush=True)
-        
-        if i >= 250:
-            break
+        # Sync to GCS every 5 epochs
+        if (epoch + 1) % 5 == 0:
+            os.system(f"gsutil -q cp {ckpt_path} gs://${{BUCKET}}/checkpoints/ateena_radar/")
+            print(f"  ☁️  GCS sync done (best={best_loss:.4f})", flush=True)
     
-    scheduler.step()
-    avg_loss = total_loss / max(n_batches, 1)
-    epoch_time = time.time() - t0
-    print(f"Epoch {epoch+1}/100 | Loss: {avg_loss:.4f} | LR: {scheduler.get_last_lr()[0]:.6f} | {epoch_time:.0f}s", flush=True)
-    
-    # Epoch checkpoint every epoch (overwrite latest)
-    ckpt_data = {
-        'epoch': epoch,
-        'model_state': model.state_dict(),
-        'optimizer_state': optimizer.state_dict(),
-        'scaler_state': scaler.state_dict(),
-        'loss': avg_loss,
-        'best_loss': best_loss,
-    }
-    torch.save(ckpt_data, ckpt_path)
-    
-    if avg_loss < best_loss:
-        best_loss = avg_loss
-        torch.save(model.state_dict(), "weights/ateena_radar/best_model.pt")
-        print(f"  ⭐ New best: {best_loss:.4f}", flush=True)
-    
-    # Sync to GCS every 5 epochs
-    if (epoch + 1) % 5 == 0:
-        os.system(f"gsutil -q cp {ckpt_path} gs://${{BUCKET}}/checkpoints/ateena_radar/")
-        print(f"  ☁️  GCS sync done (best={best_loss:.4f})", flush=True)
-
-# Final ONNX export
-model.eval()
-dummy_iq = torch.randn(1, 64, 256, 16, 2).to(device)
-onnx_path = "pkg/ml/models/ateena_iqnet.onnx"
-os.makedirs(os.path.dirname(onnx_path), exist_ok=True)
-torch.onnx.export(
-    model, dummy_iq, onnx_path,
-    input_names=["iq_samples"],
-    output_names=["detections", "alphas", "features"],
-    dynamic_axes={"iq_samples": {0: "batch"}, "detections": {0: "batch"}},
-    opset_version=17,
-)
-print(f"\n✅ ATeena-IQNet exported: {onnx_path}", flush=True)
+    # Final ONNX export
+    model.eval()
+    dummy_iq = torch.randn(1, 64, 256, 16, 2).to(device)
+    onnx_path = "pkg/ml/models/ateena_iqnet.onnx"
+    os.makedirs(os.path.dirname(onnx_path), exist_ok=True)
+    torch.onnx.export(
+        model, dummy_iq, onnx_path,
+        input_names=["iq_samples"],
+        output_names=["detections", "alphas", "features"],
+        dynamic_axes={"iq_samples": {0: "batch"}, "detections": {0: "batch"}},
+        opset_version=17,
+    )
+    print(f"\n✅ ATeena-IQNet exported: {onnx_path}", flush=True)
 SCRIPT
 
 mkdir -p weights/ateena_radar
