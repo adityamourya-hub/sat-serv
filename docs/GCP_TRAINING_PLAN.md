@@ -90,7 +90,7 @@ source ~/ssis-env/bin/activate && cd ~/idex
 # Install Python deps
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 pip3 install onnx onnxruntime-gpu xgboost scikit-learn skl2onnx lightgbm
-pip3 install gym numpy h5py google-cloud-storage
+pip3 install gymnasium numpy h5py google-cloud-storage
 pip3 install jax[cuda12] jaxlib   # For trajectory generator only
 
 # Verify GPU
@@ -134,6 +134,14 @@ cat > /tmp/train_sensor_tasking.py << 'SCRIPT'
 import sys, os, signal, time, json
 sys.path.insert(0, "ai/v3")
 os.makedirs("weights/sensor_tasking", exist_ok=True)
+
+# Install gymnasium if not present
+import subprocess
+try:
+    import gymnasium
+except ImportError:
+    print("Installing gymnasium...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "gymnasium"])
 
 import torch
 import numpy as np

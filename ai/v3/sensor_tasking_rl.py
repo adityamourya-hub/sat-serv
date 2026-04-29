@@ -358,6 +358,9 @@ def train_sensor_tasking_ppo(
     policy = SensorTaskingPolicy(state_dim, n_stations).to(device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
     
+    # AMP mixed precision for V100 GPU acceleration
+    scaler = torch.cuda.amp.GradScaler() if device == "cuda" else None
+    
     # PPO hyperparameters
     gamma = 0.99  # Discount factor
     gae_lambda = 0.95  # GAE parameter
@@ -377,7 +380,12 @@ def train_sensor_tasking_ppo(
         dones = []
         
         for t in range(128):  # Episode length (trajectory)
-            logits, continuous, value = policy(state.unsqueeze(0))
+            # AMP mixed precision forward pass
+            if scaler:
+                with torch.cuda.amp.autocast():
+                    logits, continuous, value = policy(state.unsqueeze(0))
+            else:
+                logits, continuous, value = policy(state.unsqueeze(0))
             
             # Sample action (use logits directly for numerical stability)
             station_dist = torch.distributions.Categorical(logits=logits)
@@ -430,9 +438,18 @@ def train_sensor_tasking_ppo(
         loss = policy_loss + value_coef * value_loss
         
         optimizer.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(policy.parameters(), 0.5)
-        optimizer.step()
+        
+        # AMP mixed precision backward pass
+        if scaler:
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(policy.parameters(), 0.5)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(policy.parameters(), 0.5)
+            optimizer.step()
         
         if step % 100 == 0:
             avg_reward = sum(rewards) / len(rewards)
