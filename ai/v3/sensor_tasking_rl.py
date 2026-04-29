@@ -376,12 +376,6 @@ def train_sensor_tasking_ppo(
     # AMP mixed precision for V100 GPU acceleration
     scaler = torch.cuda.amp.GradScaler() if device == "cuda" else None
     
-    # Debug: check policy weights for NaN
-    for name, param in policy.named_parameters():
-        if torch.isnan(param).any():
-            print(f"Warning: NaN in parameter {name} before training")
-            param.data.fill_(0.0)
-    
     # PPO hyperparameters
     gamma = 0.99  # Discount factor
     gae_lambda = 0.95  # GAE parameter
@@ -399,13 +393,7 @@ def train_sensor_tasking_ppo(
         # Validate input state for NaN/inf
         if torch.isnan(state).any() or torch.isinf(state).any():
             print(f"Warning: Invalid state detected at step {step}, resetting")
-            print(f"State sample: {state[:5]}")
             state = torch.zeros_like(state)
-        
-        # Debug: print first state
-        if step == 0:
-            print(f"First state: min={state.min():.4f}, max={state.max():.4f}, mean={state.mean():.4f}")
-            print(f"First state dtype: {state.dtype}")
         
         log_probs = []
         values = []
@@ -416,21 +404,6 @@ def train_sensor_tasking_ppo(
             # Forward pass (keep FP32 for numerical stability)
             logits, continuous, value = policy(state.unsqueeze(0))
             
-            # Debug: check dtypes
-            if t == 0 and step == 0:
-                print(f"Logits dtype: {logits.dtype}")
-                print(f"Logits min/max: [{logits.min():.4f}, {logits.max():.4f}]")
-                print(f"Policy shared output dtype: {policy.shared[0].weight.dtype}")
-            
-            # Check for NaN in logits before sampling
-            if torch.isnan(logits).any():
-                print(f"Warning: NaN logits detected at step {step}, t={t}")
-                print(f"State range: [{state.min():.4f}, {state.max():.4f}]")
-                print(f"State contains NaN: {torch.isnan(state).any()}")
-                print(f"State contains Inf: {torch.isinf(state).any()}")
-                print(f"Logits dtype: {logits.dtype}")
-                break
-            
             # Sample action (use logits directly for numerical stability)
             station_dist = torch.distributions.Categorical(logits=logits)
             station_idx = station_dist.sample()
@@ -438,6 +411,8 @@ def train_sensor_tasking_ppo(
             # Build action tensor with correct dimensions
             station_action = station_idx.float() / (n_stations - 1) * 2 - 1
             continuous_action = continuous.squeeze(0)
+            
+            # Concatenate properly: ensure both are 1D tensors
             action = torch.cat([station_action.unsqueeze(0), continuous_action])
             
             # Log probability
