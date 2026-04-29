@@ -241,104 +241,171 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
+from torch.cuda.amp import GradScaler, autocast
 from ateena_iqnet import ATeenaIQNet
 from radar_augmentation import RadarAugmentation
 from ateena_sim import ATeenaSimulator, generate_random_scenario
-from train_ateena_iqnet import StreamingRadarDataset, islr_loss, evidential_radar_loss
+from train_ateena_iqnet import islr_loss, evidential_radar_loss
+
+class StreamingRadarDataset(Dataset):
+    def __init__(self, augmentation=None):
+        self.sim = ATeenaSimulator({'fc_hz':3e9,'wavelength_m':0.1,'bandwidth_hz':100e6,'pulse_width_us':100,'pri_ms':1.0,'n_pulses':64,'n_range_bins':256,'n_elements':16,'element_spacing_m':0.05,'transmit_power_w':100e3,'transmit_gain_db':35,'receive_gain_db':35,'noise_figure_db':3.0,'system_temp_k':290})
+        self.augmentation = augmentation
+    def __len__(self):
+        return 1000
+    def __getitem__(self, idx):
+        targets, noise_fig = generate_random_scenario(min_targets=1, max_targets=3)
+        iq_np = self.sim.simulate_cpi(targets, noise_figure_db=noise_fig)
+        iq = torch.from_numpy(np.stack([iq_np.real, iq_np.imag], axis=-1)).float() * 1e8
+        labels = torch.zeros(50, 6)
+        for i, t in enumerate(targets[:50]):
+            labels[i] = torch.tensor([t['range_km'], t['velocity_kms'], t.get('azimuth_deg',0), t.get('elevation_deg',45), t.get('rcs_m2',1), 1.0])
+        if self.augmentation:
+            iq = self.augmentation(iq)
+        return iq, labels
 
 device = torch.device("cuda")
-print(f"Device: {device}")
+print(f"Device: {device}", flush=True)
 
 class Config:
-    n_elements = 64
-    n_pulses = 128
-    n_doppler_bins = 64
+    n_elements = 16
+    n_pulses = 64
+    n_doppler_bins = 32
 
 model = ATeenaIQNet(Config()).to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
+scaler = GradScaler()  # AMP scaler for V100 fp16
 aug = RadarAugmentation(device=device)
 
-dataset = StreamingRadarDataset(augmentation=aug)
-loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0)
+# Checkpoint path and best_loss defined before SIGTERM handler
+ckpt_path = "weights/ateena_radar/latest_checkpoint.pt"
+best_loss = float('inf')
+_cur_epoch, _cur_step, _cur_loss = 0, 0, float('inf')
 
-# SIGTERM handler for spot preemption
+# SIGTERM handler for spot preemption — saves immediately
 preempted = False
 def on_sigterm(sig, frame):
     global preempted
     preempted = True
-    print("\n⚠️ SIGTERM! Emergency checkpoint...")
+    print("\n⚠️ SIGTERM received! Saving emergency checkpoint...", flush=True)
+    torch.save({
+        'epoch': _cur_epoch, 'step': _cur_step,
+        'model_state': model.state_dict(),
+        'optimizer_state': optimizer.state_dict(),
+        'scaler_state': scaler.state_dict(),
+        'loss': _cur_loss, 'best_loss': best_loss,
+    }, ckpt_path)
+    os.system(f"gsutil -q cp {ckpt_path} gs://${{BUCKET}}/checkpoints/ateena_radar/emergency.pt")
+    print("✓ Emergency checkpoint saved.", flush=True)
 signal.signal(signal.SIGTERM, on_sigterm)
+
+# num_workers>0 requires augmentation to not use CUDA (fork issues)
+# Pass augmentation=None to dataset; augmentation applied after .to(device) in loop
+dataset = StreamingRadarDataset(augmentation=None)
+loader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=2,
+                    pin_memory=True, prefetch_factor=2, persistent_workers=True)
 
 # Resume from checkpoint if exists
 start_epoch = 0
-ckpt_path = "weights/ateena_radar/latest_checkpoint.pt"
 if os.path.exists(ckpt_path):
     ckpt = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(ckpt['model_state'])
     optimizer.load_state_dict(ckpt['optimizer_state'])
+    if 'scaler_state' in ckpt:
+        scaler.load_state_dict(ckpt['scaler_state'])
     start_epoch = ckpt['epoch'] + 1
-    print(f"Resumed from epoch {start_epoch}")
-
-best_loss = float('inf')
+    best_loss = ckpt.get('best_loss', float('inf'))
+    print(f"Resumed from epoch {start_epoch}, best_loss={best_loss:.4f}", flush=True)
+print(f"Model params: {sum(p.numel() for p in model.parameters())/1e6:.2f}M", flush=True)
 
 for epoch in range(start_epoch, 100):
     if preempted:
         break
+    _cur_epoch = epoch
     
     model.train()
     total_loss = 0.0
     n_batches = 0
+    t0 = time.time()
     
     for i, (iq_batch, labels) in enumerate(loader):
         if preempted:
             break
+        _cur_step = i
         
-        iq_batch = iq_batch.to(device)  # Already [B, P, R, E, 2] from dataset
-        labels = labels.to(device)
+        iq_batch = iq_batch.to(device, non_blocking=True)  # [B, P, R, E, 2]
+        labels = labels.to(device, non_blocking=True)
+        # Apply GPU augmentation per sample (aug expects [P,R,E,2] input)
+        iq_batch = torch.stack([aug(iq_batch[b]) for b in range(iq_batch.shape[0])])
         
-        detections, alphas, features = model(iq_batch)
+        optimizer.zero_grad(set_to_none=True)
+        with autocast():
+            detections, alphas, features = model(iq_batch)
+            l_reg = F.smooth_l1_loss(detections, labels)
+            l_evd = evidential_radar_loss(alphas, (labels[:, :, 5] > 0.5).float())
+            loss = l_reg + l_evd
         
-        l_reg = F.smooth_l1_loss(detections, labels)
-        l_evd = evidential_radar_loss(alphas, (labels[:, :, 5] > 0.5).float())
-        loss = l_reg + l_evd
-        
-        optimizer.zero_grad()
-        loss.backward()
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
         
-        total_loss += loss.item()
+        loss_val = loss.item()
+        _cur_loss = loss_val
+        total_loss += loss_val
         n_batches += 1
         
-        if i >= 250:  # 1000 samples per epoch
+        if i % 10 == 0:
+            elapsed = time.time() - t0
+            steps_per_sec = (i + 1) / max(elapsed, 1e-6)
+            print(f"  E{epoch+1} step {i}/250 loss={loss_val:.4f} ({steps_per_sec:.1f} steps/s)", flush=True)
+        
+        # Step-level checkpoint every 50 steps
+        if i > 0 and i % 50 == 0:
+            torch.save({
+                'epoch': epoch, 'step': i,
+                'model_state': model.state_dict(),
+                'optimizer_state': optimizer.state_dict(),
+                'scaler_state': scaler.state_dict(),
+                'loss': loss_val, 'best_loss': best_loss,
+            }, ckpt_path)
+            print(f"  💾 Step ckpt @ epoch {epoch+1} step {i}", flush=True)
+        
+        if i >= 250:
             break
     
     scheduler.step()
     avg_loss = total_loss / max(n_batches, 1)
-    print(f"Epoch {epoch+1}/100 | Loss: {avg_loss:.4f} | LR: {scheduler.get_last_lr()[0]:.6f}")
+    epoch_time = time.time() - t0
+    print(f"Epoch {epoch+1}/100 | Loss: {avg_loss:.4f} | LR: {scheduler.get_last_lr()[0]:.6f} | {epoch_time:.0f}s", flush=True)
     
-    # Checkpoint every 5 epochs
+    # Epoch checkpoint every epoch (overwrite latest)
+    ckpt_data = {
+        'epoch': epoch,
+        'model_state': model.state_dict(),
+        'optimizer_state': optimizer.state_dict(),
+        'scaler_state': scaler.state_dict(),
+        'loss': avg_loss,
+        'best_loss': best_loss,
+    }
+    torch.save(ckpt_data, ckpt_path)
+    
+    if avg_loss < best_loss:
+        best_loss = avg_loss
+        torch.save(model.state_dict(), "weights/ateena_radar/best_model.pt")
+        print(f"  ⭐ New best: {best_loss:.4f}", flush=True)
+    
+    # Sync to GCS every 5 epochs
     if (epoch + 1) % 5 == 0:
-        torch.save({
-            'epoch': epoch,
-            'model_state': model.state_dict(),
-            'optimizer_state': optimizer.state_dict(),
-            'loss': avg_loss,
-        }, ckpt_path)
-        
-        if avg_loss < best_loss:
-            best_loss = avg_loss
-            torch.save(model.state_dict(), "weights/ateena_radar/best_model.pt")
-        
-        # Sync to GCS
         os.system(f"gsutil -q cp {ckpt_path} gs://${{BUCKET}}/checkpoints/ateena_radar/")
-        print(f"  💾 Checkpoint saved (best={best_loss:.4f})")
+        print(f"  ☁️  GCS sync done (best={best_loss:.4f})", flush=True)
 
 # Final ONNX export
 model.eval()
-dummy_iq = torch.randn(1, 128, 1024, 64, 2).to(device)
+dummy_iq = torch.randn(1, 64, 256, 16, 2).to(device)
 onnx_path = "pkg/ml/models/ateena_iqnet.onnx"
 os.makedirs(os.path.dirname(onnx_path), exist_ok=True)
 torch.onnx.export(
@@ -348,7 +415,7 @@ torch.onnx.export(
     dynamic_axes={"iq_samples": {0: "batch"}, "detections": {0: "batch"}},
     opset_version=17,
 )
-print(f"\n✅ ATeena-IQNet exported: {onnx_path}")
+print(f"\n✅ ATeena-IQNet exported: {onnx_path}", flush=True)
 SCRIPT
 
 mkdir -p weights/ateena_radar
