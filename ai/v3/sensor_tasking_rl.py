@@ -344,6 +344,8 @@ def train_sensor_tasking_ppo(
     regions: List[TargetRegion],
     total_timesteps: int = 100000,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    checkpoint_path: str = "weights/sensor_tasking/checkpoint.pt",
+    checkpoint_interval: int = 1000,
 ) -> SensorTaskingPolicy:
     """
     Train sensor tasking policy using PPO.
@@ -353,6 +355,8 @@ def train_sensor_tasking_ppo(
         regions: List of priority regions to monitor
         total_timesteps: Training iterations
         device: 'cuda' or 'cpu'
+        checkpoint_path: Path to save/load checkpoints
+        checkpoint_interval: Save checkpoint every N steps
     
     Returns:
         Trained policy network
@@ -361,6 +365,7 @@ def train_sensor_tasking_ppo(
     print(f"  Stations: {len(stations)}")
     print(f"  Regions: {len(regions)}")
     print(f"  Timesteps: {total_timesteps}")
+    print(f"  Checkpoint interval: {checkpoint_interval}")
     
     # Create environment
     env = SensorTaskingEnv(stations, regions)
@@ -376,6 +381,39 @@ def train_sensor_tasking_ppo(
     # AMP mixed precision for V100 GPU acceleration
     scaler = torch.cuda.amp.GradScaler() if device == "cuda" else None
     
+    # Try to load checkpoint if exists
+    start_step = 0
+    if os.path.exists(checkpoint_path):
+        try:
+            checkpoint = torch.load(checkpoint_path)
+            policy.load_state_dict(checkpoint['policy_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if scaler and 'scaler_state_dict' in checkpoint:
+                scaler.load_state_dict(checkpoint['scaler_state_dict'])
+            start_step = checkpoint.get('step', 0)
+            print(f"Resumed from checkpoint at step {start_step}")
+        except Exception as e:
+            print(f"Failed to load checkpoint: {e}, starting from scratch")
+    
+    # Signal handler for spot VM termination
+    def save_checkpoint_on_signal(signum, frame):
+        print(f"\nReceived signal {signum}, saving checkpoint...")
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        checkpoint = {
+            'policy_state_dict': policy.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'step': step,
+        }
+        if scaler:
+            checkpoint['scaler_state_dict'] = scaler.state_dict()
+        torch.save(checkpoint, checkpoint_path)
+        print(f"Checkpoint saved to {checkpoint_path}")
+        exit(0)
+    
+    import signal
+    signal.signal(signal.SIGTERM, save_checkpoint_on_signal)
+    signal.signal(signal.SIGINT, save_checkpoint_on_signal)
+    
     # PPO hyperparameters
     gamma = 0.99  # Discount factor
     gae_lambda = 0.95  # GAE parameter
@@ -386,7 +424,24 @@ def train_sensor_tasking_ppo(
     # Training loop (simplified PPO)
     episode_rewards = []
     
-    for step in range(total_timesteps):
+    for step in range(start_step, total_timesteps):
+        # Progress print every 100 steps
+        if step % 100 == 0:
+            print(f"Step {step}/{total_timesteps}")
+        
+        # Save checkpoint periodically
+        if step > 0 and step % checkpoint_interval == 0:
+            os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+            checkpoint = {
+                'policy_state_dict': policy.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'step': step,
+            }
+            if scaler:
+                checkpoint['scaler_state_dict'] = scaler.state_dict()
+            torch.save(checkpoint, checkpoint_path)
+            print(f"Checkpoint saved at step {step}")
+        
         # Collect trajectory
         state = torch.FloatTensor(env.reset()).to(device)
         

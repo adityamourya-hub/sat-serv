@@ -184,7 +184,9 @@ for phase, timesteps in [(1, 10000), (2, 50000)]:
     policy = train_sensor_tasking_ppo(
         stations, regions,
         total_timesteps=timesteps,
-        device=device
+        device=device,
+        checkpoint_path="weights/sensor_tasking/checkpoint.pt",
+        checkpoint_interval=1000,
     )
     
     # Checkpoint
