@@ -216,8 +216,8 @@ python3 /tmp/train_sensor_tasking.py 2>&1 | tee weights/sensor_tasking/train.log
 #### 2A.2 Checkpoint to GCS
 
 ```bash
-gsutil -m cp -r weights/sensor_tasking/ gs://${BUCKET}/weights/sensor_tasking/
-gsutil cp pkg/ml/models/sensor_tasking.onnx gs://${BUCKET}/weights/production/
+gsutil -m cp -r weights/sensor_tasking/ gs://ssis-training-1776624951/weights/sensor_tasking/
+gsutil cp pkg/ml/models/sensor_tasking.onnx gs://ssis-training-1776624951/weights/production/
 ```
 
 ### 2B: ATeena Radar Pipeline (SE-ResNet + Evidential) — 24–36 hours
@@ -231,6 +231,8 @@ cd /idex
 
 cat > /tmp/train_ateena_radar.py << 'SCRIPT'
 import sys, os, signal, time
+import torch.multiprocessing
+torch.multiprocessing.set_start_method('spawn', force=True)
 sys.path.insert(0, "ai/radar")
 sys.path.insert(0, "ai/radar/simulator")
 os.makedirs("weights/ateena_radar", exist_ok=True)
@@ -259,7 +261,7 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
 aug = RadarAugmentation(device=device)
 
 dataset = StreamingRadarDataset(augmentation=aug)
-loader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=2)
+loader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=0)
 
 # SIGTERM handler for spot preemption
 preempted = False
@@ -349,6 +351,7 @@ torch.onnx.export(
 print(f"\n✅ ATeena-IQNet exported: {onnx_path}")
 SCRIPT
 
+mkdir -p weights/ateena_radar
 python3 /tmp/train_ateena_radar.py 2>&1 | tee weights/ateena_radar/train.log
 ```
 
