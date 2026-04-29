@@ -261,7 +261,7 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
 aug = RadarAugmentation(device=device)
 
 dataset = StreamingRadarDataset(augmentation=aug)
-loader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=0)
+loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0)
 
 # SIGTERM handler for spot preemption
 preempted = False
@@ -295,7 +295,7 @@ for epoch in range(start_epoch, 100):
         if preempted:
             break
         
-        iq_batch = iq_batch.permute(0, 2, 3, 4, 1).to(device)  # [B, P, R, E, 2]
+        iq_batch = iq_batch.to(device)  # Already [B, P, R, E, 2] from dataset
         labels = labels.to(device)
         
         detections, alphas, features = model(iq_batch)

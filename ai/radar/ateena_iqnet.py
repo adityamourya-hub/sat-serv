@@ -282,8 +282,8 @@ class ATeenaIQNet(nn.Module):
         # We use a single ComplexConv1d for the learned matched filter
         self.range_compression = nn.Sequential(
             ComplexConv1d(1, 1, kernel_size=8, stride=4, padding=2),
-            ComplexBatchNorm2d(2),  # Fix normalization to use complex batch norm
-            ModReLU(2)  # Fix channel count for ModReLU
+            ComplexBatchNorm2d(1),
+            ModReLU(1)
         )
         
         # Stage 2: Spatial & Spectral Processing
