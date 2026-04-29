@@ -268,7 +268,7 @@ class SensorTaskingPolicy(nn.Module):
     def __init__(self, state_dim: int, n_stations: int, hidden_dim: int = 256):
         super().__init__()
         
-        # Shared backbone
+        # Shared backbone with better initialization
         self.shared = nn.Sequential(
             nn.Linear(state_dim, hidden_dim),
             nn.ReLU(),
@@ -277,14 +277,25 @@ class SensorTaskingPolicy(nn.Module):
             nn.ReLU(),
         )
         
+        # Initialize weights for numerical stability
+        for module in self.shared.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
+                nn.init.constant_(module.bias, 0.0)
+        
         # Actor head (policy)
         self.actor_station = nn.Linear(hidden_dim, n_stations)  # Discrete: station selection
+        nn.init.orthogonal_(self.actor_station.weight, gain=0.01)
+        nn.init.constant_(self.actor_station.bias, 0.0)
+        
         self.actor_continuous = nn.Sequential(
             nn.Linear(hidden_dim, 64),
             nn.ReLU(),
             nn.Linear(64, 3),  # [azimuth_norm, elevation_norm, dwell_norm]
             nn.Tanh(),  # Bound to [-1, 1]
         )
+        nn.init.orthogonal_(self.actor_continuous[0].weight, gain=np.sqrt(2))
+        nn.init.orthogonal_(self.actor_continuous[2].weight, gain=0.01)
         
         # Critic head (value)
         self.critic = nn.Sequential(
@@ -292,6 +303,8 @@ class SensorTaskingPolicy(nn.Module):
             nn.ReLU(),
             nn.Linear(64, 1),
         )
+        nn.init.orthogonal_(self.critic[0].weight, gain=np.sqrt(2))
+        nn.init.orthogonal_(self.critic[2].weight, gain=1.0)
     
     def forward(self, state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -356,10 +369,18 @@ def train_sensor_tasking_ppo(
     
     # Initialize policy
     policy = SensorTaskingPolicy(state_dim, n_stations).to(device)
+    # Force FP32 to prevent numerical instability
+    policy = policy.float()
     optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
     
-    # AMP mixed precision for V100 GPU acceleration
-    scaler = torch.cuda.amp.GradScaler() if device == "cuda" else None
+    # Disable AMP for now to isolate NaN issue
+    scaler = None
+    
+    # Debug: check policy weights for NaN
+    for name, param in policy.named_parameters():
+        if torch.isnan(param).any():
+            print(f"Warning: NaN in parameter {name} before training")
+            param.data.fill_(0.0)
     
     # PPO hyperparameters
     gamma = 0.99  # Discount factor
@@ -374,18 +395,41 @@ def train_sensor_tasking_ppo(
     for step in range(total_timesteps):
         # Collect trajectory
         state = torch.FloatTensor(env.reset()).to(device)
+        
+        # Validate input state for NaN/inf
+        if torch.isnan(state).any() or torch.isinf(state).any():
+            print(f"Warning: Invalid state detected at step {step}, resetting")
+            print(f"State sample: {state[:5]}")
+            state = torch.zeros_like(state)
+        
+        # Debug: print first state
+        if step == 0:
+            print(f"First state: min={state.min():.4f}, max={state.max():.4f}, mean={state.mean():.4f}")
+            print(f"First state dtype: {state.dtype}")
+        
         log_probs = []
         values = []
         rewards = []
         dones = []
         
         for t in range(128):  # Episode length (trajectory)
-            # AMP mixed precision forward pass
-            if scaler:
-                with torch.cuda.amp.autocast():
-                    logits, continuous, value = policy(state.unsqueeze(0))
-            else:
-                logits, continuous, value = policy(state.unsqueeze(0))
+            # Forward pass (keep FP32 for numerical stability)
+            logits, continuous, value = policy(state.unsqueeze(0))
+            
+            # Debug: check dtypes
+            if t == 0 and step == 0:
+                print(f"Logits dtype: {logits.dtype}")
+                print(f"Logits min/max: [{logits.min():.4f}, {logits.max():.4f}]")
+                print(f"Policy shared output dtype: {policy.shared[0].weight.dtype}")
+            
+            # Check for NaN in logits before sampling
+            if torch.isnan(logits).any():
+                print(f"Warning: NaN logits detected at step {step}, t={t}")
+                print(f"State range: [{state.min():.4f}, {state.max():.4f}]")
+                print(f"State contains NaN: {torch.isnan(state).any()}")
+                print(f"State contains Inf: {torch.isinf(state).any()}")
+                print(f"Logits dtype: {logits.dtype}")
+                break
             
             # Sample action (use logits directly for numerical stability)
             station_dist = torch.distributions.Categorical(logits=logits)
