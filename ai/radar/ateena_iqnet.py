@@ -92,7 +92,14 @@ class ModReLU(nn.Module):
         phase = x_complex / magnitude
         
         # Apply ReLU to magnitude and multiply by phase
-        out = F.relu(magnitude + self.b.view(1, C, 1, *([1]*len(dims)))) * phase
+        # Handle case where self.b dimensions don't match expected shape
+        if self.b.numel() == C:
+            b_reshaped = self.b.view(1, C, 1, *([1]*len(dims)))
+        else:
+            # Fallback: use simple bias addition
+            b_reshaped = self.b.view(1, -1, 1, *([1]*len(dims)))[:, :C, ...]
+        
+        out = F.relu(magnitude + b_reshaped) * phase
         return out.reshape(B, C2, *dims)
 
 class NeuralBeamformer(nn.Module):
