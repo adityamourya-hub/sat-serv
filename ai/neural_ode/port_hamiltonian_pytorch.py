@@ -293,8 +293,8 @@ class PortHamiltonianSystem(nn.Module):
             print("[WARNING] Inf detected in Hamiltonian gradient, clipping")
             grad_H = torch.clamp(grad_H, -1e6, 1e6)
         
-        # Gradient clipping to prevent exploding gradients
-        grad_H = torch.nn.utils.clip_grad_norm_(grad_H, max_norm=1.0)
+        # Gradient clipping to prevent exploding gradients (in-place, returns norm)
+        torch.nn.utils.clip_grad_norm_(grad_H, max_norm=1.0)
         
         # Force grad_H to correct device (debugging device mismatch)
         grad_H = grad_H.to(x.device)
