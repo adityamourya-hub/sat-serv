@@ -542,7 +542,8 @@ def export_tasking_policy_onnx(policy: SensorTaskingPolicy,
     """Export trained policy to ONNX for Go inference."""
     import torch.onnx
     
-    dummy_state = torch.randn(1, state_dim)
+    device = next(policy.parameters()).device
+    dummy_state = torch.randn(1, state_dim).to(device)
     
     # Wrap to return continuous actions only (station selection done in Go)
     class ONNXWrapper(nn.Module):
