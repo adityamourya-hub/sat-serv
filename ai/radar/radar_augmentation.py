@@ -70,7 +70,7 @@ class RadarAugmentation:
         
         # Apply low-pass filter across pulses (stationary ground)
         # In a real sim, we'd use a more complex Rayleigh model
-        iq_aug = iq.clone()
+        iq_aug = iq.clone().to(self.device)
         iq_aug[:, :, :, :clutter_range, :] += clutter
         return iq_aug
 
