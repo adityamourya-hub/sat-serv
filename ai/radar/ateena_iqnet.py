@@ -24,6 +24,11 @@ class ComplexBatchNorm2d(nn.Module):
 
     def forward(self, x):
         # x: [B, 2, C, H, W] where dim 1 is (I, Q)
+        # Handle 3D input [B, 2, R] by reshaping to [B, 2, 1, 1, R]
+        if x.dim() == 3:
+            B, D, R = x.shape
+            x = x.view(B, D, 1, 1, R)
+        
         B, D, C, H, W = x.shape
         x_flat = x.permute(0, 2, 3, 4, 1).reshape(-1, 2) # [B*C*H*W, 2]
         
