@@ -795,17 +795,25 @@ if not os.path.exists(data_path):
     sys.exit(1)
 
 dataset = CanonicalTrajectoryDataset(data_path)
-loader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=collate_fn, num_workers=4)
+loader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=collate_fn, num_workers=2,
+                    pin_memory=True, prefetch_factor=2, persistent_workers=True)
 
 # Trainer with SINDy sparsity
 trainer = GHNNTrainer(model, device, lambda_sparse=0.01, noise_floor=1e-5)
 
 # Spot preemption handler
 preempted = False
+_cur_epoch, _cur_loss = 0, float('inf')
 def on_sigterm(sig, frame):
-    global preempted
+    global preempted, _cur_epoch, _cur_loss, best_loss
     preempted = True
-    print("\n⚠️ SIGTERM! Emergency save...")
+    print("\n⚠️ SIGTERM! Emergency save...", flush=True)
+    torch.save({
+        'epoch': _cur_epoch, 'model_state': model.state_dict(),
+        'optimizer_state': trainer.optimizer.state_dict(),
+        'loss': _cur_loss, 'best_loss': best_loss,
+    }, ckpt_path)
+    print("✓ Emergency checkpoint saved.", flush=True)
 signal.signal(signal.SIGTERM, on_sigterm)
 
 # Resume from checkpoint
@@ -822,31 +830,34 @@ best_loss = float('inf')
 print(f"\nTraining from epoch {start_epoch} to 100")
 print(f"Dataset: {len(dataset)} trajectories")
 
-for epoch in range(start_epoch, 100):
-    if preempted:
-        break
-    
-    loss = trainer.train_epoch(loader)
-    
-    if epoch % 5 == 0:
-        print(f"Epoch {epoch}: Loss = {loss:.6f}")
-    
-    # Checkpoint every 5 epochs
-    if (epoch + 1) % 5 == 0:
-        torch.save({
-            'epoch': epoch,
-            'model_state': model.state_dict(),
-            'optimizer_state': trainer.optimizer.state_dict(),
-            'best_loss': best_loss,
-        }, ckpt_path)
+if __name__ == '__main__':
+    for epoch in range(start_epoch, 100):
+        if preempted:
+            break
+        _cur_epoch = epoch
         
-        if loss < best_loss:
-            best_loss = loss
-            torch.save(model.state_dict(), "weights/axiom_hnode/best_model.pt")
+        loss = trainer.train_epoch(loader)
+        _cur_loss = loss
         
-        # Sync to GCS
-        os.system(f"gsutil -q cp {ckpt_path} gs://${{BUCKET}}/checkpoints/axiom_hnode/")
-        print(f"  💾 Checkpoint (best={best_loss:.6f})")
+        if epoch % 5 == 0:
+            print(f"Epoch {epoch}: Loss = {loss:.6f}")
+        
+        # Checkpoint every 5 epochs
+        if (epoch + 1) % 5 == 0:
+            torch.save({
+                'epoch': epoch,
+                'model_state': model.state_dict(),
+                'optimizer_state': trainer.optimizer.state_dict(),
+                'best_loss': best_loss,
+            }, ckpt_path)
+            
+            if loss < best_loss:
+                best_loss = loss
+                torch.save(model.state_dict(), "weights/axiom_hnode/best_model.pt")
+            
+            # Sync to GCS
+            os.system(f"gsutil -q cp {ckpt_path} gs://${{BUCKET}}/checkpoints/axiom_hnode/")
+            print(f"  💾 Checkpoint (best={best_loss:.6f})")
 
 # Save final
 torch.save(model.state_dict(), "weights/axiom_hnode/final_model.pt")
@@ -871,6 +882,7 @@ print(f"   Best loss: {best_loss:.6f}")
 
 # Also copy to physics runtime path
 import shutil
+os.makedirs("weights/production", exist_ok=True)
 shutil.copy(onnx_path, "weights/production/hnode_core.onnx")
 SCRIPT
 
