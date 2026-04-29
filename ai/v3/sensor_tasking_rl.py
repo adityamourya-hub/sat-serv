@@ -385,7 +385,7 @@ def train_sensor_tasking_ppo(
     start_step = 0
     if os.path.exists(checkpoint_path):
         try:
-            checkpoint = torch.load(checkpoint_path)
+            checkpoint = torch.load(checkpoint_path, map_location=device)
             policy.load_state_dict(checkpoint['policy_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             if scaler and 'scaler_state_dict' in checkpoint:
