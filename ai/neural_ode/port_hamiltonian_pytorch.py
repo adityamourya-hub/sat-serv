@@ -297,8 +297,8 @@ class PortHamiltonianSystem(nn.Module):
         grad_H = torch.nn.utils.clip_grad_norm_(grad_H, max_norm=1.0)
         
         # 2. Get structure matrices
-        J = self.get_interconnection_matrix(x.device)
-        R = self.get_dissipation_matrix(x, z_latent)
+        J = self.get_interconnection_matrix(x.device).to(x.device)
+        R = self.get_dissipation_matrix(x, z_latent).to(x.device)
         
         # 3. Conservative + Dissipative dynamics
         # [J - R] @ ∇H
@@ -308,7 +308,7 @@ class PortHamiltonianSystem(nn.Module):
         
         # 4. Add control input if provided
         if u is not None:
-            G = self.get_control_coupling(x, z_latent)
+            G = self.get_control_coupling(x, z_latent).to(x.device)
             dz_dt = dz_dt + torch.bmm(G, u.unsqueeze(-1)).squeeze(-1)
         
         return dz_dt
