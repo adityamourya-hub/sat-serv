@@ -116,7 +116,7 @@ class SensorTaskingEnv(gym.Env):
             r.name: np.zeros((10, 10), dtype=np.float32)  # 10x10 grid per region
             for r in self.regions
         }
-        self.last_visit_time = {r.name: -np.inf for r in self.regions}
+        self.last_visit_time = {r.name: 0.0 for r in self.regions}  # Use 0.0 instead of -inf
         self.blind_spots = []  # List of (lat, lon, time) gaps
         
         # Reset stations
@@ -373,8 +373,8 @@ def train_sensor_tasking_ppo(
     policy = policy.float()
     optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
     
-    # Disable AMP for now to isolate NaN issue
-    scaler = None
+    # AMP mixed precision for V100 GPU acceleration
+    scaler = torch.cuda.amp.GradScaler() if device == "cuda" else None
     
     # Debug: check policy weights for NaN
     for name, param in policy.named_parameters():
@@ -412,7 +412,7 @@ def train_sensor_tasking_ppo(
         rewards = []
         dones = []
         
-        for t in range(128):  # Episode length (trajectory)
+        for t in range(256):  # Episode length (trajectory) - increased for V100 16GB
             # Forward pass (keep FP32 for numerical stability)
             logits, continuous, value = policy(state.unsqueeze(0))
             
@@ -435,10 +435,10 @@ def train_sensor_tasking_ppo(
             station_dist = torch.distributions.Categorical(logits=logits)
             station_idx = station_dist.sample()
             
-            action = torch.cat([
-                station_idx.float().unsqueeze(0) / (n_stations - 1) * 2 - 1,
-                continuous.squeeze(0),
-            ])
+            # Build action tensor with correct dimensions
+            station_action = station_idx.float() / (n_stations - 1) * 2 - 1
+            continuous_action = continuous.squeeze(0)
+            action = torch.cat([station_action.unsqueeze(0), continuous_action])
             
             # Log probability
             log_prob = station_dist.log_prob(station_idx)
