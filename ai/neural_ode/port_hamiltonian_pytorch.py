@@ -193,7 +193,7 @@ class PortHamiltonianSystem(nn.Module):
         """
         half = self.state_dim // 2  # 3 for orbital state
         
-        # Top-right: identity
+        # Top-right: identity (ensure on correct device)
         I = torch.eye(half, device=device)
         Z = torch.zeros(half, half, device=device)
         
@@ -201,6 +201,9 @@ class PortHamiltonianSystem(nn.Module):
         J_top = torch.cat([Z, I], dim=1)
         J_bottom = torch.cat([-I, Z], dim=1)
         J = torch.cat([J_top, J_bottom], dim=0)
+        
+        # Ensure J is on the correct device
+        J = J.to(device)
         
         return J
     
