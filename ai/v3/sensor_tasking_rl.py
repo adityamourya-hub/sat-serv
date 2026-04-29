@@ -412,6 +412,14 @@ def train_sensor_tasking_ppo(
             station_action = station_idx.float() / (n_stations - 1) * 2 - 1
             continuous_action = continuous.squeeze(0)
             
+            # Debug: check shapes
+            if t == 0 and step == 0:
+                print(f"station_idx shape: {station_idx.shape}, dims: {station_idx.dim()}")
+                print(f"station_action shape: {station_action.shape}, dims: {station_action.dim()}")
+                print(f"station_action.unsqueeze(0) shape: {station_action.unsqueeze(0).shape}, dims: {station_action.unsqueeze(0).dim()}")
+                print(f"continuous shape: {continuous.shape}, dims: {continuous.dim()}")
+                print(f"continuous_action shape: {continuous_action.shape}, dims: {continuous_action.dim()}")
+            
             # Concatenate properly: ensure both are 1D tensors
             action = torch.cat([station_action.unsqueeze(0), continuous_action])
             
