@@ -78,6 +78,9 @@ class RadarAugmentation:
         # iq: [B, 128, 1024, 64, 2] -> Transform to [B, 2, P, R, E] if needed
         # We assume training iq is already in [B, 2, P, R, E]
         
+        # Ensure iq is on the correct device
+        iq = iq.to(self.device)
+        
         snr = random.uniform(*self.noise_range)
         iq = self.add_noise(iq, snr)
         
