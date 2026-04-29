@@ -252,7 +252,7 @@ class PortHamiltonianSystem(nn.Module):
             dz_dt: [batch, state_dim] time derivative of state
         """
         # 1. Compute gradient of Hamiltonian
-        x_grad = x.detach().requires_grad_(True)
+        x_grad = x.detach().to(x.device).requires_grad_(True)
         H = self.get_hamiltonian(x_grad, z_latent)
         
         # Use PyTorch's built-in training flag for autograd graph retention
