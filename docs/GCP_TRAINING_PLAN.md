@@ -276,8 +276,8 @@ class Config:
 model = ATeenaIQNet(Config()).to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=1e-5)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
-scaler = GradScaler()  # AMP scaler for V100 fp16
-aug = RadarAugmentation(device=device)
+# scaler = GradScaler()  # AMP disabled due to NaN instability
+aug = None  # Augmentation disabled to isolate NaN source
 
 # Checkpoint path and best_loss defined before SIGTERM handler
 ckpt_path = "weights/ateena_radar/latest_checkpoint.pt"
@@ -294,7 +294,6 @@ def on_sigterm(sig, frame):
         'epoch': _cur_epoch, 'step': _cur_step,
         'model_state': model.state_dict(),
         'optimizer_state': optimizer.state_dict(),
-        'scaler_state': scaler.state_dict(),
         'loss': _cur_loss, 'best_loss': best_loss,
     }, ckpt_path)
     os.system(f"gsutil -q cp {ckpt_path} gs://ssis-training-1776624951/checkpoints/ateena_radar/emergency.pt")
@@ -303,7 +302,7 @@ signal.signal(signal.SIGTERM, on_sigterm)
 
 # num_workers>0 requires augmentation to not use CUDA (fork issues)
 # Pass augmentation=None to dataset; augmentation applied after .to(device) in loop
-dataset = StreamingRadarDataset(augmentation=None)
+dataset = StreamingRadarDataset(augmentation=aug)
 loader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=2,
                     pin_memory=True, prefetch_factor=2, persistent_workers=True)
 
@@ -313,8 +312,7 @@ if os.path.exists(ckpt_path):
     ckpt = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(ckpt['model_state'])
     optimizer.load_state_dict(ckpt['optimizer_state'])
-    if 'scaler_state' in ckpt:
-        scaler.load_state_dict(ckpt['scaler_state'])
+    # scaler_state not used when AMP disabled
     start_epoch = ckpt['epoch'] + 1
     best_loss = ckpt.get('best_loss', float('inf'))
     print(f"Resumed from epoch {start_epoch}, best_loss={best_loss:.4f}", flush=True)
@@ -338,21 +336,27 @@ if __name__ == '__main__':
             
             iq_batch = iq_batch.to(device, non_blocking=True)  # [B, P, R, E, 2]
             labels = labels.to(device, non_blocking=True)
-            # Apply GPU augmentation per sample (aug expects [P,R,E,2] input)
-            iq_batch = torch.stack([aug(iq_batch[b]) for b in range(iq_batch.shape[0])])
             
             optimizer.zero_grad(set_to_none=True)
-            with autocast():
-                detections, alphas, features = model(iq_batch)
-                l_reg = F.smooth_l1_loss(detections, labels)
-                l_evd = evidential_radar_loss(alphas, (labels[:, :, 5] > 0.5).float())
-                loss = l_reg + l_evd
+            detections, alphas, features = model(iq_batch)
             
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            scaler.step(optimizer)
-            scaler.update()
+            # NaN detection
+            if torch.isnan(detections).any() or torch.isnan(alphas).any():
+                print(f"  ⚠️ NaN in model outputs! Skipping step.", flush=True)
+                continue
+            
+            l_reg = F.smooth_l1_loss(detections, labels)
+            l_evd = evidential_radar_loss(alphas, (labels[:, :, 5] > 0.5).float())
+            
+            if torch.isnan(l_reg) or torch.isnan(l_evd):
+                print(f"  ⚠️ NaN in loss! l_reg={l_reg}, l_evd={l_evd}", flush=True)
+                continue
+            
+            loss = l_reg + l_evd
+            
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)  # More aggressive clipping
+            optimizer.step()
             
             loss_val = loss.item()
             _cur_loss = loss_val
@@ -370,7 +374,7 @@ if __name__ == '__main__':
                     'epoch': epoch, 'step': i,
                     'model_state': model.state_dict(),
                     'optimizer_state': optimizer.state_dict(),
-                    'scaler_state': scaler.state_dict(),
+                    # 'scaler_state': scaler.state_dict(),
                     'loss': loss_val, 'best_loss': best_loss,
                 }, ckpt_path)
                 print(f"  💾 Step ckpt @ epoch {epoch+1} step {i}", flush=True)
@@ -401,7 +405,7 @@ if __name__ == '__main__':
         
         # Sync to GCS every 5 epochs
         if (epoch + 1) % 5 == 0:
-            os.system(f"gsutil -q cp {ckpt_path} gs://${{BUCKET}}/checkpoints/ateena_radar/")
+            os.system(f"gsutil -q cp {ckpt_path} gs://ssis-training-1776624951/checkpoints/ateena_radar/")
             print(f"  ☁️  GCS sync done (best={best_loss:.4f})", flush=True)
     
     # Final ONNX export
@@ -605,8 +609,8 @@ print(f"   4-output ONNX matching Go PredictRapidScore()")
 SCRIPT
 
 python3 /tmp/train_rapid_ranker.py 2>&1 | tee weights/rapid_ranker/train.log
-gsutil -m cp -r weights/rapid_ranker/ gs://${BUCKET}/weights/rapid_ranker/
-gsutil cp pkg/ml/models/rapid_ranker.onnx gs://${BUCKET}/weights/production/
+gsutil -m cp -r weights/rapid_ranker/ gs://ssis-training-1776624951/weights/rapid_ranker/
+gsutil cp pkg/ml/models/rapid_ranker.onnx gs://ssis-training-1776624951/weights/production/
 ```
 
 ### 3B: Axiom-HNODE (Port-Hamiltonian System) — 2–3 days
