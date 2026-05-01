@@ -231,7 +231,7 @@ func (m *DeltaRKANAttributorModel) Predict(history StateHistory) (DeltaRKANOutpu
 	typeConfidence := maxProb
 
 	// Calculate overall confidence
-	confidence := maneuverProb * typeConfidence
+	confidence := float64(maneuverProb) * typeConfidence
 	if confidence < 0 {
 		confidence = 0
 	}
@@ -241,14 +241,14 @@ func (m *DeltaRKANAttributorModel) Predict(history StateHistory) (DeltaRKANOutpu
 
 	// Build output
 	output := DeltaRKANOutput{
-		ManeuverDetected: maneuverProb > m.confidenceThreshold,
-		ManeuverProb:     maneuverProb,
+		ManeuverDetected: float64(maneuverProb) > m.confidenceThreshold,
+		ManeuverProb:     float64(maneuverProb),
 		ManeuverType:     maneuverType,
 		TypeConfidence:   typeConfidence,
 		DeltaV: DeltaVRTN{
-			Radial:     deltaVData[0],
-			Transverse: deltaVData[1],
-			Normal:     deltaVData[2],
+			Radial:     float64(deltaVData[0]),
+			Transverse: float64(deltaVData[1]),
+			Normal:     float64(deltaVData[2]),
 		},
 		Confidence:    confidence,
 		DetectionTime: time.Now(),
@@ -300,7 +300,7 @@ func (m *DeltaRKANAttributorModel) generateLaTeX(output DeltaRKANOutput) string 
 // Returns (R_hat, T_hat, N_hat) as 3-element arrays.
 func ComputeRTNFrame(state physics.State) ([3]float64, [3]float64, [3]float64) {
 	// R: Radial (position direction)
-	r := [3]float64{state.X, state.Y, state.Z}
+	r := [3]float64{state.Pos[0], state.Pos[1], state.Pos[2]}
 	rMag := math.Sqrt(r[0]*r[0] + r[1]*r[1] + r[2]*r[2])
 	var rHat [3]float64
 	if rMag > 0 {
@@ -310,7 +310,7 @@ func ComputeRTNFrame(state physics.State) ([3]float64, [3]float64, [3]float64) {
 	}
 
 	// N: Normal (angular momentum direction)
-	v := [3]float64{state.VX, state.VY, state.VZ}
+	v := [3]float64{state.Vel[0], state.Vel[1], state.Vel[2]}
 	h := [3]float64{
 		r[1]*v[2] - r[2]*v[1],
 		r[2]*v[0] - r[0]*v[2],
