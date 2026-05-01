@@ -28,12 +28,12 @@ import (
  *   - maneuver_type: (batch, 4) one-hot [none, station_keep, phasing, plane_change]
  */
 type DeltaRKANAttributorModel struct {
-	session       *onnx.AdvancedSession
-	input         *onnx.Tensor
-	outputProb    *onnx.Tensor
-	outputDeltaV  *onnx.Tensor
-	outputType    *onnx.Tensor
-	timesteps     int
+	session             *onnx.AdvancedSession
+	input               *onnx.Tensor[float32]
+	outputProb          *onnx.Tensor[float32]
+	outputDeltaV        *onnx.Tensor[float32]
+	outputType          *onnx.Tensor[float32]
+	timesteps           int
 	confidenceThreshold float64
 }
 
@@ -64,9 +64,9 @@ func (mt ManeuverType) String() string {
 
 // DeltaVRTN represents delta-V components in Radial-Transverse-Normal frame.
 type DeltaVRTN struct {
-	Radial    float64 // m/s, along position vector
+	Radial     float64 // m/s, along position vector
 	Transverse float64 // m/s, along velocity direction in orbital plane
-	Normal    float64 // m/s, perpendicular to orbital plane
+	Normal     float64 // m/s, perpendicular to orbital plane
 }
 
 // Magnitude returns the total delta-V magnitude.

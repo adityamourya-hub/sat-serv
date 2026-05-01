@@ -29,27 +29,27 @@ import (
  *   - embedding: (batch, 256) latent representation
  */
 type POLTransformerModel struct {
-	session      *onnx.AdvancedSession
-	input        *onnx.Tensor
-	outputClass  *onnx.Tensor
-	outputAnomaly *onnx.Tensor
-	outputEmbed  *onnx.Tensor
-	seqLen       int
-	nClasses     int
+	session       *onnx.AdvancedSession
+	input         *onnx.Tensor[float32]
+	outputClass   *onnx.Tensor[float32]
+	outputAnomaly *onnx.Tensor[float32]
+	outputEmbed   *onnx.Tensor[float32]
+	seqLen        int
+	nClasses      int
 }
 
 // ObjectBehaviorClass represents the classified behavior type.
 type ObjectBehaviorClass int
 
 const (
-	ClassUnknown      ObjectBehaviorClass = 0
-	ClassLEOComms     ObjectBehaviorClass = 1
-	ClassMEONav       ObjectBehaviorClass = 2
-	ClassGEOStation   ObjectBehaviorClass = 3
-	ClassHEOMolniya   ObjectBehaviorClass = 4
-	ClassLEOImaging   ObjectBehaviorClass = 5
-	ClassLEOScience   ObjectBehaviorClass = 6
-	ClassDebris       ObjectBehaviorClass = 7
+	ClassUnknown    ObjectBehaviorClass = 0
+	ClassLEOComms   ObjectBehaviorClass = 1
+	ClassMEONav     ObjectBehaviorClass = 2
+	ClassGEOStation ObjectBehaviorClass = 3
+	ClassHEOMolniya ObjectBehaviorClass = 4
+	ClassLEOImaging ObjectBehaviorClass = 5
+	ClassLEOScience ObjectBehaviorClass = 6
+	ClassDebris     ObjectBehaviorClass = 7
 )
 
 func (obc ObjectBehaviorClass) String() string {
@@ -85,9 +85,9 @@ type POLClassProbability struct {
 type POLTransformerOutput struct {
 	ObjectID        int
 	BehaviorClass   ObjectBehaviorClass
-	ClassConfidence float64 // Top-1 probability
+	ClassConfidence float64               // Top-1 probability
 	ClassProbs      []POLClassProbability // All class probabilities
-	AnomalyScore    float64 // 0=normal, 1=anomalous
+	AnomalyScore    float64               // 0=normal, 1=anomalous
 	IsAnomaly       bool
 	Embedding       [256]float64 // Latent representation
 	InferenceTime   time.Time

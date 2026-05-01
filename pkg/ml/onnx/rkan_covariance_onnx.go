@@ -22,8 +22,8 @@ import (
  */
 type RKANCovarianceModel struct {
 	session *onnx.AdvancedSession
-	input   *onnx.Tensor
-	output  *onnx.Tensor
+	input   *onnx.Tensor[float32]
+	output  *onnx.Tensor[float32]
 }
 
 // RKANCovarianceInput represents the 13 orbital features expected by the model.

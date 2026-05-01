@@ -215,6 +215,75 @@ models:
     go_wrapper: BlindspotForecasterModel
     stub_implementation: true
 
+ # ATeena Sensor Tasking — TRAINED (PPO, 50k timesteps, 8 stations × 5 regions)
+  - name: sensor_tasking
+    version: "1.0.0"
+    onnx_path: pkg/ml/models/sensor_tasking.onnx
+    opset: 17
+    input_schema:
+      - name: sensor_state
+        shape: [1, -1]
+        dtype: float32
+    output_schema:
+      - name: station_probs
+        shape: [1, 8]
+        dtype: float32
+      - name: continuous_action
+        shape: [1, 3]
+        dtype: float32
+      - name: value
+        shape: [1, 1]
+        dtype: float32
+    quantization: fp32
+    tier: 2
+    description: PPO-trained sensor tasking policy for volumetric scan + blind spot detection
+    go_wrapper: SensorTaskingModel
+
+  # Rapid Ranker — TRAINED (XGBoost distillation + neural evidential, 9 features)
+  - name: rapid_ranker
+    version: "4.0.0"
+    onnx_path: pkg/ml/models/rapid_ranker.onnx
+    opset: 17
+    input_schema:
+      - name: rapid_features
+        shape: [1, 9]
+        dtype: float32
+    output_schema:
+      - name: dynamic_score
+        shape: [1, 1]
+        dtype: float32
+      - name: confidence
+        shape: [1, 1]
+        dtype: float32
+      - name: uncertainty_low
+        shape: [1, 1]
+        dtype: float32
+      - name: uncertainty_high
+        shape: [1, 1]
+        dtype: float32
+    quantization: fp32
+    tier: 1
+    description: Neural threat ranker with XGBoost knowledge distillation (9 features, 4 outputs)
+    go_wrapper: RapidRankerModel
+
+  # Axiom-HNODE — TRAINED (Port-Hamiltonian System, 100k trajectories, 100 epochs)
+  - name: axiom_hnode
+    version: "2.0.0"
+    onnx_path: pkg/ml/models/hnode_core.onnx
+    opset: 17
+    input_schema:
+      - name: state
+        shape: [1, 6]
+        dtype: float32
+    output_schema:
+      - name: dynamics
+        shape: [1, 6]
+        dtype: float32
+    quantization: fp32
+    tier: 2
+    description: Port-Hamiltonian Neural ODE for symplectic orbital propagation with energy conservation
+    go_wrapper: AxiomHNODEModel
+
 # Global settings
 settings:
   default_opset: 17
