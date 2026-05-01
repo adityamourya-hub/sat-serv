@@ -114,39 +114,41 @@ func NewPOLTransformerModel(modelPath string, seqLen int, nClasses int) (*POLTra
 
 	// Input: (batch=1, seq_len, 6)
 	inputShape := []int64{1, int64(seqLen), 6}
-	inputTensor, err := onnx.NewEmptyTensor[float64](inputShape)
+	inputTensor, err := onnx.NewEmptyTensor[float32](inputShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create input tensor: %w", err)
 	}
 
 	// Output 1: behavior class probabilities (batch=1, n_classes)
 	outputClassShape := []int64{1, int64(nClasses)}
-	outputClass, err := onnx.NewEmptyTensor[float64](outputClassShape)
+	outputClass, err := onnx.NewEmptyTensor[float32](outputClassShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output class tensor: %w", err)
 	}
 
 	// Output 2: anomaly score (batch=1, 1)
 	outputAnomalyShape := []int64{1, 1}
-	outputAnomaly, err := onnx.NewEmptyTensor[float64](outputAnomalyShape)
+	outputAnomaly, err := onnx.NewEmptyTensor[float32](outputAnomalyShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output anomaly tensor: %w", err)
 	}
 
 	// Output 3: embedding (batch=1, 256)
 	outputEmbedShape := []int64{1, 256}
-	outputEmbed, err := onnx.NewEmptyTensor[float64](outputEmbedShape)
+	outputEmbed, err := onnx.NewEmptyTensor[float32](outputEmbedShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output embedding tensor: %w", err)
 	}
 
 	// Create ONNX session
+	inputs := []onnx.Value{inputTensor}
+	outputs := []onnx.Value{outputClass, outputAnomaly, outputEmbed}
 	session, err := onnx.NewAdvancedSession(
 		modelPath,
 		[]string{"behavior_class", "anomaly_score", "embedding"}, // Output names
 		[]string{"state_sequence"},                               // Input name
-		[]*onnx.Tensor{inputTensor},
-		[]*onnx.Tensor{outputClass, outputAnomaly, outputEmbed},
+		inputs,
+		outputs,
 		nil,
 	)
 	if err != nil {
@@ -155,8 +157,8 @@ func NewPOLTransformerModel(modelPath string, seqLen int, nClasses int) (*POLTra
 			modelPath,
 			[]string{"output_0", "output_1", "output_2"},
 			[]string{"input"},
-			[]*onnx.Tensor{inputTensor},
-			[]*onnx.Tensor{outputClass, outputAnomaly, outputEmbed},
+			inputs,
+			outputs,
 			nil,
 		)
 		if err != nil {
@@ -199,12 +201,12 @@ func (m *POLTransformerModel) Predict(sequence StateSequence) (POLTransformerOut
 	for t := 0; t < m.seqLen; t++ {
 		state := sequence.States[startIdx+t]
 		baseIdx := t * 6
-		data[baseIdx+0] = state.X
-		data[baseIdx+1] = state.Y
-		data[baseIdx+2] = state.Z
-		data[baseIdx+3] = state.VX
-		data[baseIdx+4] = state.VY
-		data[baseIdx+5] = state.VZ
+		data[baseIdx+0] = float32(state.Pos[0])
+		data[baseIdx+1] = float32(state.Pos[1])
+		data[baseIdx+2] = float32(state.Pos[2])
+		data[baseIdx+3] = float32(state.Vel[0])
+		data[baseIdx+4] = float32(state.Vel[1])
+		data[baseIdx+5] = float32(state.Vel[2])
 	}
 
 	// Run inference
@@ -232,7 +234,7 @@ func (m *POLTransformerModel) Predict(sequence StateSequence) (POLTransformerOut
 	for i := 0; i < m.nClasses && i < len(classData); i++ {
 		classProbs = append(classProbs, POLClassProbability{
 			Class:       ObjectBehaviorClass(i),
-			Probability: classData[i],
+			Probability: float64(classData[i]),
 		})
 	}
 
@@ -261,15 +263,15 @@ func (m *POLTransformerModel) Predict(sequence StateSequence) (POLTransformerOut
 		copyLen = 256
 	}
 	for i := 0; i < copyLen; i++ {
-		embedding[i] = embedData[i]
+		embedding[i] = float64(embedData[i])
 	}
 
 	return POLTransformerOutput{
 		ObjectID:        sequence.ObjectID,
 		BehaviorClass:   ObjectBehaviorClass(maxIdx),
-		ClassConfidence: maxProb,
+		ClassConfidence: float64(maxProb),
 		ClassProbs:      classProbs,
-		AnomalyScore:    anomalyScore,
+		AnomalyScore:    float64(anomalyScore),
 		IsAnomaly:       anomalyScore > 0.7, // Threshold for anomaly flag
 		Embedding:       embedding,
 		InferenceTime:   time.Now(),

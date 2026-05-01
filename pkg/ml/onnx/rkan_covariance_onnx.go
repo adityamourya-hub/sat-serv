@@ -17,7 +17,7 @@ import (
  * on learned perturbation structure (solar flux, drag, unmodeled third-body).
  *
  * Input:  (batch, 13) orbital features
- * Output: (batch, 6) diagonal covariance inflation [sigma_xx, sigma_yy, sigma_zz, 
+ * Output: (batch, 6) diagonal covariance inflation [sigma_xx, sigma_yy, sigma_zz,
  *                     sigma_vxvx, sigma_vyvy, sigma_vzvz] in km² and (km/s)²
  */
 type RKANCovarianceModel struct {
@@ -31,7 +31,7 @@ type RKANCovarianceInput struct {
 	// Positional features (3)
 	PositionX, PositionY, PositionZ float64 // km, ECI
 
-	// Velocity features (3)  
+	// Velocity features (3)
 	VelocityX, VelocityY, VelocityZ float64 // km/s, ECI
 
 	// Orbital element features (4)
@@ -67,25 +67,27 @@ func NewRKANCovarianceModel(modelPath string) (*RKANCovarianceModel, error) {
 	// Create tensors for input/output
 	// Input: (batch=1, 13 features)
 	inputShape := []int64{1, 13}
-	inputTensor, err := onnx.NewEmptyTensor[float64](inputShape)
+	inputTensor, err := onnx.NewEmptyTensor[float32](inputShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create input tensor: %w", err)
 	}
 
 	// Output: (batch=1, 6 covariance components)
 	outputShape := []int64{1, 6}
-	outputTensor, err := onnx.NewEmptyTensor[float64](outputShape)
+	outputTensor, err := onnx.NewEmptyTensor[float32](outputShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output tensor: %w", err)
 	}
 
 	// Create ONNX session
+	inputs := []onnx.Value{inputTensor}
+	outputs := []onnx.Value{outputTensor}
 	session, err := onnx.NewAdvancedSession(
 		modelPath,
 		[]string{"StatefulPartitionedCall:0"}, // Output names from TF SavedModel
 		[]string{"args_0"},                    // Input name
-		[]*onnx.Tensor{inputTensor},
-		[]*onnx.Tensor{outputTensor},
+		inputs,
+		outputs,
 		nil, // No additional options
 	)
 	if err != nil {
@@ -94,8 +96,8 @@ func NewRKANCovarianceModel(modelPath string) (*RKANCovarianceModel, error) {
 			modelPath,
 			[]string{"output"},
 			[]string{"input"},
-			[]*onnx.Tensor{inputTensor},
-			[]*onnx.Tensor{outputTensor},
+			inputs,
+			outputs,
 			nil,
 		)
 		if err != nil {
@@ -124,19 +126,19 @@ func (m *RKANCovarianceModel) Version() string {
 func (m *RKANCovarianceModel) Predict(input RKANCovarianceInput) (RKANCovarianceOutput, error) {
 	// Populate input tensor
 	data := m.input.GetData()
-	data[0] = input.PositionX
-	data[1] = input.PositionY
-	data[2] = input.PositionZ
-	data[3] = input.VelocityX
-	data[4] = input.VelocityY
-	data[5] = input.VelocityZ
-	data[6] = input.SemiMajorAxis
-	data[7] = input.Eccentricity
-	data[8] = input.Inclination
-	data[9] = input.RAAN
-	data[10] = input.SolarFluxF107
-	data[11] = input.GeomagneticAp
-	data[12] = input.LocalTime
+	data[0] = float32(input.PositionX)
+	data[1] = float32(input.PositionY)
+	data[2] = float32(input.PositionZ)
+	data[3] = float32(input.VelocityX)
+	data[4] = float32(input.VelocityY)
+	data[5] = float32(input.VelocityZ)
+	data[6] = float32(input.SemiMajorAxis)
+	data[7] = float32(input.Eccentricity)
+	data[8] = float32(input.Inclination)
+	data[9] = float32(input.RAAN)
+	data[10] = float32(input.SolarFluxF107)
+	data[11] = float32(input.GeomagneticAp)
+	data[12] = float32(input.LocalTime)
 
 	// Run inference
 	if err := m.session.Run(); err != nil {
@@ -151,8 +153,7 @@ func (m *RKANCovarianceModel) Predict(input RKANCovarianceInput) (RKANCovariance
 
 	// Compute realism score based on output magnitude
 	// High inflation in unexpected directions indicates low confidence
-	avgPosCov := (outputData[0] + outputData[1] + outputData[2]) / 3.0
-	avgVelCov := (outputData[3] + outputData[4] + outputData[5]) / 3.0
+	avgPosCov := (float64(outputData[0]) + float64(outputData[1]) + float64(outputData[2])) / 3.0
 
 	// Realism score: higher when inflation is moderate (not too low, not extreme)
 	realism := 0.5
@@ -163,12 +164,12 @@ func (m *RKANCovarianceModel) Predict(input RKANCovarianceInput) (RKANCovariance
 	}
 
 	return RKANCovarianceOutput{
-		PosCovXX:     outputData[0],
-		PosCovYY:     outputData[1],
-		PosCovZZ:     outputData[2],
-		VelCovXX:     outputData[3],
-		VelCovYY:     outputData[4],
-		VelCovZZ:     outputData[5],
+		PosCovXX:     float64(outputData[0]),
+		PosCovYY:     float64(outputData[1]),
+		PosCovZZ:     float64(outputData[2]),
+		VelCovXX:     float64(outputData[3]),
+		VelCovYY:     float64(outputData[4]),
+		VelCovZZ:     float64(outputData[5]),
 		RealismScore: realism,
 	}, nil
 }
@@ -195,7 +196,7 @@ func (m *RKANCovarianceModel) PredictBatch(inputs []RKANCovarianceInput) ([]RKAN
 
 // InflateCovariance applies the learned residual to a nominal covariance matrix.
 // The nominal covariance is expected as a 6x6 matrix (position + velocity states).
-func (m *RKANCovarianceModel) InflateCovariance(nominalCov [6][6]float64, 
+func (m *RKANCovarianceModel) InflateCovariance(nominalCov [6][6]float64,
 	residual RKANCovarianceOutput) [6][6]float64 {
 	var inflated [6][6]float64
 
