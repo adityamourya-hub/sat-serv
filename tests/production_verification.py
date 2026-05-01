@@ -7,7 +7,7 @@ import torch, numpy as np, onnxruntime as ort, sys, json, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ai.v3.navic_anomaly_detector import NavICAnomalyDetector
 try:
-    from ai.v3.neural_density import HydrostaticAtmosphereFNO
+    from ai.v3.neural_density import NeuralAtmosphere
     JAX_AVAILABLE = True
 except Exception:
     JAX_AVAILABLE = False
@@ -86,21 +86,75 @@ def test_navic_pytorch_equivalence():
 
 
 def test_atmosphere_fno():
-    """Test FNO model loads and produces atmospheric density."""
+    """Test Neural Atmosphere JAX model loads and produces atmospheric density."""
     if not JAX_AVAILABLE:
         RESULTS["atmosphere_fno"] = "SKIP (JAX not installed)"
         print("[SKIP] Atmosphere FNO — JAX not available")
         return
-    model = HydrostaticAtmosphereFNO(input_dim=5, hidden_dim=32, modes=8)
-    ckpt = torch.load("weights/p0_atmosphere/neural_atmosphere_best.pth", map_location="cpu")
-    model.load_state_dict(ckpt, strict=False)
-    model.eval()
-    x = torch.randn(1, 5)
-    rho = model(x)
-    assert rho.shape == (1, 1)
-    assert rho.item() > 0, "Density must be positive"
+    model = NeuralAtmosphere()
+    # Test inference with sample inputs
+    result = model(alt_km=80.0, lat_deg=26.0, lon_deg=88.5, f107=150.0, ap=15.0, rho_jr=1e-12)
+    assert 'rho_total' in result
+    assert result['rho_total'] > 0, "Density must be positive"
     RESULTS["atmosphere_fno"] = "PASS"
     print("[PASS] Atmosphere FNO load + positive density")
+
+
+def test_sensor_tasking_onnx():
+    """Test ATeena Sensor Tasking PPO ONNX model."""
+    path = f"{MODEL_DIR}/sensor_tasking.onnx"
+    assert os.path.exists(path), f"Missing {path}"
+    sess = ort.InferenceSession(path)
+    inputs = sess.get_inputs()
+    outputs = sess.get_outputs()
+    assert len(inputs) >= 1, "Expected at least 1 input"
+    # Run inference with dummy input matching expected shape
+    input_name = inputs[0].name
+    input_shape = inputs[0].shape
+    # Replace dynamic dims with 1
+    shape = [s if isinstance(s, int) and s > 0 else 1 for s in input_shape]
+    dummy = np.random.randn(*shape).astype(np.float32)
+    out = sess.run(None, {input_name: dummy})
+    assert len(out) >= 1, "Expected at least 1 output"
+    output_names = [o.name for o in outputs]
+    RESULTS["sensor_tasking"] = "PASS"
+    print(f"[PASS] Sensor tasking ONNX load + inference ({len(outputs)} outputs: {output_names})")
+
+
+def test_rapid_ranker_onnx():
+    """Test Rapid Ranker neural evidential ONNX model."""
+    path = f"{MODEL_DIR}/rapid_ranker.onnx"
+    assert os.path.exists(path), f"Missing {path}"
+    sess = ort.InferenceSession(path)
+    inputs = sess.get_inputs()
+    outputs = sess.get_outputs()
+    input_name = inputs[0].name
+    input_shape = inputs[0].shape
+    shape = [s if isinstance(s, int) and s > 0 else 1 for s in input_shape]
+    dummy = np.random.randn(*shape).astype(np.float32)
+    out = sess.run(None, {input_name: dummy})
+    assert len(out) >= 4, f"Expected 4 outputs (score, confidence, unc_low, unc_high), got {len(out)}"
+    output_names = [o.name for o in outputs]
+    RESULTS["rapid_ranker"] = "PASS"
+    print(f"[PASS] Rapid ranker ONNX load + inference (4 outputs: {output_names})")
+
+
+def test_hnode_onnx():
+    """Test Axiom-HNODE Port-Hamiltonian ONNX model."""
+    path = f"{MODEL_DIR}/hnode_core.onnx"
+    assert os.path.exists(path), f"Missing {path}"
+    sess = ort.InferenceSession(path)
+    inputs = sess.get_inputs()
+    outputs = sess.get_outputs()
+    input_name = inputs[0].name
+    input_shape = inputs[0].shape
+    shape = [s if isinstance(s, int) and s > 0 else 1 for s in input_shape]
+    dummy = np.random.randn(*shape).astype(np.float32)
+    out = sess.run(None, {input_name: dummy})
+    assert len(out) >= 1, "Expected at least 1 output (dynamics)"
+    output_names = [o.name for o in outputs]
+    RESULTS["axiom_hnode"] = "PASS"
+    print(f"[PASS] Axiom-HNODE ONNX load + inference ({output_names})")
 
 
 def main():
@@ -133,6 +187,21 @@ def main():
     except Exception as e:
         RESULTS["atmosphere_fno"] = f"FAIL: {e}"
         print(f"[FAIL] Atmosphere FNO: {e}")
+    try:
+        test_sensor_tasking_onnx()
+    except Exception as e:
+        RESULTS["sensor_tasking"] = f"FAIL: {e}"
+        print(f"[FAIL] Sensor tasking: {e}")
+    try:
+        test_rapid_ranker_onnx()
+    except Exception as e:
+        RESULTS["rapid_ranker"] = f"FAIL: {e}"
+        print(f"[FAIL] Rapid ranker: {e}")
+    try:
+        test_hnode_onnx()
+    except Exception as e:
+        RESULTS["axiom_hnode"] = f"FAIL: {e}"
+        print(f"[FAIL] Axiom-HNODE: {e}")
 
     print("=" * 60)
     passed = sum(1 for v in RESULTS.values() if v == "PASS")

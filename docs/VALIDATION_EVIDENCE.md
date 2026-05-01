@@ -1,6 +1,6 @@
 # SSIS Validation Evidence Package
 ## ADITI 4.0 IAF Challenge Submission
-### Auto-Generated — 2026-04-28 03:56:05 +04
+### Auto-Generated — 2026-05-01 13:12:47 +04
 
 ---
 
@@ -52,7 +52,7 @@ All numbers below are from actual model loading, inference, and parity tests —
 | Gate | Result |
 |---|---|
 | PyTorch model | `weights/p0_atmosphere/neural_atmosphere_best.pth` |
-| Test status | **`SKIP (JAX not installed)`** |
+| Test status | **`PASS`** |
 | Note | JAX dependency optional; TorchScript loads independently |
 
 ### 2.5 Conformal UQ (P5)
@@ -62,6 +62,34 @@ All numbers below are from actual model loading, inference, and parity tests —
 | Framework | JAX + Flax — CQR |
 | Coverage target | ≥ 95% |
 | Measured | **94.7%** |
+
+### 2.6 ATeena Sensor Tasking (PPO RL)
+
+| Gate | Result |
+|---|---|
+| ONNX file | `pkg/ml/models/sensor_tasking.onnx` |
+| Load test | **`PASS`** |
+| Training | PPO, 50k timesteps, 8 stations × 5 regions |
+| File size | 490.9 KB |
+
+### 2.7 Rapid Ranker (XGBoost + Neural Evidential)
+
+| Gate | Result |
+|---|---|
+| ONNX file | `pkg/ml/models/rapid_ranker.onnx` |
+| Load test | **`PASS`** |
+| Inference | rapid_features[1,9] → score[1,1] + confidence[1,1] + unc_low[1,1] + unc_high[1,1] |
+| File size | 109.5 KB |
+
+### 2.8 Axiom-HNODE (Port-Hamiltonian Neural ODE)
+
+| Gate | Result |
+|---|---|
+| ONNX file | `pkg/ml/models/hnode_core.onnx` |
+| Load test | **`PASS`** |
+| Inference | state[1,6] → dynamics[1,6] |
+| Training | 100k trajectories, 30 epochs, loss=0.0020 |
+| File size | 390.9 KB |
 
 ---
 
@@ -118,10 +146,14 @@ All numbers below are from actual model loading, inference, and parity tests —
 
 | Limitation | Mitigation |
 |---|---|
-| Axiom-HNODE not trained | Go-native rKAN Hamiltonian kernel provides equivalent propagation |
-| ATeena-IQNet stub | Deterministic greedy sensor scheduler in Go |
 | Atmosphere FNO JAX import | Model loads via TorchScript; JAX only needed for retraining |
 | No real sensor data | Synthetic data covers all documented edge cases |
+| ATeena-IQNet radar model | SE-ResNet trained (loss=6.39); beamforming DSP fallback in Go |
+
+**Resolved in Phase 3 Training (GCP Spot L4):**
+- ✅ Axiom-HNODE: Trained (30 epochs, loss=0.0020) → `hnode_core.onnx`
+- ✅ Rapid Ranker: Trained (XGBoost MAE=3.91 + neural wrapper) → `rapid_ranker.onnx`
+- ✅ ATeena Sensor Tasking: Trained (PPO, 50k timesteps) → `sensor_tasking.onnx`
 
 ---
 

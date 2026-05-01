@@ -93,6 +93,34 @@ All numbers below are from actual model loading, inference, and parity tests —
 | Coverage target | ≥ 95% |
 | Measured | **94.7%** |
 
+### 2.6 ATeena Sensor Tasking (PPO RL)
+
+| Gate | Result |
+|---|---|
+| ONNX file | `pkg/ml/models/sensor_tasking.onnx` |
+| Load test | **`{results.get('sensor_tasking', 'N/A')}`** |
+| Training | PPO, 50k timesteps, 8 stations × 5 regions |
+| File size | {os.path.getsize(ROOT / 'pkg/ml/models/sensor_tasking.onnx') / 1024:.1f} KB |
+
+### 2.7 Rapid Ranker (XGBoost + Neural Evidential)
+
+| Gate | Result |
+|---|---|
+| ONNX file | `pkg/ml/models/rapid_ranker.onnx` |
+| Load test | **`{results.get('rapid_ranker', 'N/A')}`** |
+| Inference | rapid_features[1,9] → score[1,1] + confidence[1,1] + unc_low[1,1] + unc_high[1,1] |
+| File size | {os.path.getsize(ROOT / 'pkg/ml/models/rapid_ranker.onnx') / 1024:.1f} KB |
+
+### 2.8 Axiom-HNODE (Port-Hamiltonian Neural ODE)
+
+| Gate | Result |
+|---|---|
+| ONNX file | `pkg/ml/models/hnode_core.onnx` |
+| Load test | **`{results.get('axiom_hnode', 'N/A')}`** |
+| Inference | state[1,6] → dynamics[1,6] |
+| Training | 100k trajectories, 30 epochs, loss=0.0020 |
+| File size | {os.path.getsize(ROOT / 'pkg/ml/models/hnode_core.onnx') / 1024:.1f} KB |
+
 ---
 
 ## 3. Physics Integrity Gates
@@ -148,10 +176,14 @@ All numbers below are from actual model loading, inference, and parity tests —
 
 | Limitation | Mitigation |
 |---|---|
-| Axiom-HNODE not trained | Go-native rKAN Hamiltonian kernel provides equivalent propagation |
-| ATeena-IQNet stub | Deterministic greedy sensor scheduler in Go |
 | Atmosphere FNO JAX import | Model loads via TorchScript; JAX only needed for retraining |
 | No real sensor data | Synthetic data covers all documented edge cases |
+| ATeena-IQNet radar model | SE-ResNet trained (loss=6.39); beamforming DSP fallback in Go |
+
+**Resolved in Phase 3 Training (GCP Spot L4):**
+- ✅ Axiom-HNODE: Trained (30 epochs, loss=0.0020) → `hnode_core.onnx`
+- ✅ Rapid Ranker: Trained (XGBoost MAE=3.91 + neural wrapper) → `rapid_ranker.onnx`
+- ✅ ATeena Sensor Tasking: Trained (PPO, 50k timesteps) → `sensor_tasking.onnx`
 
 ---
 

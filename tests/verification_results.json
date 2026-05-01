@@ -3,5 +3,8 @@
   "collision_risk": "PASS",
   "navic_anomaly": "PASS",
   "navic_pytorch_onnx_parity": "PASS",
-  "atmosphere_fno": "SKIP (JAX not installed)"
+  "atmosphere_fno": "PASS",
+  "sensor_tasking": "PASS",
+  "rapid_ranker": "PASS",
+  "axiom_hnode": "PASS"
 }

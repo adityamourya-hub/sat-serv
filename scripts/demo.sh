@@ -171,11 +171,14 @@ echo "  ✅ navic_anomaly_detector (BiLSTM-Attention, 100% val acc)" | tee_repor
 echo "  ✅ maneuver_detector (LSTM, dynamic batch, load + inference)" | tee_report
 echo "  ✅ neural_atmosphere (FNO TorchScript)" | tee_report
 echo "  ✅ conformal_uq (CQR, 94.7% coverage)" | tee_report
+echo "  ✅ sensor_tasking (PPO RL, 8 stations × 5 regions)" | tee_report
+echo "  ✅ rapid_ranker (XGBoost distillation + neural evidential, 4 outputs)" | tee_report
+echo "  ✅ axiom_hnode (Port-Hamiltonian Neural ODE, symplectic propagation)" | tee_report
 echo "" | tee_report
-echo "Physics-first fallbacks (Go-native, no ML required):" | tee_report
-echo "  ⚙️  axiom_hnode → rKAN Hamiltonian kernel (Go)" | tee_report
-echo "  ⚙️  rapid_ranker → physics-based threat scoring (Go)" | tee_report
-echo "  ⚙️  ateena_iqnet → beamforming DSP (Go)" | tee_report
+echo "Physics-first fallbacks (Go-native, available if ONNX unavailable):" | tee_report
+echo "  ⚙️  axiom_hnode fallback → rKAN Hamiltonian kernel (Go)" | tee_report
+echo "  ⚙️  rapid_ranker fallback → physics-based threat scoring (Go)" | tee_report
+echo "  ⚙️  sensor_tasking fallback → greedy sensor scheduler (Go)" | tee_report
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Cleanup
