@@ -4,10 +4,9 @@ package onnx
 
 import (
 	"fmt"
+	"ssis/pkg/physics"
 
 	_ "github.com/yalue/onnxruntime_go"
-
-	"ssis/pkg/physics"
 )
 
 // This implementation is compiled with -tags onnx.
@@ -36,11 +35,11 @@ func (m *CollisionONNXModel) Name() string {
 	return "onnx_gatv2_surrogate"
 }
 
-func (m *CollisionONNXModel) PredictRisk(input orbital.CollisionRiskInput, graph orbital.CollisionNeighborhoodGraph) (orbital.CollisionGraphInference, error) {
+func (m *CollisionONNXModel) PredictRisk(input physics.CollisionRiskInput, graph physics.CollisionNeighborhoodGraph) (physics.CollisionGraphInference, error) {
 	if len(graph.Nodes) == 0 {
-		return orbital.CollisionGraphInference{}, fmt.Errorf("empty graph")
+		return physics.CollisionGraphInference{}, fmt.Errorf("empty graph")
 	}
 
 	// TODO: bind tensors and parse outputs once runtime deployment image includes native ORT libs.
-	return orbital.CollisionGraphInference{}, fmt.Errorf("onnx runtime inference not yet bound")
+	return physics.CollisionGraphInference{}, fmt.Errorf("onnx runtime inference not yet bound")
 }

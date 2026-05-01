@@ -37,9 +37,9 @@ type DeepONetEngine struct {
 	session *onnx.AdvancedSession
 
 	// Pre-allocated ONNX tensors (zero-GC operation)
-	branchTensor *onnx.Tensor // Residual history [1, historySize] for Branch Net
-	trunkTensor  *onnx.Tensor // Time query [1, 1] for Trunk Net
-	outputTensor *onnx.Tensor // Control inference [1, 1]
+	branchTensor *onnx.Tensor[float32] // Residual history [1, historySize] for Branch Net
+	trunkTensor  *onnx.Tensor[float32] // Time query [1, 1] for Trunk Net
+	outputTensor *onnx.Tensor[float32] // Control inference [1, 1]
 
 	// Configuration
 	historySize int
@@ -83,32 +83,34 @@ func InitDeepONet(config DeepONetConfig) (*DeepONetEngine, error) {
 	// Create input tensors
 	// Branch: [batch=1, history_size]
 	branchShape := []int64{1, int64(config.HistorySize)}
-	branchTensor, err := NewEmptyTensor[float32](branchShape)
+	branchTensor, err := onnx.NewEmptyTensor[float32](branchShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create branch tensor: %w", err)
 	}
 
 	// Trunk: [batch=1, 1]
 	trunkShape := []int64{1, 1}
-	trunkTensor, err := NewEmptyTensor[float32](trunkShape)
+	trunkTensor, err := onnx.NewEmptyTensor[float32](trunkShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create trunk tensor: %w", err)
 	}
 
 	// Output: [batch=1, 1]
 	outputShape := []int64{1, 1}
-	outputTensor, err := NewEmptyTensor[float32](outputShape)
+	outputTensor, err := onnx.NewEmptyTensor[float32](outputShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output tensor: %w", err)
 	}
 
 	// Create ONNX session with dual inputs
+	inputs := []onnx.Value{branchTensor, trunkTensor}
+	outputs := []onnx.Value{outputTensor}
 	session, err := onnx.NewAdvancedSession(
 		config.ModelPath,
 		[]string{"control_inference"},              // Output name
 		[]string{"residual_history", "query_time"}, // Input names
-		[]*onnx.Tensor{branchTensor, trunkTensor},
-		[]*onnx.Tensor{outputTensor},
+		inputs,
+		outputs,
 		nil, // Default session options
 	)
 	if err != nil {

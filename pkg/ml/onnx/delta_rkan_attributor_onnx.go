@@ -103,7 +103,7 @@ func NewDeltaRKANAttributorModel(modelPath string, timesteps int) (*DeltaRKANAtt
 
 	// Create input tensor: (batch=1, timesteps, 6)
 	inputShape := []int64{1, int64(timesteps), 6}
-	inputTensor, err := onnx.NewEmptyTensor[float64](inputShape)
+	inputTensor, err := onnx.NewEmptyTensor[float32](inputShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create input tensor: %w", err)
 	}
@@ -111,32 +111,34 @@ func NewDeltaRKANAttributorModel(modelPath string, timesteps int) (*DeltaRKANAtt
 	// Create output tensors
 	// Output 1: maneuver probability (batch=1, 1)
 	outputProbShape := []int64{1, 1}
-	outputProb, err := onnx.NewEmptyTensor[float64](outputProbShape)
+	outputProb, err := onnx.NewEmptyTensor[float32](outputProbShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output prob tensor: %w", err)
 	}
 
 	// Output 2: delta-V (batch=1, 3)
 	outputDeltaVShape := []int64{1, 3}
-	outputDeltaV, err := onnx.NewEmptyTensor[float64](outputDeltaVShape)
+	outputDeltaV, err := onnx.NewEmptyTensor[float32](outputDeltaVShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output delta-v tensor: %w", err)
 	}
 
 	// Output 3: maneuver type (batch=1, 4)
 	outputTypeShape := []int64{1, 4}
-	outputType, err := onnx.NewEmptyTensor[float64](outputTypeShape)
+	outputType, err := onnx.NewEmptyTensor[float32](outputTypeShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output type tensor: %w", err)
 	}
 
 	// Create ONNX session
+	inputs := []onnx.Value{inputTensor}
+	outputs := []onnx.Value{outputProb, outputDeltaV, outputType}
 	session, err := onnx.NewAdvancedSession(
 		modelPath,
 		[]string{"maneuver_prob", "delta_v", "maneuver_type"}, // Output names
 		[]string{"state_history"},                             // Input name
-		[]*onnx.Tensor{inputTensor},
-		[]*onnx.Tensor{outputProb, outputDeltaV, outputType},
+		inputs,
+		outputs,
 		nil,
 	)
 	if err != nil {
@@ -145,8 +147,8 @@ func NewDeltaRKANAttributorModel(modelPath string, timesteps int) (*DeltaRKANAtt
 			modelPath,
 			[]string{"output_0", "output_1", "output_2"},
 			[]string{"input"},
-			[]*onnx.Tensor{inputTensor},
-			[]*onnx.Tensor{outputProb, outputDeltaV, outputType},
+			inputs,
+			outputs,
 			nil,
 		)
 		if err != nil {
@@ -194,12 +196,12 @@ func (m *DeltaRKANAttributorModel) Predict(history StateHistory) (DeltaRKANOutpu
 	for t := 0; t < m.timesteps; t++ {
 		state := history.States[startIdx+t]
 		baseIdx := t * 6
-		data[baseIdx+0] = state.X
-		data[baseIdx+1] = state.Y
-		data[baseIdx+2] = state.Z
-		data[baseIdx+3] = state.VX
-		data[baseIdx+4] = state.VY
-		data[baseIdx+5] = state.VZ
+		data[baseIdx+0] = float32(state.Pos[0])
+		data[baseIdx+1] = float32(state.Pos[1])
+		data[baseIdx+2] = float32(state.Pos[2])
+		data[baseIdx+3] = float32(state.Vel[0])
+		data[baseIdx+4] = float32(state.Vel[1])
+		data[baseIdx+5] = float32(state.Vel[2])
 	}
 
 	// Run inference
@@ -215,7 +217,7 @@ func (m *DeltaRKANAttributorModel) Predict(history StateHistory) (DeltaRKANOutpu
 	maneuverProb := probData[0]
 
 	// Determine maneuver type from one-hot output
-	typeProbs := []float64{typeData[0], typeData[1], typeData[2], typeData[3]}
+	typeProbs := []float64{float64(typeData[0]), float64(typeData[1]), float64(typeData[2]), float64(typeData[3])}
 	maxProb := typeProbs[0]
 	maxIdx := 0
 	for i := 1; i < 4; i++ {

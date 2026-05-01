@@ -4,14 +4,13 @@ package onnx
 
 import (
 	"fmt"
+	"ssis/pkg/physics"
 
 	_ "github.com/yalue/onnxruntime_go"
-
-	"ssis/pkg/physics"
 )
 
 // This implementation is compiled when built with -tags onnx.
-// It intentionally keeps the runtime adapter thin: preprocessing happens in orbital,
+// It intentionally keeps the runtime adapter thin: preprocessing happens in physics,
 // while this layer maps ONNX tensors to maneuver inference payloads.
 type ManeuverONNXModel struct {
 	ModelPath string
@@ -28,9 +27,9 @@ func (m *ManeuverONNXModel) Name() string {
 	return "onnx_lstm_attention"
 }
 
-func (m *ManeuverONNXModel) Predict(window []orbital.ManeuverFrame) (orbital.ManeuverInference, error) {
+func (m *ManeuverONNXModel) Predict(window []physics.ManeuverFrame) (physics.ManeuverInference, error) {
 	if len(window) == 0 {
-		return orbital.ManeuverInference{}, fmt.Errorf("empty maneuver frame window")
+		return physics.ManeuverInference{}, fmt.Errorf("empty maneuver frame window")
 	}
 
 	// TODO: wire exact tensor mapping once deployment image ships with native runtime.
@@ -39,5 +38,5 @@ func (m *ManeuverONNXModel) Predict(window []orbital.ManeuverFrame) (orbital.Man
 	//  2) maneuver_type_logits: [1, 2] (impulsive, continuous)
 	//  3) delta_v_estimate: [1, 1]
 	//  4) confidence_score: [1, 1]
-	return orbital.ManeuverInference{}, fmt.Errorf("onnx runtime inference not yet bound")
+	return physics.ManeuverInference{}, fmt.Errorf("onnx runtime inference not yet bound")
 }
