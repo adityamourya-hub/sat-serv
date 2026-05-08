@@ -1,0 +1,593 @@
+% =============================================================================
+% Patent Landscape Analysis — DRQ / SSIS
+% Attorney Review Document
+% UBERMASCHINE Pvt Ltd | May 2026
+% Classification: ATTORNEY-CONFIDENTIAL
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+
+% --- Geometry & Spacing ---
+\usepackage[margin=1in]{geometry}
+\usepackage{setspace}\onehalfspacing
+\setlength{\parskip}{0.4em}\setlength{\parindent}{0pt}
+
+% --- Typography ---
+\usepackage[T1]{fontenc}
+\usepackage{helvet}\renewcommand{\familydefault}{\sfdefault}
+
+% --- Section Formatting ---
+\usepackage{titlesec}
+\titleformat{\section}{\Large\bfseries}{\thesection.}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection.}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection.}{0.6em}{}
+
+% --- Tables ---
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+% --- Math ---
+\usepackage{amsmath,amssymb}
+
+% --- Lists ---
+\usepackage{enumitem}
+\setlist[itemize]{leftmargin=*,itemsep=0.1em,topsep=0.2em}
+\setlist[enumerate]{leftmargin=*,itemsep=0.1em,topsep=0.2em}
+
+% --- Colors ---
+\usepackage{xcolor}
+\definecolor{attgreen}{RGB}{0,128,0}
+\definecolor{attred}{RGB}{180,0,0}
+\definecolor{attyellow}{RGB}{180,140,0}
+\definecolor{attgray}{RGB}{100,100,100}
+
+% --- Header / Footer ---
+\usepackage{fancyhdr}
+\pagestyle{fancy}\fancyhf{}
+\lhead{\footnotesize\textcolor{attgray}{Patent Landscape Analysis — DRQ/SSIS}}
+\rhead{\footnotesize\textcolor{attgray}{UBERMASCHINE Pvt Ltd}}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% =============================================================================
+\begin{document}
+
+% --- Title Page ---
+\begin{center}
+\vspace*{1cm}
+{\LARGE\bfseries Patent Landscape Analysis}\\[0.3em]
+{\large DRQ / SSIS Technology Stack}\\[1em]
+{\normalsize Attorney Review Document}\\[0.3em]
+{\small UBERMASCHINE Pvt Ltd}\\[0.3em]
+{\small May 2026}\\[1em]
+\rule{0.6\textwidth}{0.5pt}\\[0.5em]
+{\small\textbf{Classification:} ATTORNEY-CONFIDENTIAL}
+\end{center}
+
+\vspace{1cm}
+
+% =============================================================================
+\section{Executive Summary}
+
+This report provides a comprehensive patent landscape analysis for the DRQ/SSIS technology stack, conducted across WIPO PatentScope, USPTO, EPO, CNIPA, and Google Patents databases (2000--2026).
+
+\textbf{Key Findings:}
+\begin{itemize}
+\item \textcolor{attgreen}{\textbf{3 of 5 core innovations are CLEAR}} — no prior art patents found
+\item \textcolor{attyellow}{\textbf{1 innovation has PARTIAL OVERLAP}} — Chinese patent (CN104199022B) on general IMM for hypersonic tracking
+\item \textcolor{attgreen}{\textbf{1 innovation is LARGELY CLEAR}} — generic GNSS spoofing patents exist but NavIC+SSA context is novel
+\end{itemize}
+
+\textbf{Critical Urgency:}
+\begin{itemize}
+\item India has \textbf{NO grace period} for patent filing after public disclosure
+\item IAF ADITI submission will become public → must file provisional applications \textbf{before} submission
+\item Consider Section 39 secrecy direction for defence-related inventions
+\end{itemize}
+
+% =============================================================================
+\section{Core Innovation Analysis}
+
+\subsection{Innovation 1: DPHNO — Dissipative Port-Hamiltonian Neural Operator for Orbital Propagation}
+
+\textbf{Status: \textcolor{attgreen}{CLEAR — No competing patent found}}
+
+\subsubsection*{Search Scope}
+\begin{itemize}
+\item Keywords: "port-hamiltonian neural network", "dissipative", "satellite orbit", "orbital propagation", "space situational awareness"
+\item Databases: WIPO PatentScope, Google Patents, USPTO, EPO, CNIPA
+\item Timeframe: 2000--2026
+\end{itemize}
+
+\subsubsection*{Findings}
+\begin{itemize}
+\item Zero patents combining Port-Hamiltonian neural networks with satellite orbit prediction
+\item Research papers exist (arxiv 2023--2025) but \textbf{none filed as patents} in SSA context
+\item The Cholesky-enforced dissipation $R = LL^\top$ applied to satellite dynamics is \textbf{genuinely novel patent territory}
+\end{itemize}
+
+\subsubsection*{Closest Prior Art}
+\begin{itemize}
+\item \textbf{US20140074766A1} (Numerica Corp, 2013) — uses implicit Runge-Kutta for orbit state propagation
+  \begin{itemize}
+  \item Overlap: None — pure numerical methods, zero neural network component
+  \item Relevance: Low — different technical approach
+  \end{itemize}
+\end{itemize}
+
+\subsubsection*{Patentability Assessment}
+\begin{itemize}
+\item \textbf{Novelty:} High — no prior art found
+\item \textbf{Non-obviousness:} Strong — combining Port-Hamiltonian theory with orbital dynamics is non-obvious to those skilled in the art
+\item \textbf{Industrial applicability:} Clear — direct application to space domain awareness systems
+\end{itemize}
+
+\subsubsection*{Recommended IPC Classification}
+\begin{itemize}
+\item Primary: G06N3/00 (Arrangements based on computational models)
+\item Secondary: B64G1/10 (Spacecraft guidance)
+\end{itemize}
+
+\subsubsection*{Suggested Independent Claims}
+
+\textbf{Claim 1 (Method):} A computer-implemented method for orbital propagation of a space object, the method comprising: obtaining a state vector of the space object; computing a time derivative of the state vector using a dissipative Port-Hamiltonian neural operator, wherein the neural operator implements: a canonical symplectic matrix $J$; a learned dissipation matrix $R$ parameterized as $R = LL^\top$, where $L$ is a Cholesky factor; a scalar Hamiltonian network $H$ parameterized by neural network weights; and a control coupling network $g$; propagating the state vector forward in time using the computed time derivative; wherein the Cholesky parameterization of $R$ guarantees positive semi-definiteness, ensuring energy dissipation in the absence of external forcing.
+
+\textbf{Claim 2 (System):} A system for orbital propagation, comprising: one or more processors; memory storing instructions that, when executed by the processors, cause the system to: obtain a state vector of a space object; compute a time derivative of the state vector using a dissipative Port-Hamiltonian neural operator; wherein the neural operator comprises: a canonical symplectic matrix $J$; a learned dissipation matrix $R = LL^\top$, where $L$ is a Cholesky factor; a scalar Hamiltonian network $H$; and a control coupling network $g$; propagate the state vector forward in time using the computed time derivative.
+
+\newpage
+
+\subsection{Innovation 2: Residual-Targeting SINDy for Satellite Manoeuvre Detection}
+
+\textbf{Status: \textcolor{attgreen}{CLEAR — No competing patent found}}
+
+\subsubsection*{Search Scope}
+\begin{itemize}
+\item Keywords: "SINDy", "sparse identification nonlinear dynamics", "satellite maneuver", "maneuver detection", "equation discovery"
+\item Databases: WIPO, Google Patents, USPTO, EPO
+\end{itemize}
+
+\subsubsection*{Findings}
+\begin{itemize}
+\item No patents found for SINDy applied to satellite manoeuvre detection/discovery
+\item SINDy base algorithm is published academic work (Brunton et al., 2016 PNAS) — \textbf{prior art in literature, not patents}
+\item This means the base algorithm is freely implementable; the specific application is patentable
+\end{itemize}
+
+\subsubsection*{Novel Contribution}
+\begin{itemize}
+\item \textbf{Residual targeting:} $r(t) = \ddot{x}_\text{obs} - \ddot{x}_\text{Keplerian}$ rather than full dynamics $\dot{x} = f(x)$
+\item \textbf{Bootstrap confidence intervals} with 1000-resample validation
+\item \textbf{Hamiltonian invariant hash} for certificate issuance
+\end{itemize}
+
+\subsubsection*{Patentability Assessment}
+\begin{itemize}
+\item \textbf{Novelty:} High — residual-targeting approach for SSA is unpatented
+\item \textbf{Non-obviousness:} Moderate — SINDy is known but residual application to Keplerian baseline is non-obvious
+\item \textbf{Industrial applicability:} Clear — satellite anomaly detection for defence
+\end{itemize}
+
+\subsubsection*{Recommended IPC Classification}
+\begin{itemize}
+\item Primary: G06N5/00 (Computing arrangements using knowledge-based models)
+\item Secondary: G05B17/02 (Automatic control systems)
+\end{itemize}
+
+\subsubsection*{Suggested Independent Claims}
+
+\textbf{Claim 1 (Method):} A computer-implemented method for detecting satellite manoeuvres, the method comprising: obtaining observed trajectory data of a satellite; computing Keplerian-predicted trajectory data for the satellite; computing residual dynamics as a difference between observed and Keplerian-predicted accelerations; applying sparse identification of nonlinear dynamics (SINDy) to the residual dynamics to discover a sparse set of non-Keplerian terms; wherein the discovered terms represent thrust signatures indicative of a satellite manoeuvre.
+
+\textbf{Claim 2 (Certificate Generation):} A method for generating a physics-verified manoeuvre certificate, comprising: discovering a sparse dynamical equation for satellite manoeuvre using residual-targeted SINDy; computing a Hamiltonian invariant hash from the discovered equation; generating a falsifiable prediction for a future time step; wherein the certificate is self-invalidating if Hamiltonian drift exceeds a threshold.
+
+\newpage
+
+\subsection{Innovation 3: IMM Filter for Hypersonic + Satellite Tracking}
+
+\textbf{Status: \textcolor{attyellow}{PARTIALLY OVERLAPPED — Prior art exists, variant is novel}}
+
+\subsubsection*{Search Scope}
+\begin{itemize}
+\item Keywords: "interacting multiple model", "IMM", "hypersonic", "satellite tracking", "space domain awareness"
+\item Databases: CNIPA, Google Patents, USPTO
+\end{itemize}
+
+\subsubsection*{Prior Art Found}
+\begin{itemize}
+\item \textbf{CN104199022B} (Chinese, National University of Defense Technology, 2014)
+  \begin{itemize}
+  \item Title: "Target modal estimation based near-space hypersonic velocity target tracking method"
+  \item Content: Uses IMM for near-space hypersonic tracking with dynamic mode estimation
+  \item Jurisdiction: China only
+  \item Status: Granted
+  \end{itemize}
+\end{itemize}
+
+\subsubsection*{Overlap Analysis}
+\begin{itemize}
+\item \textbf{Overlapped:} General IMM framework for hypersonic tracking
+\item \textbf{NOT covered by CN104199022B:}
+  \begin{itemize}
+  \item Bayesian online transition-matrix adaptation (Dirichlet-Markov approach)
+  \item Free-energy-based adversarial intent scoring (Active Inference Expected Free Energy)
+  \item \textbf{Unified multi-threat stack} — satellite manoeuvre + HGV + GNSS spoofing + debris sharing one filter architecture
+  \end{itemize}
+\end{itemize}
+
+\subsubsection*{Jurisdictional Impact}
+\begin{itemize}
+\item Chinese patents have limited PCT/India enforceability
+\item Prior art exists but is jurisdictionally and technically narrow
+\end{itemize}
+
+\subsubsection*{Patentability Assessment}
+\begin{itemize}
+\item \textbf{Novelty:} Moderate — base IMM is prior art, but extensions are novel
+\item \textbf{Non-obviousness:} Strong — unified multi-threat architecture is non-obvious
+\item \textbf{Industrial applicability:} Clear
+\end{itemize}
+
+\subsubsection*{Recommended IPC Classification}
+\begin{itemize}
+\item Primary: G01S13/66 (Radar tracking)
+\item Secondary: G06N5/00 (Knowledge-based models)
+\end{itemize}
+
+\subsubsection*{Claim Drafting Guidance}
+\begin{itemize}
+\item \textbf{Avoid claiming} general IMM framework (prior art)
+\item \textbf{Claim the novel extensions:}
+  \begin{itemize}
+  \item Unified multi-threat filtering across satellite, hypersonic, GNSS, and debris domains
+  \item Bayesian online transition-matrix adaptation
+  \item Free-energy-based adversarial intent scoring
+  \end{itemize}
+\item \textbf{Carve-around strategy:} "wherein the filter architecture is configured for simultaneous tracking across multiple threat domains"
+\end{itemize}
+
+\subsubsection*{Suggested Independent Claims}
+
+\textbf{Claim 1 (Method):} A computer-implemented method for unified multi-threat tracking, the method comprising: maintaining a single Interacting Multiple Model (IMM) filter architecture; wherein the IMM filter is configured to simultaneously track objects across multiple threat domains including: satellite manoeuvre detection; hypersonic glide vehicle tracking; GNSS spoofing detection; and debris breakup detection; applying Bayesian online transition-matrix adaptation to estimate mode transitions; computing a free-energy-based adversarial intent score for each tracked object; wherein the unified architecture enables cross-domain threat correlation.
+
+\newpage
+
+\subsection{Innovation 4: Conformal Prediction for Space Domain Awareness Alerts}
+
+\textbf{Status: \textcolor{attgreen}{CLEAR — No competing patent found}}
+
+\subsubsection*{Search Scope}
+\begin{itemize}
+\item Keywords: "conformal prediction", "uncertainty quantification", "space domain awareness", "conjunction alert", "coverage certificate"
+\item Databases: WIPO, Google Patents, USPTO, EPO
+\end{itemize}
+
+\subsubsection*{Findings}
+\begin{itemize}
+\item No patents found anywhere applying conformal prediction to SSA/conjunction alerts
+\item Conformal prediction is published academic method (Vovk et al., 2005) — freely implementable
+\end{itemize}
+
+\subsubsection*{Closest Prior Art}
+\begin{itemize}
+\item \textbf{US6085128A} (1998, OCEAN technique) — orbital covariance estimation
+  \begin{itemize}
+  \item Overlap: None — classical Kalman-based, no ML, no conformal coverage guarantees
+  \end{itemize}
+\end{itemize}
+
+\subsubsection*{Novel Contribution}
+\begin{itemize}
+\item \textbf{Distribution-free coverage certificates} on every gRPC alert
+\item \textbf{Mathematically proven marginal coverage:} $P(\text{truth} \in C_\alpha) \geq 1 - \alpha$
+\item Integration with sovereign air-gapped deployment
+\end{itemize}
+
+\subsubsection*{Patentability Assessment}
+\begin{itemize}
+\item \textbf{Novelty:} High — conformal prediction for SSA is unpatented
+\item \textbf{Non-obviousness:} Strong — combining conformal ML with sovereign deployment is non-obvious
+\item \textbf{Industrial applicability:} Clear
+\end{itemize}
+
+\subsubsection*{Recommended IPC Classification}
+\begin{itemize}
+\item Primary: G06N20/00 (Machine learning)
+\item Secondary: G06Q10/04 (Forecasting or optimisation)
+\end{itemize}
+
+\subsubsection*{Suggested Independent Claims}
+
+\textbf{Claim 1 (Method):} A computer-implemented method for generating uncertainty-quantified alerts in a space domain awareness system, the method comprising: obtaining a prediction for a space object from a machine learning model; computing a conformal prediction interval for the prediction using a calibration set; wherein the conformal prediction interval satisfies a mathematically proven marginal coverage property: $P(\text{truth} \in C_\alpha) \geq 1 - \alpha$; generating an alert comprising the prediction and the conformal prediction interval; transmitting the alert via a gRPC interface with a coverage certificate.
+
+\newpage
+
+\subsection{Innovation 5: NavIC Dual-Frequency ML Spoofing Detection for SSA}
+
+\textbf{Status: \textcolor{attgreen}{LARGELY CLEAR — Generic GNSS patents exist, NavIC+SSA is novel}}
+
+\subsubsection*{Search Scope}
+\begin{itemize}
+\item Keywords: "GNSS spoofing detection", "NavIC", "space situational awareness", "machine learning", "neural network"
+\item Databases: EPO, USPTO, Google Patents
+\end{itemize}
+
+\subsubsection*{Prior Art Found}
+\begin{itemize}
+\item \textbf{EP4024087A2} — GNSS spoofing detection via bearing/range measurements
+  \begin{itemize}
+  \item Overlap: None — geometric/analytical approach, not ML
+  \end{itemize}
+\item \textbf{US20200049837A1} — ML-assisted GNSS location estimation
+  \begin{itemize}
+  \item Overlap: None — end-user device positioning, not SSA context
+  \end{itemize}
+\end{itemize}
+
+\subsubsection*{Novel Contribution}
+\begin{itemize}
+\item \textbf{BiLSTM-Attention} on dual-frequency L5/S pseudorange residuals
+\item \textbf{SSA operational context} — protecting a navigation constellation, not end-user positioning
+\item \textbf{Dual-constellation residual architecture} specific to NavIC
+\end{itemize}
+
+\subsubsection*{Patentability Assessment}
+\begin{itemize}
+\item \textbf{Novelty:} High — NavIC+SSA context with ML is unpatented
+\item \textbf{Non-obviousness:} Moderate — GNSS spoofing is known, but NavIC constellation protection is non-obvious
+\item \textbf{Industrial applicability:} Clear
+\end{itemize}
+
+\subsubsection*{Recommended IPC Classification}
+\begin{itemize}
+\item Primary: G01S19/21 (GNSS signal integrity)
+\item Secondary: G06N3/00 (Neural networks)
+\end{itemize}
+
+\subsubsection*{Claim Drafting Guidance}
+\begin{itemize}
+\item Carve around generic GNSS spoofing patents
+\item Specifically claim SSA operational context
+\item Claim constellation-level monitoring, not device-level
+\end{itemize}
+
+\subsubsection*{Suggested Independent Claims}
+
+\textbf{Claim 1 (Method):} A computer-implemented method for detecting GNSS spoofing in a space domain awareness system, the method comprising: obtaining dual-frequency pseudorange measurements from a GNSS constellation; computing residuals between the dual-frequency measurements; processing the residuals using a BiLSTM-Attention neural network to classify a signal condition as normal, jamming, or spoofing; wherein the system is configured for monitoring a navigation constellation at the constellation level, not at the end-user device level.
+
+\newpage
+
+% =============================================================================
+\section{Competitor IP Landscape}
+
+\subsection{Commercial SSA Competitors}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{l Y c}
+\toprule
+\textbf{Competitor} & \textbf{Patents Found} & \textbf{Overlap Risk} \\
+\midrule
+LeoLabs & No ML/physics patents found & None \\
+Slingshot Aerospace & No SSA ML patents; merged with Numerica SDA division (2022) & None \\
+ExoAnalytic (now Anduril) & No specific ML patents; acquired by Anduril (2026) & None \\
+Numerica Corp & US20140074766A1 — numerical state propagation (classical) & Low \\
+Kayhan Space & No patents found in public search & None \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Academic/State Research}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{l Y c}
+\toprule
+\textbf{Entity} & \textbf{Patents Found} & \textbf{Overlap Risk} \\
+\midrule
+Chinese NUDT & CN104199022B — IMM hypersonic tracking & Partial on IMM \\
+US DoD/AFRL & General SSA patents, no ML-physics combination & Low \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Geographic Jurisdiction Analysis}
+
+\begin{itemize}
+\item \textbf{United States:} Strong prior art in classical SSA methods, weak in ML-physics
+\item \textbf{Europe:} Limited SSA-specific patents, strong in GNSS
+\item \textbf{China:} Active in hypersonic tracking (NUDT), limited in SSA ML
+\item \textbf{India:} Minimal prior art in SSA — \textbf{opportunity for first-to-file}
+\end{itemize}
+
+\newpage
+
+% =============================================================================
+\section{Filing Recommendations}
+
+\subsection{Priority Tiering}
+
+\textbf{🟢 GREEN — File Immediately (Highest Priority)}
+
+\begin{enumerate}
+\item \textbf{DPHNO for orbital propagation}
+  \begin{itemize}
+  \item No prior art
+  \item Core innovation
+  \item PCT application recommended
+  \item IPC: G06N3/00, B64G1/10
+  \end{itemize}
+
+\item \textbf{Residual-targeting SINDy + Hamiltonian certificate}
+  \begin{itemize}
+  \item Unique combination
+  \item No prior art
+  \item PCT application recommended
+  \item IPC: G06N5/00, G05B17/02
+  \end{itemize}
+
+\item \textbf{Conformal coverage certificates for conjunction alerts}
+  \begin{itemize}
+  \item Completely clear
+  \item Novel application
+  \item PCT application recommended
+  \item IPC: G06N20/00, G06Q10/04
+  \end{itemize}
+\end{enumerate}
+
+\textbf{🟡 YELLOW — File with Careful Claim Scoping}
+
+\begin{enumerate}
+\setcounter{enumi}{3}
+\item \textbf{NavIC ML spoofing detection in SSA context}
+  \begin{itemize}
+  \item Carve around generic GNSS spoofing patents
+  \item Specifically claim SSA operational context
+  \item India + PCT filing
+  \item IPC: G01S19/21, G06N3/00
+  \end{itemize}
+
+\item \textbf{Unified multi-threat IMM stack}
+  \begin{itemize}
+  \item Claim unified architecture, NOT base IMM
+  \item India + PCT filing
+  \item IPC: G01S13/66, G06N5/00
+  \end{itemize}
+\end{enumerate}
+
+\subsection{Filing Strategy}
+
+\textbf{PCT vs India:}
+\begin{itemize}
+\item \textbf{PCT Application:} File within 12 months of provisional, gives 30-month window for national phase entry
+\item \textbf{India First:} File provisional in India first (cheaper, establishes priority date)
+\item \textbf{Recommended:} File provisional in India → PCT within 12 months → national phase in US/EU/China
+\end{itemize}
+
+\textbf{Timeline (Critical):}
+\begin{verbatim}
+T+0:   File provisional applications in India (Section 39 secrecy direction)
+T+30:  File PCT applications
+T+365: Complete national phase filings (US, EP, CN)
+T-7:   BEFORE IAF submission becomes public
+\end{verbatim}
+
+\textbf{Urgency:}
+\begin{itemize}
+\item India has \textbf{NO grace period} — public disclosure immediately bars filing
+\item IAF ADITI submission will become public → file \textbf{before} submission
+\item Target: File by \textbf{May 15, 2026} (10 days from now)
+\end{itemize}
+
+\newpage
+
+\subsection{India-Specific Filing Guidance: Section 39 Secrecy Direction}
+
+\textbf{Applicability:}
+\begin{itemize}
+\item Applicable to inventions "relating to atomic energy or defence"
+\item DRQ/SSIS qualifies as defence-related (space domain awareness for IAF)
+\end{itemize}
+
+\textbf{Benefits:}
+\begin{itemize}
+\item Patent application kept secret
+\item No publication until secrecy direction lifted
+\item Allows disclosure to IAF without losing patent rights
+\end{itemize}
+
+\textbf{Process:}
+\begin{enumerate}
+\item File provisional application with IP India
+\item Request Section 39 secrecy direction
+\item Patent Office refers to Ministry of Defence
+\item MoD grants secrecy direction (typically 6--12 months)
+\item Application remains secret until direction lifted
+\end{enumerate}
+
+\textbf{Recommended Action:}
+\begin{itemize}
+\item File all 5 provisional applications under Section 39
+\item This allows IAF submission without losing patent rights
+\item Coordinate with patent attorney experienced in defence filings
+\end{itemize}
+
+\newpage
+
+% =============================================================================
+\section{Risk Assessment}
+
+\subsection{Patent Infringement Risk}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{l Y Y}
+\toprule
+\textbf{Innovation} & \textbf{Infringement Risk} & \textbf{Mitigation} \\
+\midrule
+DPHNO & None & No prior art \\
+Residual-Targeting SINDy & None & No prior art \\
+IMM Filter & Low (Chinese patent) & Carve-around strategy, claim novel extensions \\
+Conformal Prediction & None & No prior art \\
+NavIC Spoofing & Low & Carve around generic GNSS patents, claim SSA context \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Freedom to Operate}
+
+\textbf{Overall Assessment:} High — DRQ/SSIS can be deployed without significant infringement risk.
+
+\textbf{Caveats:}
+\begin{itemize}
+\item Chinese IMM patent has limited enforceability outside China
+\item Generic GNSS spoofing patents exist but are jurisdictionally narrow
+\item No competitor holds blocking patents on ML-physics SSA approaches
+\end{itemize}
+
+\newpage
+
+% =============================================================================
+\section{Prior Art Patent Citations}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{l Y l c l}
+\toprule
+\textbf{Patent No.} & \textbf{Title} & \textbf{Jurisdiction} & \textbf{Year} & \textbf{Relevance} \\
+\midrule
+CN104199022B & Target modal estimation based near-space hypersonic velocity target tracking method & China & 2014 & Partial overlap on IMM \\
+US20140074766A1 & Method and system for propagating the state of an object and its uncertainty & US & 2013 & Classical methods, no ML \\
+US20230143771A1 & Space traffic management system & US (Japanese assignee) & 2023 & Data sharing architecture \\
+EP4024087A2 & GNSS signal spoofing detection via bearing and/or range measurements & Europe & 2022 & Geometric approach, not ML \\
+US20200049837A1 & Machine learning assisted satellite based geolocation & US & 2020 & End-user positioning, not SSA \\
+US6085128A & Orbit/covariance estimation and analysis (OCEAN) & US & 1998 & Classical Kalman methods \\
+\bottomrule
+\end{tabularx}
+
+\newpage
+
+\section{Recommended Next Steps}
+
+\subsection{Immediate (This Week)}
+\begin{enumerate}
+\item Engage patent attorney with experience in defence/Section 39 filings
+\item Prepare provisional applications for all 5 innovations
+\item File provisional applications with IP India under Section 39 secrecy direction
+\end{enumerate}
+
+\subsection{Short-Term (Next 30 Days)}
+\begin{enumerate}
+\item File PCT applications within 12 months of provisional
+\item Coordinate with IAF on submission timeline — ensure filing before public disclosure
+\item Prepare technical drawings and claim sets for national phase filings
+\end{enumerate}
+
+\subsection{Medium-Term (Next 12 Months)}
+\begin{enumerate}
+\item Complete national phase filings in US, EP, China
+\item Monitor competitor filings — watch for blocking patents
+\item File continuation applications for additional claim sets
+\end{enumerate}
+
+\vspace{2cm}
+
+\begin{center}
+\rule{0.5\textwidth}{0.4pt}\\[0.5em]
+{\small\textit{Document prepared for UBERMASCHINE Pvt Ltd legal review}}\\[0.3em]
+{\small\textbf{Classification: ATTORNEY-CONFIDENTIAL}}
+\end{center}
+
+\end{document}
